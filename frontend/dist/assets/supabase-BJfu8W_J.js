@@ -1,0 +1,1 @@
+import{t as e}from"./vendor-supabase-aX5i15Mg.js";var t=e(`https://pjmdlifojfwoviyugjwq.supabase.co`,`sb_publishable_Cd0GkjlGkIfFUJ0IR2etLA_IxImAYU9`);export{t};
