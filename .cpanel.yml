@@ -1,0 +1,6 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/sparkle7/public_html
+    # Copy the compiled static assets directly to public_html
+    - /bin/cp -R frontend/dist/* $DEPLOYPATH/
