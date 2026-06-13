@@ -541,8 +541,6 @@ const BookingEngine = () => {
         setBookingErrorMsg("Booking reference was lost. Please contact support.");
         return;
       }
-      
-      const bookingRef = pRef;
 
       const isPartial = bookingRules.payment_rule === 'partial_deposit';
       const statusPayment = isPartial ? 'partial' : 'paid';
@@ -552,12 +550,12 @@ const BookingEngine = () => {
         status: 'pending',
         payment_status: statusPayment,
         amount_paid_ngn: payOnlineAmount,
-      }).eq('booking_reference', bookingRef);
+      }).eq('booking_reference', pRef);
 
       if (bookingError) console.error("Update booking error:", bookingError);
 
       // Get the full booking record to create a payment record and trigger notifications
-      const { data: bookingData } = await supabase.from('bookings').select('*, profiles(*)').eq('booking_reference', bookingRef).single();
+      const { data: bookingData } = await supabase.from('bookings').select('*, profiles(*)').eq('booking_reference', pRef).single();
       
       if (bookingData) {
         const transRef = typeof reference === 'string' ? reference : (reference?.reference || reference?.transaction || 'UNKNOWN');
@@ -581,8 +579,8 @@ const BookingEngine = () => {
         triggerAutomationRules('booking_created', bookingData);
       }
 
-      toast.success(`Booking Confirmed! Ref: ${bookingRef}`, { id: toastId });
-      navigate(`/payment-success?type=booking&ref=${bookingRef}&amount=${payOnlineAmount}${autoCreatedPassword ? `&password=${autoCreatedPassword}` : ''}`);
+      toast.success(`Booking Confirmed! Ref: ${pRef}`, { id: toastId });
+      navigate(`/payment-success?type=booking&ref=${pRef}&amount=${payOnlineAmount}${autoCreatedPassword ? `&password=${autoCreatedPassword}` : ''}`);
     } catch (error) {
       console.error('Booking update error:', error);
       const msg = `Payment succeeded but finalizing had an issue: ${error?.message || JSON.stringify(error)}`;
