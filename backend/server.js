@@ -145,7 +145,7 @@ app.post('/api/email/send', async (req, res) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: 'Luxe Apartments <onboarding@resend.dev>',
+        from: 'Sparkles Apartments <onboarding@resend.dev>',
         to: [to],
         subject: subject,
         html: html

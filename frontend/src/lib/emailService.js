@@ -41,7 +41,7 @@ export const sendResendEmail = async ({ to, subject, html }) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          from: 'Luxe PMS Alerts <onboarding@resend.dev>',
+          from: 'Sparkles Apartments <onboarding@resend.dev>',
           to: [to],
           subject: subject,
           html: html

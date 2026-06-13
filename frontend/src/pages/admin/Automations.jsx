@@ -130,22 +130,68 @@ const AdminAutomations = () => {
     setIsSending(true);
     toast.loading("Sending via Resend API...", { id: 'send' });
 
+    // Fetch dynamic branding from system_settings
+    let contactLogo = 'https://images.unsplash.com/photo-1512918728675-ed5a9ecdebfd?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+    let contactAddress = 'Plot 572 Iduwa Ogenyi Street Mabushi, Off Ahmadu Bello Way, Abuja';
+    let contactPhone = '08033214684, 08062332639, 08171278657';
+    let contactEmail = 'info@sparklesapartments.ng';
+
+    try {
+      const { data: sysSettings } = await supabase
+        .from('system_settings')
+        .select('setting_key, setting_value')
+        .in('setting_key', ['contact_logo', 'contact_address', 'contact_phone', 'contact_email']);
+        
+      if (sysSettings) {
+        const settingsMap = sysSettings.reduce((acc, curr) => {
+          acc[curr.setting_key] = curr.setting_value;
+          return acc;
+        }, {});
+        if (settingsMap.contact_logo) contactLogo = settingsMap.contact_logo;
+        if (settingsMap.contact_address) contactAddress = settingsMap.contact_address;
+        if (settingsMap.contact_phone) contactPhone = settingsMap.contact_phone;
+        if (settingsMap.contact_email) contactEmail = settingsMap.contact_email;
+      }
+    } catch (e) {
+      console.warn("Failed to load branding settings for test notification:", e);
+    }
+
     // Parse template body with dummy data
     const parsedBody = template.body
       .replace(/{{guest_name}}/g, 'Test Guest')
-      .replace(/{{booking_ref}}/g, 'BKG-9999')
+      .replace(/{{booking_ref}}/g, 'WEB-999999')
       .replace(/{{check_in}}/g, new Date().toLocaleDateString())
-      .replace(/{{check_out}}/g, new Date().toLocaleDateString());
+      .replace(/{{check_out}}/g, new Date().toLocaleDateString())
+      .replace(/{{room_number}}/g, '101')
+      .replace(/{{room_details}}/g, 'Executive Suite')
+      .replace(/{{total_amount}}/g, '150,000')
+      .replace(/{{total_paid}}/g, '50,000')
+      .replace(/{{balance_due}}/g, '100,000')
+      .replace(/{{payment_status}}/g, 'Partial')
+      .replace(/{{payment_amount}}/g, '50,000')
+      .replace(/{{payment_ref}}/g, 'PAY-TEST-8888')
+      .replace(/{{payment_method}}/g, 'Paystack')
+      .replace(/{{payment_date}}/g, new Date().toLocaleDateString())
+      .replace(/{{invoice_number}}/g, 'INV-WEB-999999');
 
     const result = await sendResendEmail({
       to: testEmail,
-      subject: template.subject || 'Luxe PMS Notification',
+      subject: template.subject ? template.subject.replace(/{{booking_ref}}/g, 'WEB-999999').replace(/{{guest_name}}/g, 'Test Guest') : 'Sparkles Apartments Notification',
       html: `
-        <div style="font-family: sans-serif; padding: 20px; color: #333;">
-          <h2 style="color: #DF6853;">Luxe Apartments</h2>
-          <p>${parsedBody}</p>
-          <hr style="border-top: 1px solid #eee; margin-top: 30px;"/>
-          <p style="font-size: 12px; color: #999;">Automated message sent via Luxe PMS</p>
+        <div style="font-family: 'Outfit', sans-serif; padding: 30px; color: #1f2937; max-width: 600px; margin: auto; border: 1px solid #e5e7eb; border-radius: 16px; background-color: #ffffff;">
+          <div style="text-align: center; border-bottom: 1px solid #f3f4f6; padding-bottom: 20px; margin-bottom: 20px;">
+            ${contactLogo ? `<img src="${contactLogo}" alt="Sparkles Apartments" style="max-height: 50px; object-fit: contain; margin-bottom: 8px; border-radius: 4px;" />` : ''}
+            <h2 style="color: #000000; margin: 0; font-size: 24px; font-weight: bold; letter-spacing: 0.05em;">SPARKLES APARTMENTS</h2>
+            <span style="font-size: 11px; color: #9ca3af; text-transform: uppercase; tracking-wider: 0.1em;">Premium Luxury Shortlets</span>
+          </div>
+          <div style="font-size: 15px; line-height: 1.6; color: #4b5563; white-space: pre-wrap;">
+            ${parsedBody.replace(/\n/g, '<br/>')}
+          </div>
+          <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #f3f4f6; text-align: center; font-size: 12px; color: #9ca3af;">
+            <p style="margin: 0 0 5px 0;">This is an automated operational alert sent from the Sparkles PMS Hub.</p>
+            <p style="margin: 0;">${contactAddress}</p>
+            <p style="margin: 5px 0 0 0;">Phones: ${contactPhone} | Email: ${contactEmail}</p>
+          </div>
         </div>
       `
     });
