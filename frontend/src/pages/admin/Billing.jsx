@@ -19,9 +19,10 @@ const AdminBilling = () => {
   const [fetchError, setFetchError] = useState(null);
   const [printType, setPrintType] = useState('a4'); // a4 or thermal
   const [contactInfo, setContactInfo] = useState({
-    address: '123 Luxury Avenue, Victoria Island, Lagos, Nigeria',
-    phone: '+234 800 LUXE APT',
-    email: 'reservations@luxe.com'
+    address: 'Plot 572 Iduwa Ogenyi Street Mabushi, Off Ahmadu Bello Way, Abuja',
+    phone: '08033214684, 08062332639, 08171278657',
+    email: 'info@sparklesapartments.ng',
+    logo: ''
   });
 
   // Modals
@@ -63,7 +64,7 @@ const AdminBilling = () => {
       const { data, error } = await supabase
         .from('system_settings')
         .select('setting_key, setting_value')
-        .in('setting_key', ['contact_address', 'contact_phone', 'contact_email']);
+        .in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo']);
         
       if (!error && data) {
         const settingsMap = data.reduce((acc, curr) => {
@@ -74,7 +75,8 @@ const AdminBilling = () => {
         setContactInfo(prev => ({
           address: settingsMap.contact_address || prev.address,
           phone: settingsMap.contact_phone || prev.phone,
-          email: settingsMap.contact_email || prev.email
+          email: settingsMap.contact_email || prev.email,
+          logo: settingsMap.contact_logo || prev.logo
         }));
       }
     } catch (e) {
@@ -1179,8 +1181,14 @@ const AdminBilling = () => {
               </div>
               <div className="text-right">
                 <div className="flex flex-col justify-center items-end">
-                  <span className="text-[20px] font-sans font-extrabold text-white print:text-black leading-none tracking-wide">SPARKLES</span>
-                  <span className="text-[10px] font-sans text-brand-500 leading-tight tracking-[0.25em] mt-1">APARTMENTS</span>
+                  {contactInfo.logo ? (
+                    <img src={contactInfo.logo} alt="Sparkles Apartments Logo" className="max-h-12 object-contain print:max-h-16 mb-2" />
+                  ) : (
+                    <>
+                      <span className="text-[20px] font-sans font-extrabold text-white print:text-black leading-none tracking-wide">SPARKLES</span>
+                      <span className="text-[10px] font-sans text-brand-500 leading-tight tracking-[0.25em] mt-1">APARTMENTS</span>
+                    </>
+                  )}
                 </div>
                 <p className="text-sm text-gray-400 print:text-gray-500 mt-2">{contactInfo.address}</p>
                 <p className="text-sm text-gray-400 print:text-gray-500">{contactInfo.email}</p>

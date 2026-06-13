@@ -212,9 +212,10 @@ const BookingEngine = () => {
   const [confirmedBookingRef, setConfirmedBookingRef] = useState(null);
   const [autoCreatedPassword, setAutoCreatedPassword] = useState(null);
   const [contactInfo, setContactInfo] = useState({
-    address: '123 Luxury Avenue, Victoria Island, Lagos, Nigeria',
-    phone: '+234 800 LUXE APT',
-    email: 'reservations@luxe.com'
+    address: 'Plot 572 Iduwa Ogenyi Street Mabushi, Off Ahmadu Bello Way, Abuja',
+    phone: '08033214684, 08062332639, 08171278657',
+    email: 'info@sparklesapartments.ng',
+    logo: ''
   });
 
   const [bookingRules, setBookingRules] = useState({
@@ -233,7 +234,7 @@ const BookingEngine = () => {
         supabase.from('rate_plans').select('*').eq('is_active', true),
         supabase.from('coupons').select('*').eq('is_active', true),
         supabase.from('cms_pages').select('content').eq('slug', 'system_categories').maybeSingle(),
-        supabase.from('system_settings').select('setting_key, setting_value').in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'payment_rule', 'deposit_percentage', 'cancellation_policy', 'auto_confirmation', 'paystack_public'])
+        supabase.from('system_settings').select('setting_key, setting_value').in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo', 'payment_rule', 'deposit_percentage', 'cancellation_policy', 'auto_confirmation', 'paystack_public'])
       ]);
       if (servicesRes.data) {
         const standard = servicesRes.data.filter(s => 
@@ -263,7 +264,8 @@ const BookingEngine = () => {
         setContactInfo(prev => ({
           address: settingsMap.contact_address || prev.address,
           phone: settingsMap.contact_phone || prev.phone,
-          email: settingsMap.contact_email || prev.email
+          email: settingsMap.contact_email || prev.email,
+          logo: settingsMap.contact_logo || prev.logo
         }));
         setBookingRules({
           payment_rule: settingsMap.payment_rule || 'partial_deposit',
@@ -1083,6 +1085,9 @@ const BookingEngine = () => {
             <p className="text-gray-600 text-xs">Ref: {confirmedBookingRef || 'N/A'}</p>
           </div>
           <div className="text-right">
+            {contactInfo.logo && (
+              <img src={contactInfo.logo} alt="Sparkles Apartments Logo" className="max-h-12 object-contain ml-auto mb-2" />
+            )}
             <h2 className="text-lg font-black tracking-widest text-black">SPARKLES APARTMENTS</h2>
             <p className="text-xs text-gray-600">{contactInfo.address}</p>
             <p className="text-xs text-gray-600">{contactInfo.phone}</p>

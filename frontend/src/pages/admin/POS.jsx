@@ -19,9 +19,10 @@ const POS = () => {
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [contactInfo, setContactInfo] = useState({
-    address: '123 Luxury Avenue, Victoria Island, Lagos, Nigeria',
-    phone: '+234 800 LUXE APT',
-    email: 'reservations@luxe.com'
+    address: 'Plot 572 Iduwa Ogenyi Street Mabushi, Off Ahmadu Bello Way, Abuja',
+    phone: '08033214684, 08062332639, 08171278657',
+    email: 'info@sparklesapartments.ng',
+    logo: ''
   });
   
   // Cart & Catalog State
@@ -456,7 +457,7 @@ const POS = () => {
       const { data, error } = await supabase
         .from('system_settings')
         .select('setting_key, setting_value')
-        .in('setting_key', ['contact_address', 'contact_phone', 'contact_email']);
+        .in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo']);
         
       if (!error && data) {
         const settingsMap = data.reduce((acc, curr) => {
@@ -467,7 +468,8 @@ const POS = () => {
         setContactInfo(prev => ({
           address: settingsMap.contact_address || prev.address,
           phone: settingsMap.contact_phone || prev.phone,
-          email: settingsMap.contact_email || prev.email
+          email: settingsMap.contact_email || prev.email,
+          logo: settingsMap.contact_logo || prev.logo
         }));
       }
     } catch (e) {
@@ -483,7 +485,7 @@ const POS = () => {
         supabase
           .from('system_settings')
           .select('setting_key, setting_value')
-          .in('setting_key', ['contact_address', 'contact_phone', 'contact_email']),
+          .in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo']),
         supabase
           .from('services')
           .select('*')
@@ -508,7 +510,8 @@ const POS = () => {
       setContactInfo(prev => ({
         address: settingsMap.contact_address || prev.address,
         phone: settingsMap.contact_phone || prev.phone,
-        email: settingsMap.contact_email || prev.email
+        email: settingsMap.contact_email || prev.email,
+        logo: settingsMap.contact_logo || prev.logo
       }));
 
       setServices(servicesRes.data || []);
@@ -1467,7 +1470,10 @@ const POS = () => {
             <div ref={printRef} className="print-receipt bg-white text-black p-4 font-mono text-xs rounded-xl print:p-0 print:m-0 border border-gray-150 shadow-inner" style={{ backgroundColor: '#ffffff', color: '#000000' }}>
               
               {/* Receipt Header */}
-              <div className="text-center border-b border-dashed border-gray-400 pb-3 mb-3">
+              <div className="text-center border-b border-dashed border-gray-400 pb-3 mb-3 flex flex-col items-center">
+                {contactInfo.logo && (
+                  <img src={contactInfo.logo} alt="Sparkles Apartments Logo" className="max-h-8 object-contain mb-1.5" style={{ filter: 'grayscale(100%) contrast(150%)' }} />
+                )}
                 <h2 className="text-lg font-black tracking-wider uppercase m-0" style={{ color: '#000000' }}>SPARKLES APARTMENTS</h2>
                 <p className="text-[9px] text-gray-500 m-0.5">Luxury Suites & Premium Lounge</p>
                 <p className="text-[9px] text-gray-500 m-0">{contactInfo.address}</p>

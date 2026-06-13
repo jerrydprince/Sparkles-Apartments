@@ -34,10 +34,11 @@ const AdminAccounting = () => {
 
   // Dynamic Contact & White-label Info
   const [contactInfo, setContactInfo] = useState({
-    address: '123 Luxury Avenue, Victoria Island, Lagos, Nigeria',
-    phone: '+234 800 LUXE APT',
-    email: 'reservations@luxe.com',
-    companyName: 'Luxe Apartments'
+    address: 'Plot 572 Iduwa Ogenyi Street Mabushi, Off Ahmadu Bello Way, Abuja',
+    phone: '08033214684, 08062332639, 08171278657',
+    email: 'info@sparklesapartments.ng',
+    companyName: 'Sparkles Apartments',
+    logo: ''
   });
 
   // System Data
@@ -190,11 +191,11 @@ const AdminAccounting = () => {
       }
 
       // Check LocalStorage fallbacks or default hardcoded values
-      const contactAddress = settingsMap['contact_address'] || localStorage.getItem('contact_address') || '123 Luxury Avenue, Victoria Island, Lagos, Nigeria';
-      const contactPhone = settingsMap['contact_phone'] || localStorage.getItem('contact_phone') || '+234 800 LUXE APT';
-      const contactEmail = settingsMap['contact_email'] || localStorage.getItem('contact_email') || 'reservations@luxe.com';
+      const contactAddress = settingsMap['contact_address'] || localStorage.getItem('contact_address') || 'Plot 572 Iduwa Ogenyi Street Mabushi, Off Ahmadu Bello Way, Abuja';
+      const contactPhone = settingsMap['contact_phone'] || localStorage.getItem('contact_phone') || '08033214684, 08062332639, 08171278657';
+      const contactEmail = settingsMap['contact_email'] || localStorage.getItem('contact_email') || 'info@sparklesapartments.ng';
       const contactLogo = settingsMap['contact_logo'] || localStorage.getItem('contact_logo') || '';
-      const companyName = resolvedProperties[0]?.name || 'Luxe Apartments';
+      const companyName = resolvedProperties[0]?.name || 'Sparkles Apartments';
 
       setContactInfo({
         address: contactAddress,
@@ -1380,6 +1381,7 @@ const AdminAccounting = () => {
         </head>
         <body>
           <div class="header">
+            ${contactInfo.logo ? `<img src="${contactInfo.logo}" style="max-height: 50px; object-fit: contain; margin-bottom: 10px;" /><br/>` : ''}
             <h1>ACCOUNT STATEMENT</h1>
             <div style="font-size: 14px; color: #6b7280; margin-top: 5px;">Accounts Receivable Prepayment Wallet</div>
           </div>
@@ -1389,6 +1391,7 @@ const AdminAccounting = () => {
               <strong>Guest Details:</strong><br />
               Name: ${guest.guest_name}<br />
               Email: ${guest.guest_email || 'N/A'}<br />
+              Address: ${contactInfo.address}<br />
               Statement Compiled: ${format(new Date(), 'yyyy-MM-dd HH:mm:ss')}
             </div>
             <div style="text-align: right;">
@@ -1416,8 +1419,8 @@ const AdminAccounting = () => {
           </table>
           
           <div class="footer">
-            Thank you for choosing Luxe Apartments.<br />
-            For support or billing inquiries, please contact ${contactInfo.email || 'billing@luxe.com'}.
+            Thank you for choosing Sparkles Apartments.<br />
+            For support or billing inquiries, please contact ${contactInfo.email || 'info@sparklesapartments.ng'}.
           </div>
         </body>
       </html>

@@ -12,9 +12,10 @@ const MyBookings = () => {
   const [activeReceiptBooking, setActiveReceiptBooking] = useState(null);
   const [printType, setPrintType] = useState('receipt'); // 'receipt' or 'invoice'
   const [contactInfo, setContactInfo] = useState({
-    address: '123 Luxury Avenue, Victoria Island, Lagos, Nigeria',
-    phone: '+234 800 LUXE APT',
-    email: 'reservations@luxe.com'
+    address: 'Plot 572 Iduwa Ogenyi Street Mabushi, Off Ahmadu Bello Way, Abuja',
+    phone: '08033214684, 08062332639, 08171278657',
+    email: 'info@sparklesapartments.ng',
+    logo: ''
   });
 
   useEffect(() => {
@@ -40,7 +41,7 @@ const MyBookings = () => {
       const { data, error } = await supabase
         .from('system_settings')
         .select('setting_key, setting_value')
-        .in('setting_key', ['contact_address', 'contact_phone', 'contact_email']);
+        .in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo']);
         
       if (!error && data) {
         const settingsMap = data.reduce((acc, curr) => {
@@ -51,7 +52,8 @@ const MyBookings = () => {
         setContactInfo(prev => ({
           address: settingsMap.contact_address || prev.address,
           phone: settingsMap.contact_phone || prev.phone,
-          email: settingsMap.contact_email || prev.email
+          email: settingsMap.contact_email || prev.email,
+          logo: settingsMap.contact_logo || prev.logo
         }));
       }
     } catch (e) {
@@ -218,6 +220,9 @@ const MyBookings = () => {
               <p className="text-gray-600 text-xs">Ref: {activeReceiptBooking.booking_reference}</p>
             </div>
             <div className="text-right">
+              {contactInfo.logo && (
+                <img src={contactInfo.logo} alt="Sparkles Apartments Logo" className="max-h-12 object-contain ml-auto mb-2" />
+              )}
               <h2 className="text-lg font-black tracking-widest text-black">SPARKLES APARTMENTS</h2>
               <p className="text-xs text-gray-600">{contactInfo.address}</p>
               <p className="text-xs text-gray-600">{contactInfo.phone}</p>

@@ -37,6 +37,10 @@ const PaymentSuccess = () => {
   const [booking, setBooking] = useState(null);
   const [payment, setPayment] = useState(null);
   const [walletBalance, setWalletBalance] = useState(null);
+  const [contactInfo, setContactInfo] = useState({
+    address: 'Plot 572 Iduwa Ogenyi Street Mabushi, Off Ahmadu Bello Way, Abuja',
+    logo: ''
+  });
 
   useEffect(() => {
     fetchPaymentDetails();
@@ -45,6 +49,26 @@ const PaymentSuccess = () => {
   const fetchPaymentDetails = async () => {
     setLoading(true);
     try {
+      try {
+        const { data: settingsData } = await supabase
+          .from('system_settings')
+          .select('setting_key, setting_value')
+          .in('setting_key', ['contact_address', 'contact_logo']);
+
+        if (settingsData) {
+          const settingsMap = settingsData.reduce((acc, curr) => {
+            acc[curr.setting_key] = curr.setting_value;
+            return acc;
+          }, {});
+          setContactInfo(prev => ({
+            ...prev,
+            address: settingsMap.contact_address || prev.address,
+            logo: settingsMap.contact_logo || prev.logo
+          }));
+        }
+      } catch (settingsErr) {
+        console.warn("Failed to load contact settings in PaymentSuccess:", settingsErr);
+      }
       if (type === 'booking' && ref) {
         // Fetch booking details
         const { data: bookingData, error: bookingErr } = await supabase
@@ -176,11 +200,22 @@ const PaymentSuccess = () => {
           {/* Receipt Top Section */}
           <div className="p-6 md:p-8 bg-dark-900/60 border-b border-dark-700/60 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:bg-transparent">
             <div>
-              <div className="text-gold-500 font-black tracking-widest text-lg uppercase flex items-center gap-2">
-                <ShieldCheck size={20} />
-                Luxe Apartments
+              <div className="flex items-center gap-3">
+                {contactInfo.logo ? (
+                  <img src={contactInfo.logo} alt="Sparkles Apartments Logo" className="max-h-12 object-contain print:max-h-16" />
+                ) : (
+                  <div className="text-gold-500 font-black tracking-widest text-lg uppercase flex items-center gap-2">
+                    <ShieldCheck size={20} />
+                    <span>Sparkles Apartments</span>
+                  </div>
+                )}
               </div>
-              <p className="text-xs text-gray-500 mt-0.5">123 Luxury Avenue, Victoria Island, Lagos</p>
+              {contactInfo.logo && (
+                <div className="text-gold-500 font-black tracking-widest text-sm uppercase mt-1 print:text-black">
+                  Sparkles Apartments
+                </div>
+              )}
+              <p className="text-xs text-gray-500 mt-0.5 print:text-black">{contactInfo.address}</p>
             </div>
             <div className="text-right">
               <span className="text-xs text-gray-400 uppercase tracking-wider block font-bold">Receipt Log</span>
@@ -311,7 +346,7 @@ const PaymentSuccess = () => {
 
           {/* Receipt Footer for Print */}
           <div className="hidden print:block text-center text-[10px] text-gray-500 border-t border-dashed border-gray-700 pt-6 pb-2">
-            Thank you for choosing Luxe Apartments.<br />
+            Thank you for choosing Sparkles Apartments.<br />
             This is a computer-generated digital receipt. Secure payment verified via Paystack.
           </div>
 

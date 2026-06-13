@@ -25,11 +25,65 @@ const GuestFinancials = () => {
 
   const [bankDetails, setBankDetails] = useState({
     bankName: 'Access Bank Plc',
-    accountName: 'Luxe Elite Hotels Ltd',
+    accountName: 'Sparkles Apartments Ltd',
     accountNumber: '0098172635'
   });
 
+  const [contactInfo, setContactInfo] = useState({
+    address: 'Plot 572 Iduwa Ogenyi Street Mabushi, Off Ahmadu Bello Way, Abuja',
+    phone: '08033214684, 08062332639, 08171278657',
+    email: 'info@sparklesapartments.ng',
+    logo: ''
+  });
+
+  const fetchContactSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('setting_key, setting_value')
+        .in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo']);
+      if (!error && data) {
+        const settingsMap = data.reduce((acc, curr) => {
+          acc[curr.setting_key] = curr.setting_value;
+          return acc;
+        }, {});
+        setContactInfo(prev => ({
+          address: settingsMap.contact_address || prev.address,
+          phone: settingsMap.contact_phone || prev.phone,
+          email: settingsMap.contact_email || prev.email,
+          logo: settingsMap.contact_logo || prev.logo
+        }));
+      }
+    } catch (e) {
+      console.error("Failed to load contact settings:", e);
+    }
+  };
+
+  const fetchBankSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('setting_key, setting_value')
+        .in('setting_key', ['hotel_bank_name', 'hotel_account_name', 'hotel_account_number']);
+      if (!error && data) {
+        const settingsMap = data.reduce((acc, curr) => {
+          acc[curr.setting_key] = curr.setting_value;
+          return acc;
+        }, {});
+        setBankDetails({
+          bankName: settingsMap.hotel_bank_name || 'Access Bank Plc',
+          accountName: settingsMap.hotel_account_name || 'Sparkles Apartments Ltd',
+          accountNumber: settingsMap.hotel_account_number || '0098172635'
+        });
+      }
+    } catch (e) {
+      console.error("Failed to load bank settings:", e);
+    }
+  };
+
   useEffect(() => {
+    fetchContactSettings();
+    fetchBankSettings();
     if (user) {
       fetchGuestAndStatement();
 
@@ -523,6 +577,7 @@ const GuestFinancials = () => {
         </head>
         <body>
           <div class="header">
+            ${contactInfo.logo ? `<img src="${contactInfo.logo}" style="max-height: 50px; object-fit: contain; margin-bottom: 10px;" /><br/>` : ''}
             <h1>ACCOUNT STATEMENT</h1>
             <div style="font-size: 14px; color: #6b7280; margin-top: 5px;">Accounts Receivable Prepayment Wallet</div>
           </div>
@@ -532,6 +587,7 @@ const GuestFinancials = () => {
               <strong>Guest Details:</strong><br />
               Name: ${guestRecord.first_name} ${guestRecord.last_name}<br />
               Email: ${guestRecord.email || 'N/A'}<br />
+              Address: ${contactInfo.address}<br />
               Statement Compiled: ${new Date().toLocaleString()}
             </div>
             <div style="text-align: right;">
@@ -559,8 +615,8 @@ const GuestFinancials = () => {
           </table>
           
           <div class="footer">
-            Thank you for choosing Luxe Apartments.<br />
-            For support or billing inquiries, please contact support@luxe.com.
+            Thank you for choosing Sparkles Apartments.<br />
+            For support or billing inquiries, please contact ${contactInfo.email}.
           </div>
         </body>
       </html>

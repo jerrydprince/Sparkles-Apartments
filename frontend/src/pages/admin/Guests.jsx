@@ -112,12 +112,45 @@ const AdminGuests = () => {
     }
   };
 
+  const [contactInfo, setContactInfo] = useState({
+    address: 'Plot 572 Iduwa Ogenyi Street Mabushi, Off Ahmadu Bello Way, Abuja',
+    phone: '08033214684, 08062332639, 08171278657',
+    email: 'info@sparklesapartments.ng',
+    logo: ''
+  });
+
+  const fetchContactSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('setting_key, setting_value')
+        .in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo']);
+        
+      if (!error && data) {
+        const settingsMap = data.reduce((acc, curr) => {
+          acc[curr.setting_key] = curr.setting_value;
+          return acc;
+        }, {});
+        
+        setContactInfo(prev => ({
+          address: settingsMap.contact_address || prev.address,
+          phone: settingsMap.contact_phone || prev.phone,
+          email: settingsMap.contact_email || prev.email,
+          logo: settingsMap.contact_logo || prev.logo
+        }));
+      }
+    } catch (e) {
+      console.error("Failed to load contact settings:", e);
+    }
+  };
+
   useEffect(() => {
     fetchGuests();
     fetchGroupAccounts();
     fetchARAccounts();
     fetchGroupStatuses();
     fetchLoyaltySettings();
+    fetchContactSettings();
   }, []);
 
   const fetchGroupStatuses = async () => {
@@ -881,6 +914,7 @@ const AdminGuests = () => {
         </head>
         <body>
           <div class="header">
+            ${contactInfo.logo ? `<img src="${contactInfo.logo}" style="max-height: 50px; object-fit: contain; margin-bottom: 10px;" /><br/>` : ''}
             <h1>ACCOUNT STATEMENT</h1>
             <div style="font-size: 14px; color: #6b7280; margin-top: 5px;">Accounts Receivable Prepayment Wallet</div>
           </div>
@@ -890,6 +924,7 @@ const AdminGuests = () => {
               <strong>Guest Details:</strong><br />
               Name: ${guest.first_name} ${guest.last_name}<br />
               Email: ${guest.email || 'N/A'}<br />
+              Address: ${contactInfo.address}<br />
               Statement Compiled: ${new Date().toLocaleString()}
             </div>
             <div style="text-align: right;">
@@ -917,8 +952,8 @@ const AdminGuests = () => {
           </table>
           
           <div class="footer">
-            Thank you for choosing Luxe Apartments.<br />
-            For support or billing inquiries, please contact support@luxe.com.
+            Thank you for choosing Sparkles Apartments.<br />
+            For support or billing inquiries, please contact ${contactInfo.email}.
           </div>
         </body>
       </html>
