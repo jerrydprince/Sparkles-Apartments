@@ -9,6 +9,19 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+const safeFormatDate = (dateVal, formatStr = 'MMM dd, yyyy') => {
+  if (!dateVal) return 'N/A';
+  try {
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return 'N/A';
+    return format(d, formatStr);
+  } catch (e) {
+    console.error("Date formatting error:", e);
+    return 'N/A';
+  }
+};
+
+
 const PaymentSuccess = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -198,7 +211,7 @@ const PaymentSuccess = () => {
 
                 <span className="text-gray-400">Payment Date / Time</span>
                 <span className="text-white text-right font-mono">
-                  {format(new Date(receiptDate), 'MMM dd, yyyy HH:mm:ss')}
+                  {safeFormatDate(receiptDate, 'MMM dd, yyyy HH:mm:ss')}
                 </span>
 
                 <span className="text-gray-400">Payment ID</span>
@@ -241,14 +254,14 @@ const PaymentSuccess = () => {
                       <span className="text-gray-500 block">Check-in</span>
                       <span className="font-bold text-white flex items-center gap-1.5 mt-0.5">
                         <Calendar size={12} className="text-gold-500" />
-                        {format(new Date(booking.check_in_date), 'MMM dd, yyyy')}
+                        {safeFormatDate(booking.check_in_date, 'MMM dd, yyyy')}
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-500 block">Check-out</span>
                       <span className="font-bold text-white flex items-center gap-1.5 mt-0.5">
                         <Calendar size={12} className="text-gold-500" />
-                        {format(new Date(booking.check_out_date), 'MMM dd, yyyy')}
+                        {safeFormatDate(booking.check_out_date, 'MMM dd, yyyy')}
                       </span>
                     </div>
                   </div>
