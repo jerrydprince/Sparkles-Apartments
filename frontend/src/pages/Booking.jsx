@@ -574,6 +574,13 @@ const BookingEngine = () => {
         
         // Dispatch automation alerts in real time
         triggerAutomationRules('booking_created', bookingData);
+        triggerAutomationRules('payment_received', {
+          ...bookingData,
+          payment_amount: payOnlineAmount,
+          payment_method: 'paystack',
+          payment_ref: transRef
+        });
+        triggerAutomationRules('invoice_issued', bookingData);
       }
 
       toast.success(`Booking Confirmed! Ref: ${pRef}`, { id: toastId });
@@ -709,6 +716,13 @@ const BookingEngine = () => {
             .single();
           if (updatedBooking) {
             triggerAutomationRules('booking_created', updatedBooking);
+            triggerAutomationRules('payment_received', {
+              ...updatedBooking,
+              payment_amount: amountPaidNgn,
+              payment_method: 'paystack',
+              payment_ref: refCode
+            });
+            triggerAutomationRules('invoice_issued', updatedBooking);
           }
         } catch (autoErr) {
           console.warn("Failed to dispatch automation logs on redirect callback:", autoErr);

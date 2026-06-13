@@ -5,6 +5,7 @@ import { FileText, CreditCard, Download, Search, CheckCircle, RefreshCcw, Dollar
 import { format } from 'date-fns';
 import { useAuth } from '../../context/AuthContext';
 import Accounting from './Accounting';
+import { triggerAutomationRules } from '../../lib/emailService';
 
 const AdminBilling = () => {
   const { hasAccess } = useAuth();
@@ -394,6 +395,28 @@ const AdminBilling = () => {
       }
       
       toast.success('Payment successfully confirmed by finance!', { id: toastId });
+
+      // Trigger confirmation, receipt, and invoice emails
+      try {
+        const { data: bData } = await supabase
+          .from('bookings')
+          .select('*, profiles(*), rooms(*)')
+          .eq('id', bookingId)
+          .single();
+        if (bData) {
+          triggerAutomationRules('booking_confirmed', bData);
+          triggerAutomationRules('payment_received', {
+            ...bData,
+            payment_amount: bData.amount_paid_ngn || bData.total_amount_ngn || '0.00',
+            payment_method: bData.payment_method || 'Bank Transfer',
+            payment_ref: bData.payment_reference || 'N/A'
+          });
+          triggerAutomationRules('invoice_issued', bData);
+        }
+      } catch (autoErr) {
+        console.warn("Automations triggered after confirming payment failed:", autoErr);
+      }
+
       fetchInvoices();
     } catch (err) {
       console.error(err);
@@ -441,6 +464,21 @@ const AdminBilling = () => {
       }
 
       toast.success('Booking and invoice successfully cancelled due to failed payment!', { id: toastId });
+
+      // Trigger cancellation automation
+      try {
+        const { data: bData } = await supabase
+          .from('bookings')
+          .select('*, profiles(*), rooms(*)')
+          .eq('id', bookingId)
+          .single();
+        if (bData) {
+          triggerAutomationRules('booking_cancelled', bData);
+        }
+      } catch (autoErr) {
+        console.warn("Cancellation automation trigger failed in handleCancelBookingPayment:", autoErr);
+      }
+
       fetchInvoices();
     } catch (err) {
       console.error(err);
@@ -562,6 +600,32 @@ const AdminBilling = () => {
         }
 
         toast.success(`Payment of ₦${amount.toLocaleString()} processed via ${paymentMethod.toUpperCase()}`);
+
+        // Trigger alerts
+        try {
+          const { data: bData } = await supabase
+            .from('bookings')
+            .select('*, profiles(*), rooms(*)')
+            .eq('id', activePaymentModal.booking_id)
+            .single();
+          if (bData) {
+            triggerAutomationRules('payment_received', {
+              ...bData,
+              payment_amount: amount,
+              payment_method: paymentMethod,
+              payment_ref: `MOCK-${paymentMethod.toUpperCase()}-${Date.now()}`
+            });
+            // If booking was pending and now confirmed, trigger booking_confirmed
+            if (activePaymentModal.bookings?.status === 'pending') {
+              triggerAutomationRules('booking_confirmed', bData);
+            }
+            // Trigger invoice email
+            triggerAutomationRules('invoice_issued', bData);
+          }
+        } catch (autoErr) {
+          console.warn("Automation alerts processing failed in handleProcessPayment:", autoErr);
+        }
+
         setActivePaymentModal(null);
         setPaymentAmount('');
         fetchInvoices();

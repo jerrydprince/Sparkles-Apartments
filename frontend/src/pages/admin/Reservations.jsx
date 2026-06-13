@@ -5,6 +5,7 @@ import { format, addDays, differenceInDays } from 'date-fns';
 import toast from 'react-hot-toast';
 import ManualBookingModal from '../../components/admin/ManualBookingModal';
 import RoomTransferModal from '../../components/admin/RoomTransferModal';
+import { triggerAutomationRules } from '../../lib/emailService';
 
 const AdminReservations = ({ onUpdate }) => {
   const [reservations, setReservations] = useState([]);
@@ -297,6 +298,24 @@ const AdminReservations = ({ onUpdate }) => {
         }
       }
 
+      // Trigger alerts
+      try {
+        const { data: fullBooking } = await supabase
+          .from('bookings')
+          .select('*, profiles(*), rooms(*)')
+          .eq('id', currentBooking.id)
+          .single();
+        if (fullBooking) {
+          if (editBookingForm.status === 'confirmed' && currentBooking?.status !== 'confirmed') {
+            triggerAutomationRules('booking_confirmed', fullBooking);
+          } else if (editBookingForm.status === 'cancelled' && currentBooking?.status !== 'cancelled') {
+            triggerAutomationRules('booking_cancelled', fullBooking);
+          }
+        }
+      } catch (autoErr) {
+        console.warn("Automation trigger failed in handleUpdate:", autoErr);
+      }
+
       // Update booking services to 'confirmed' if booking is confirmed
       if (editBookingForm.status === 'confirmed' || editBookingForm.status === 'checked_in') {
          await supabase.from('booking_services').update({ status: 'confirmed' }).eq('booking_id', currentBooking.id);
@@ -319,7 +338,8 @@ const AdminReservations = ({ onUpdate }) => {
     }
   };
 
-  const handleCancelBooking = async (id) => {
+  const handleCancelBooking = async (bookingOrId) => {
+    const id = typeof bookingOrId === 'object' ? bookingOrId.id : bookingOrId;
     if (!window.confirm("Are you sure you want to cancel this booking?")) return;
     
     // 1. Soft-update status to cancelled
@@ -335,6 +355,20 @@ const AdminReservations = ({ onUpdate }) => {
       await supabase.from('payments').update({ status: 'cancelled' }).eq('booking_id', id);
       await supabase.from('booking_services').update({ status: 'cancelled' }).eq('booking_id', id);
       toast.success('Booking cancelled and billing records updated successfully');
+
+      // Trigger automation rule
+      if (bookingOrId && typeof bookingOrId === 'object') {
+        triggerAutomationRules('booking_cancelled', bookingOrId);
+      } else {
+        const { data: fullBooking } = await supabase
+          .from('bookings')
+          .select('*, profiles(*), rooms(*)')
+          .eq('id', id)
+          .single();
+        if (fullBooking) {
+          triggerAutomationRules('booking_cancelled', fullBooking);
+        }
+      }
     } catch (dbErr) {
       console.warn("Direct billing status update failed:", dbErr);
     }
@@ -762,7 +796,7 @@ const AdminReservations = ({ onUpdate }) => {
                       )}
 
                       {['pending', 'confirmed'].includes(res.status) ? (
-                        <button onClick={() => handleCancelBooking(res.id)} className="hover:text-red-500 transition-colors" title="Cancel Booking"><XCircle size={18}/></button>
+                        <button onClick={() => handleCancelBooking(res)} className="hover:text-red-500 transition-colors" title="Cancel Booking"><XCircle size={18}/></button>
                       ) : (
                         <button disabled className="text-gray-600 cursor-not-allowed" title="Cancellation disabled (Finalized stay)"><XCircle size={18}/></button>
                       )}

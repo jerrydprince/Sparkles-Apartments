@@ -79,19 +79,36 @@ export const triggerAutomationRules = async (triggerEvent, bookingData) => {
   try {
     console.log(`[Automation Engine] Triggered event: "${triggerEvent}"`);
 
-    // 1. Check if Notification Engine is enabled globally
+    // 1. Check if Notification Engine is enabled globally & load contact info
     const { data: sysSettings } = await supabase
       .from('system_settings')
-      .select('*')
-      .eq('setting_key', 'notification_engine_active');
+      .select('setting_key, setting_value')
+      .in('setting_key', [
+        'notification_engine_active', 
+        'contact_logo', 
+        'contact_address', 
+        'contact_phone', 
+        'contact_email'
+      ]);
       
-    const activeSetting = sysSettings?.find(s => s.setting_key === 'notification_engine_active');
-    const isEngineActive = activeSetting ? (activeSetting.setting_value === 'true' || activeSetting.setting_value === true) : true;
+    const settingsMap = sysSettings?.reduce((acc, curr) => {
+      acc[curr.setting_key] = curr.setting_value;
+      return acc;
+    }, {}) || {};
+    
+    const isEngineActive = settingsMap.notification_engine_active === 'true' || 
+                           settingsMap.notification_engine_active === true || 
+                           settingsMap.notification_engine_active === undefined;
     
     if (!isEngineActive) {
       console.log(`[Automation Engine] Engine is toggled offline in System Control.`);
       return { success: false, reason: 'Notification engine inactive' };
     }
+
+    const contactLogo = settingsMap.contact_logo || 'https://images.unsplash.com/photo-1512918728675-ed5a9ecdebfd?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+    const contactAddress = settingsMap.contact_address || 'Plot 572 Iduwa Ogenyi Street Mabushi, Off Ahmadu Bello Way, Abuja';
+    const contactPhone = settingsMap.contact_phone || '08033214684, 08062332639, 08171278657';
+    const contactEmail = settingsMap.contact_email || 'info@sparklesapartments.ng';
 
     // 2. Query automation rules for trigger event
     const { data: rules, error: rulesErr } = await supabase
@@ -137,6 +154,22 @@ export const triggerAutomationRules = async (triggerEvent, bookingData) => {
         continue;
       }
 
+      // Additional variables
+      const roomNum = bookingData.room_number || (bookingData.rooms && bookingData.rooms.room_number) || 'N/A';
+      const roomDetails = bookingData.room_details || (bookingData.rooms && bookingData.rooms.name) || 'Premium Suite';
+
+      const totalAmount = bookingData.total_amount || bookingData.total_amount_ngn || bookingData.total_price || '0.00';
+      const totalPaid = bookingData.total_paid || bookingData.amount_paid || bookingData.amount_paid_ngn || '0.00';
+      const balanceDue = bookingData.balance_due !== undefined ? bookingData.balance_due : (Number(totalAmount) - Number(totalPaid)).toFixed(2);
+      const paymentStatus = bookingData.payment_status || 'Pending';
+
+      const paymentAmount = bookingData.payment_amount || bookingData.amount || '0.00';
+      const paymentRef = bookingData.payment_ref || bookingData.payment_reference || 'N/A';
+      const paymentMethod = bookingData.payment_method || 'N/A';
+      const paymentDate = bookingData.payment_date || new Date().toLocaleDateString();
+
+      const invoiceNum = bookingData.invoice_number || ('INV-' + bookingRef);
+
       // Variable interpolation
       const formatString = (str) => {
         if (!str) return '';
@@ -144,10 +177,21 @@ export const triggerAutomationRules = async (triggerEvent, bookingData) => {
           .replace(/{{guest_name}}/g, guestName)
           .replace(/{{booking_ref}}/g, bookingRef)
           .replace(/{{check_in}}/g, checkIn)
-          .replace(/{{check_out}}/g, checkOut);
+          .replace(/{{check_out}}/g, checkOut)
+          .replace(/{{room_number}}/g, roomNum)
+          .replace(/{{room_details}}/g, roomDetails)
+          .replace(/{{total_amount}}/g, Number(totalAmount).toLocaleString())
+          .replace(/{{total_paid}}/g, Number(totalPaid).toLocaleString())
+          .replace(/{{balance_due}}/g, Number(balanceDue).toLocaleString())
+          .replace(/{{payment_status}}/g, paymentStatus)
+          .replace(/{{payment_amount}}/g, Number(paymentAmount).toLocaleString())
+          .replace(/{{payment_ref}}/g, paymentRef)
+          .replace(/{{payment_method}}/g, paymentMethod.toUpperCase())
+          .replace(/{{payment_date}}/g, paymentDate)
+          .replace(/{{invoice_number}}/g, invoiceNum);
       };
 
-      const parsedSubject = formatString(template.subject || 'Luxe Apartments Update');
+      const parsedSubject = formatString(template.subject || 'Sparkles Apartments Update');
       const parsedBody = formatString(template.body || '');
 
       let sentStatus = 'failed';
@@ -161,15 +205,17 @@ export const triggerAutomationRules = async (triggerEvent, bookingData) => {
           html: `
             <div style="font-family: 'Outfit', sans-serif; padding: 30px; color: #1f2937; max-width: 600px; margin: auto; border: 1px solid #e5e7eb; border-radius: 16px; background-color: #ffffff;">
               <div style="text-align: center; border-bottom: 1px solid #f3f4f6; padding-bottom: 20px; margin-bottom: 20px;">
-                <h2 style="color: #d97706; margin: 0; font-size: 24px; font-weight: bold; letter-spacing: 0.05em;">LUXE APARTMENTS</h2>
-                <span style="font-size: 11px; color: #9ca3af; text-transform: uppercase; tracking-wider: 0.1em;">Premium Stay Experience</span>
+                ${contactLogo ? `<img src="${contactLogo}" alt="Sparkles Apartments" style="max-height: 50px; object-fit: contain; margin-bottom: 8px; border-radius: 4px;" />` : ''}
+                <h2 style="color: #000000; margin: 0; font-size: 24px; font-weight: bold; letter-spacing: 0.05em;">SPARKLES APARTMENTS</h2>
+                <span style="font-size: 11px; color: #9ca3af; text-transform: uppercase; tracking-wider: 0.1em;">Premium Luxury Shortlets</span>
               </div>
               <div style="font-size: 15px; line-height: 1.6; color: #4b5563;">
                 ${parsedBody.replace(/\n/g, '<br/>')}
               </div>
               <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #f3f4f6; text-align: center; font-size: 12px; color: #9ca3af;">
-                <p style="margin: 0 0 5px 0;">This is an automated operational alert sent from the Luxe PMS Hub.</p>
-                <p style="margin: 0;">Plot 572 Mabushi, Off Ahmadu Bello Way, Abuja, FCT, Nigeria</p>
+                <p style="margin: 0 0 5px 0;">This is an automated operational alert sent from the Sparkles PMS Hub.</p>
+                <p style="margin: 0;">${contactAddress}</p>
+                <p style="margin: 5px 0 0 0;">Phones: ${contactPhone} | Email: ${contactEmail}</p>
               </div>
             </div>
           `

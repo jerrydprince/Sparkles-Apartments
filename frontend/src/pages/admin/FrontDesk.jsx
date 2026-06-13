@@ -1248,6 +1248,20 @@ const AdminFrontDesk = () => {
       await supabase.from('rooms').update({ status: 'occupied' }).eq('id', activeCheckIn.room_id);
       
       toast.success('Check-in completed successfully');
+
+      // Trigger check-in automation
+      try {
+        const { data: fullBooking } = await supabase
+          .from('bookings')
+          .select('*, profiles(*), rooms(*)')
+          .eq('id', activeCheckIn.id)
+          .single();
+        if (fullBooking) {
+          triggerAutomationRules('check_in', fullBooking);
+        }
+      } catch (autoErr) {
+        console.warn("Check-in automation trigger failed:", autoErr);
+      }
       
       // Reset
       setActiveCheckIn(null);
@@ -1267,6 +1281,21 @@ const AdminFrontDesk = () => {
       const { error } = await supabase.from('bookings').update({ status: 'cancelled' }).eq('id', id);
       if (error) throw error;
       toast.success('Booking cancelled successfully');
+
+      // Trigger cancellation automation
+      try {
+        const { data: fullBooking } = await supabase
+          .from('bookings')
+          .select('*, profiles(*), rooms(*)')
+          .eq('id', id)
+          .single();
+        if (fullBooking) {
+          triggerAutomationRules('booking_cancelled', fullBooking);
+        }
+      } catch (autoErr) {
+        console.warn("Cancellation automation trigger failed:", autoErr);
+      }
+
       fetchFrontDeskData(false);
     } catch (err) {
       toast.error('Failed to cancel booking: ' + err.message);
