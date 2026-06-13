@@ -279,14 +279,7 @@ const BookingEngine = () => {
 
   const fetchAvailableRooms = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('rooms').select('id, room_number, name, type, capacity, size_sqm, base_price_ngn, image_url, status, amenities, min_stay_days, max_stay_days, allowed_check_in_days, allowed_check_out_days');
-    const { data: rules } = await supabase.from('pricing_rules').select('*').eq('is_active', true);
-    
-    if (rules) setPricingRules(rules);
-
-    if (error) {
-      toast.error('Failed to fetch rooms');
-    } else {
+    try {
       const checkInDay = dateRange[0].startDate.getDay();
       const checkOutDay = dateRange[0].endDate.getDay();
       const totalNights = differenceInDays(dateRange[0].endDate, dateRange[0].startDate) || 1;
@@ -297,31 +290,37 @@ const BookingEngine = () => {
         : dateRange[0].endDate;
       const checkOutDateStr = format(actualEndDate, 'yyyy-MM-dd');
 
-      const { data: overlappingBookings, error: rpcError } = await supabase.rpc('get_booked_room_ids', {
-        req_start_date: checkInDateStr,
-        req_end_date: checkOutDateStr
-      });
+      // Execute all queries in parallel to drastically improve loading speed
+      const [roomsRes, rulesRes, overlappingRes, housekeepingRes] = await Promise.all([
+        supabase.from('rooms').select('id, room_number, name, type, capacity, size_sqm, base_price_ngn, image_url, status, amenities, min_stay_days, max_stay_days, allowed_check_in_days, allowed_check_out_days'),
+        supabase.from('pricing_rules').select('*').eq('is_active', true),
+        supabase.rpc('get_booked_room_ids', {
+          req_start_date: checkInDateStr,
+          req_end_date: checkOutDateStr
+        }),
+        supabase.from('housekeeping_tasks').select('room_id, status, assigned_date').order('assigned_date', { ascending: false })
+      ]);
 
-      if (rpcError) throw rpcError;
+      if (roomsRes.error) throw roomsRes.error;
+      if (overlappingRes.error) throw overlappingRes.error;
 
-      // Fetch housekeeping tasks to verify cleanliness status
-      const { data: housekeepingTasks } = await supabase
-        .from('housekeeping_tasks')
-        .select('room_id, status, assigned_date')
-        .order('assigned_date', { ascending: false });
+      const roomsData = roomsRes.data || [];
+      const rules = rulesRes.data || [];
+      const overlappingBookings = overlappingRes.data || [];
+      const housekeepingTasks = housekeepingRes.data || [];
+
+      if (rules) setPricingRules(rules);
 
       const latestTaskByRoom = {};
-      if (housekeepingTasks) {
-        housekeepingTasks.forEach(task => {
-          if (!latestTaskByRoom[task.room_id]) {
-            latestTaskByRoom[task.room_id] = task.status;
-          }
-        });
-      }
+      housekeepingTasks.forEach(task => {
+        if (!latestTaskByRoom[task.room_id]) {
+          latestTaskByRoom[task.room_id] = task.status;
+        }
+      });
 
-      const bookedRoomIds = new Set((overlappingBookings || []).map(b => typeof b === 'string' ? b : (b.booked_room_id || b.room_id || b.id || Object.values(b)[0])));
+      const bookedRoomIds = new Set(overlappingBookings.map(b => typeof b === 'string' ? b : (b.booked_room_id || b.room_id || b.id || Object.values(b)[0])));
 
-      const filteredRooms = data.map(room => {
+      const filteredRooms = roomsData.map(room => {
         const meetsCapacity = room.capacity >= (guests.adults + guests.children);
         const meetsMinStay = totalNights >= (room.min_stay_days || 1);
         const meetsMaxStay = totalNights <= (room.max_stay_days || 30);
@@ -341,8 +340,12 @@ const BookingEngine = () => {
       
       setAvailableRooms(filteredRooms);
       setStep(2);
+    } catch (err) {
+      console.error("Failed to fetch available rooms:", err);
+      toast.error('Failed to fetch rooms');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
   
   const totalNights = differenceInDays(dateRange[0].endDate, dateRange[0].startDate) || 1;
