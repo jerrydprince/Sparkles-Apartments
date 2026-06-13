@@ -10,6 +10,8 @@ import { useAuth } from '../../context/AuthContext';
 import AdminReservations from './Reservations';
 import LostFound from './LostFound';
 import { triggerAutomationRules } from '../../lib/emailService';
+import AdminBilling from './Billing';
+
 
 const MENU_SEGMENTS = ['Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Drinks', 'Appetizers'];
 
@@ -2315,6 +2317,11 @@ const AdminFrontDesk = () => {
             <SearchCheck size={18} /> Lost & Found Items
           </button>
         )}
+        {hasAccess('Finance & Billing') && (
+          <button onClick={() => setActiveTab('billing')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'billing' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
+            <FileText size={18} /> Folios & Billing
+          </button>
+        )}
       </div>
 
       {activeTab === 'overview' && (
@@ -3547,6 +3554,12 @@ const AdminFrontDesk = () => {
       {activeTab === 'lostfound' && hasAccess('Lost & Found') && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           <LostFound />
+        </div>
+      )}
+
+      {activeTab === 'billing' && hasAccess('Finance & Billing') && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <AdminBilling />
         </div>
       )}
 
