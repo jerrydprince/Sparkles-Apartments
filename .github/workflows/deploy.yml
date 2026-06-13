@@ -32,12 +32,12 @@ jobs:
       - name: Build App
         run: npm run build
 
-      - name: Deploy to cPanel Subfolder
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      - name: Deploy to cPanel Subfolder via SFTP
+        uses: Creepios/sftp-action@v1
         with:
-          server: ${{ secrets.FTP_SERVER }}
+          host: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ secrets.FTP_PORT }}
-          local-dir: ./frontend/dist/
-          server-dir: /public_html/gittest.sparklesapartments.ng/
+          port: 22
+          localPath: './frontend/dist'
+          remotePath: '/home/sparkle7/public_html/gittest.sparklesapartments.ng'
