@@ -33,7 +33,7 @@ jobs:
         run: npm run build
 
       - name: Deploy to cPanel Subfolder via SFTP
-        uses: Creepios/sftp-action@v1
+        uses: Creepios/sftp-action@v1.0.5
         with:
           host: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
