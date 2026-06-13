@@ -592,6 +592,7 @@ const BookingEngine = () => {
 
   const onClose = () => {
     toast.error('Payment cancelled.');
+    setIsProcessing(false);
   };
 
   const initializePayment = usePaystackPayment(paystackConfig);
