@@ -525,7 +525,7 @@ const BookingEngine = () => {
   const pendingBookingRef = useRef(null);
   const [bookingErrorMsg, setBookingErrorMsg] = useState(null);
 
-  const onSuccess = async (reference) => {
+  const handleBookingPaymentSuccess = async (reference) => {
     setIsProcessing(true);
     setBookingErrorMsg(null);
     const toastId = toast.loading('Finalizing your payment...');
@@ -585,6 +585,10 @@ const BookingEngine = () => {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const onSuccess = (reference) => {
+    handleBookingPaymentSuccess(reference);
   };
 
   const onClose = () => {

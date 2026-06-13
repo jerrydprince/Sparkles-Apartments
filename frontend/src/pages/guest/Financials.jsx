@@ -386,7 +386,7 @@ const GuestFinancials = () => {
     return insertedPayment;
   };
 
-  const onSuccess = async (reference) => {
+  const handleWalletPaymentSuccess = async (reference) => {
     setIsProcessingAddFunds(true);
     const amount = Number(addFundsAmount);
     const toastId = toast.loading(`Completing payment and updating wallet...`);
@@ -418,6 +418,10 @@ const GuestFinancials = () => {
     } finally {
       setIsProcessingAddFunds(false);
     }
+  };
+
+  const onSuccess = (reference) => {
+    handleWalletPaymentSuccess(reference);
   };
 
   const onClose = () => {
