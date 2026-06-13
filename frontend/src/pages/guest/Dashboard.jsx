@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CalendarDays, Key, FileText, MapPin, Wallet, ArrowRight, Package, Clock, ShoppingBag } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { format } from 'date-fns';
@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 
 const GuestDashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [bookings, setBookings] = useState([]);
   const [crmGuest, setCrmGuest] = useState(null);
   const [serviceRequests, setServiceRequests] = useState([]);
@@ -195,7 +196,9 @@ const GuestDashboard = () => {
 
       toast.success('Service request paid successfully via Paystack!', { id: toastId });
       setSelectedPaymentRequest(null);
-      fetchGuestData(); // Refresh dashboard!
+      
+      const paymentIdQuery = insertedPayment ? `&payment_id=${insertedPayment.id}` : '';
+      navigate(`/payment-success?type=service${paymentIdQuery}&amount=${amount}`);
     } catch (err) {
       toast.error('Payment processing failed', { id: toastId });
       console.error(err);

@@ -77,6 +77,19 @@ const PaymentSuccess = () => {
             setWalletBalance(guestData.wallet_balance);
           }
         }
+      } else if (type === 'service') {
+        // Fetch payment details
+        if (paymentId) {
+          const { data: payData } = await supabase
+            .from('payments')
+            .select('*, bookings(*)')
+            .eq('id', paymentId)
+            .maybeSingle();
+          setPayment(payData);
+          if (payData && payData.bookings) {
+            setBooking(payData.bookings);
+          }
+        }
       }
     } catch (err) {
       console.error("Error fetching success page details:", err);
@@ -262,6 +275,25 @@ const PaymentSuccess = () => {
               </div>
             )}
 
+            {/* Service Details Section (Render if type service) */}
+            {type === 'service' && payment && (
+              <div className="space-y-3 pt-2">
+                <h3 className="text-xs font-black uppercase text-gray-500 tracking-wider">Service Request Details</h3>
+                <div className="bg-dark-900/30 p-4 border border-dark-700/40 rounded-2xl text-xs space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-400">Description</span>
+                    <span className="font-bold text-white text-right">{payment.notes || 'Additional Service Payment'}</span>
+                  </div>
+                  {booking && (
+                    <div className="flex justify-between items-center border-t border-dark-700/30 pt-2.5">
+                      <span className="text-gray-400">Linked Booking Reference</span>
+                      <span className="font-bold text-white font-mono tracking-wider">{booking.booking_reference}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
           </div>
 
           {/* Receipt Footer for Print */}
@@ -298,6 +330,14 @@ const PaymentSuccess = () => {
                 Book Another Room
               </button>
             </>
+          ) : type === 'service' ? (
+            <button 
+              onClick={() => navigate('/guest/services')} 
+              className="w-full sm:w-auto border border-dark-600 bg-dark-800 hover:bg-dark-700 text-white font-semibold py-3 px-6 text-sm rounded-xl transition-all flex items-center justify-center gap-1.5"
+            >
+              <span>Return to Services</span>
+              <ArrowRight size={14} />
+            </button>
           ) : (
             <button 
               onClick={() => navigate('/guest/financials')} 
