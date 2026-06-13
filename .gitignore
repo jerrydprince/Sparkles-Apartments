@@ -2,8 +2,6 @@
 node_modules/
 
 # Production builds
-dist/
-dist.zip
 build/
 
 # Environment files (local / secrets)
