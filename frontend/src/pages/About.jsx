@@ -27,7 +27,7 @@ const About = () => {
   };
 
   return (
-    <div className="pt-20 min-h-screen bg-dark-900 overflow-hidden">
+    <div className="min-h-screen bg-dark-900 overflow-hidden">
       
       {/* Hero Section */}
       <section className="relative h-[60vh] flex items-center justify-center">
