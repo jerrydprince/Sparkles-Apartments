@@ -7,17 +7,17 @@ import { getCachedData, setCachedData } from '../utils/cache';
 
 const defaultHeroSlides = [
   {
-    image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80',
+    image: '',
     title: 'Experience True Luxury',
     subtitle: 'Elevate your stay in the heart of the city with our premium shortlets.'
   },
   {
-    image: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=2000&q=80',
+    image: '',
     title: 'Designed for Comfort',
     subtitle: 'Every detail meticulously crafted for your ultimate relaxation.'
   },
   {
-    image: 'https://images.unsplash.com/photo-1600607686527-6fb886090705?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80',
+    image: '',
     title: 'Your Private Sanctuary',
     subtitle: 'Exclusive amenities and serene environments await.'
   }
@@ -154,7 +154,7 @@ const Home = () => {
   return (
     <div className="w-full">
       {/* Hero Section */}
-      <section className="relative h-screen flex items-center justify-center overflow-hidden">
+      <section className="relative h-screen flex items-center justify-center overflow-hidden bg-dark-950">
         <AnimatePresence mode="wait">
           <motion.div
             key={currentSlide}
@@ -163,13 +163,24 @@ const Home = () => {
             exit={{ opacity: 0 }}
             transition={{ duration: 1 }}
             className="absolute inset-0 z-0"
+            style={{
+              background: 'radial-gradient(circle at center, #1e1e24 0%, #09090b 100%)'
+            }}
           >
-            <div className="absolute inset-0 bg-black/40 z-10" />
-            <img 
-              src={heroSlides[currentSlide].image} 
-              alt={heroSlides[currentSlide].title}
-              className="w-full h-full object-cover"
-            />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/70 z-10" />
+            {heroSlides[currentSlide].image ? (
+              <img 
+                src={heroSlides[currentSlide].image} 
+                alt={heroSlides[currentSlide].title}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center">
+                <div className="text-gold-500/10 font-serif text-6xl md:text-8xl lg:text-9xl select-none tracking-widest font-black mb-4 animate-pulse">
+                  SPARKLES
+                </div>
+              </div>
+            )}
           </motion.div>
         </AnimatePresence>
 
@@ -178,7 +189,7 @@ const Home = () => {
             initial={{ y: 30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.2, duration: 0.8 }}
-            className="text-5xl md:text-7xl lg:text-8xl font-bold text-white mb-6"
+            className="text-5xl md:text-7xl lg:text-8xl font-bold text-white mb-6 drop-shadow-[0_4px_20px_rgba(0,0,0,0.95)] tracking-tight"
           >
             {heroSlides[currentSlide].title}
           </motion.h1>
@@ -186,7 +197,7 @@ const Home = () => {
             initial={{ y: 30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.4, duration: 0.8 }}
-            className="text-lg md:text-2xl text-gray-200 mb-10 max-w-2xl mx-auto font-light"
+            className="text-lg md:text-2xl text-white mb-10 max-w-3xl mx-auto font-normal drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)] leading-relaxed"
           >
             {heroSlides[currentSlide].subtitle}
           </motion.p>
@@ -243,8 +254,22 @@ const Home = () => {
               </Link>
             </div>
             <div className="lg:w-1/2 grid grid-cols-2 gap-6 relative">
-              <img src={cmsContent.cms_home_about_img_1 || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'} alt="Interior 1" className="w-full h-80 object-cover rounded-sm mt-12" />
-              <img src={cmsContent.cms_home_about_img_2 || 'https://images.unsplash.com/photo-1512918728675-ed5a9ecdebfd?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'} alt="Interior 2" className="w-full h-80 object-cover rounded-sm" />
+              {cmsContent.cms_home_about_img_1 ? (
+                <img src={cmsContent.cms_home_about_img_1} alt="Interior 1" className="w-full h-80 object-cover rounded-sm mt-12" />
+              ) : (
+                <div className="w-full h-80 rounded-sm mt-12 bg-dark-800 border border-dark-700 flex flex-col items-center justify-center p-6 text-center">
+                  <span className="text-gold-500 font-bold uppercase tracking-widest text-xs">Exquisite Spaces</span>
+                  <p className="text-gray-500 text-[10px] mt-2">Premium design and aesthetics</p>
+                </div>
+              )}
+              {cmsContent.cms_home_about_img_2 ? (
+                <img src={cmsContent.cms_home_about_img_2} alt="Interior 2" className="w-full h-80 object-cover rounded-sm" />
+              ) : (
+                <div className="w-full h-80 rounded-sm bg-dark-800 border border-dark-700 flex flex-col items-center justify-center p-6 text-center">
+                  <span className="text-gold-500 font-bold uppercase tracking-widest text-xs">Unmatched Comfort</span>
+                  <p className="text-gray-500 text-[10px] mt-2">Redefining luxury shortlets</p>
+                </div>
+              )}
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-dark-800 p-8 text-center shadow-2xl border border-dark-700">
                 <p className="text-5xl font-serif text-gold-500 mb-2">5</p>
                 <p className="text-sm uppercase tracking-widest text-gray-300">Star Rating</p>
@@ -292,11 +317,17 @@ const Home = () => {
                   className="bg-dark-800 border border-dark-700 group overflow-hidden flex flex-col h-full flex-shrink-0 w-[300px] sm:w-[350px] md:w-[380px] snap-start transition-all duration-300 hover:shadow-[0_10px_30px_rgba(245,158,11,0.15)] hover:border-gold-500/50"
                 >
                   <div className="relative h-64 overflow-hidden">
-                    <img 
-                      src={room.image_url || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=800&q=80'} 
-                      alt={room.name} 
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                    />
+                    {room.image_url ? (
+                      <img 
+                        src={room.image_url} 
+                        alt={room.name} 
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-dark-900 to-black text-center p-4">
+                        <span className="text-gold-500 font-serif text-base tracking-widest uppercase">Luxe Residence</span>
+                      </div>
+                    )}
                     
                     {/* Status Badge */}
                     <div className="absolute top-4 left-4 bg-dark-900/90 backdrop-blur-sm px-3 py-1.5 text-xs font-semibold border border-dark-700 uppercase tracking-wider flex items-center gap-1.5 rounded-sm">
@@ -376,13 +407,22 @@ const Home = () => {
 
       {/* Call to Action */}
       <section className="py-24 relative flex items-center justify-center overflow-hidden">
-        <div className="absolute inset-0 z-0">
-          <div className="absolute inset-0 bg-dark-900/80 z-10" />
-          <img src={cmsContent.cms_home_cta_bg || 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80'} alt="CTA Background" className="w-full h-full object-cover" />
+        <div className="absolute inset-0 z-0 bg-dark-950">
+          <div className="absolute inset-0 bg-dark-900/90 z-10" />
+          {cmsContent.cms_home_cta_bg ? (
+            <img src={cmsContent.cms_home_cta_bg} alt="CTA Background" className="w-full h-full object-cover" />
+          ) : (
+            <div 
+              className="w-full h-full"
+              style={{
+                background: 'radial-gradient(circle at center, #27272a 0%, #09090b 100%)'
+              }}
+            />
+          )}
         </div>
         <div className="relative z-20 text-center px-6 max-w-4xl">
-          <h2 className="text-4xl md:text-6xl font-bold text-white mb-8">{cmsContent.cms_home_cta_title || 'Ready to experience the exceptional?'}</h2>
-          <p className="text-xl text-gray-300 mb-10 font-light">{cmsContent.cms_home_cta_subtitle || 'Book your stay today and step into a world of comfort and luxury.'}</p>
+          <h2 className="text-4xl md:text-6xl font-bold text-white mb-8 drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">{cmsContent.cms_home_cta_title || 'Ready to experience the exceptional?'}</h2>
+          <p className="text-xl text-gray-300 mb-10 font-light drop-shadow-[0_1px_5px_rgba(0,0,0,0.95)]">{cmsContent.cms_home_cta_subtitle || 'Book your stay today and step into a world of comfort and luxury.'}</p>
           <Link to="/booking" className="btn-primary text-lg px-10 py-5">
             Book Your Stay
           </Link>

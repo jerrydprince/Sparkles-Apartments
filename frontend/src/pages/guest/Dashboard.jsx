@@ -304,11 +304,17 @@ const GuestDashboard = () => {
         {nextStay ? (
           <div className="bg-dark-800 border border-dark-700 rounded-xl overflow-hidden shadow-lg flex flex-col md:flex-row gap-8 hover:border-gold-500/30 transition-all duration-300">
             <div className="w-full md:w-2/5 aspect-video md:aspect-auto bg-dark-900 relative min-h-[220px]">
-              <img 
-                src={nextStayImageUrl || "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"} 
-                alt={nextStay.rooms?.name || "Apartment"} 
-                className="w-full h-full object-cover" 
-              />
+              {nextStayImageUrl ? (
+                <img 
+                  src={nextStayImageUrl} 
+                  alt={nextStay.rooms?.name || "Apartment"} 
+                  className="w-full h-full object-cover" 
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-dark-900 to-black text-center p-4">
+                  <span className="text-gold-500 font-serif text-sm tracking-widest uppercase">Luxe Residence</span>
+                </div>
+              )}
               <div className="absolute top-4 right-4 bg-gold-500 text-dark-900 text-xs px-3 py-1 uppercase font-black tracking-wider shadow-md">
                 {nextStay.status.replace(/_/g, ' ')}
               </div>

@@ -33,11 +33,20 @@ const About = () => {
       <section className="relative h-[60vh] flex items-center justify-center">
         <div className="absolute inset-0 z-0">
           <div className="absolute inset-0 bg-black/60 z-10" />
-          <img 
-            src={cmsContent.cms_about_hero_bg || "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80"} 
-            alt="About Luxe Apartments" 
-            className="w-full h-full object-cover"
-          />
+          {cmsContent.cms_about_hero_bg ? (
+            <img 
+              src={cmsContent.cms_about_hero_bg} 
+              alt="About Luxe Apartments" 
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div 
+              className="w-full h-full"
+              style={{
+                background: 'radial-gradient(circle at center, #27272a 0%, #09090b 100%)'
+              }}
+            />
+          )}
         </div>
         <div className="relative z-20 text-center px-6 max-w-4xl mx-auto">
           <motion.h1 
@@ -85,8 +94,22 @@ const About = () => {
               transition={{ duration: 0.8 }}
               className="lg:w-1/2 grid grid-cols-2 gap-4 relative"
             >
-              <img src={cmsContent.cms_about_img_1 || "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"} alt="Interior 1" className="w-full h-72 object-cover rounded-sm mt-12 shadow-2xl" />
-              <img src={cmsContent.cms_about_img_2 || "https://images.unsplash.com/photo-1512918728675-ed5a9ecdebfd?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"} alt="Interior 2" className="w-full h-72 object-cover rounded-sm shadow-2xl" />
+              {cmsContent.cms_about_img_1 ? (
+                <img src={cmsContent.cms_about_img_1} alt="Interior 1" className="w-full h-72 object-cover rounded-sm mt-12 shadow-2xl" />
+              ) : (
+                <div className="w-full h-72 rounded-sm mt-12 bg-dark-800 border border-dark-700 flex flex-col items-center justify-center p-6 text-center shadow-2xl">
+                  <span className="text-gold-500 font-bold uppercase tracking-widest text-xs">Exquisite Spaces</span>
+                  <p className="text-gray-500 text-[10px] mt-2">Premium design and aesthetics</p>
+                </div>
+              )}
+              {cmsContent.cms_about_img_2 ? (
+                <img src={cmsContent.cms_about_img_2} alt="Interior 2" className="w-full h-72 object-cover rounded-sm shadow-2xl" />
+              ) : (
+                <div className="w-full h-72 rounded-sm bg-dark-800 border border-dark-700 flex flex-col items-center justify-center p-6 text-center shadow-2xl">
+                  <span className="text-gold-500 font-bold uppercase tracking-widest text-xs">Unmatched Comfort</span>
+                  <p className="text-gray-500 text-[10px] mt-2">Redefining luxury shortlets</p>
+                </div>
+              )}
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gold-500 text-dark-900 p-8 text-center shadow-2xl z-10 w-48">
                 <p className="text-5xl font-bold mb-1">{cmsContent.cms_about_years || "10+"}</p>
                 <p className="text-sm uppercase tracking-widest font-semibold">Years of Excellence</p>

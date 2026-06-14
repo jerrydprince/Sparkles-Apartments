@@ -45,11 +45,17 @@ const Apartments = () => {
             {rooms.map(room => (
               <div key={room.id} className="bg-dark-800 border border-dark-700 group overflow-hidden flex flex-col h-full rounded-lg shadow-lg hover:shadow-gold-500/10 transition-shadow">
                 <div className="relative h-64 overflow-hidden">
-                  <img 
-                    src={room.image_url || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=800&q=80'} 
-                    alt={room.name} 
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                  />
+                  {room.image_url ? (
+                    <img 
+                      src={room.image_url} 
+                      alt={room.name} 
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-dark-900 to-black text-center p-4">
+                      <span className="text-gold-500 font-serif text-base tracking-widest uppercase">Luxe Residence</span>
+                    </div>
+                  )}
                   <div className="absolute top-4 right-4 bg-dark-900/90 backdrop-blur-sm px-4 py-2 text-gold-500 font-semibold border border-dark-700 rounded-sm">
                     ₦{Number(room.base_price_ngn).toLocaleString()} <span className="text-sm text-gray-400 font-normal">/ night</span>
                   </div>
