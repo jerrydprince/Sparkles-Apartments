@@ -21,3 +21,15 @@ yarn-error.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Deployed files at the root level of the cPanel repository
+/index.html
+/assets/
+/api/
+/deploy.php
+/list.php
+/clean.php
+/.htaccess
+/error_log
+/cgi-bin/
+/.well-known/
