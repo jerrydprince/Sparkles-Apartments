@@ -3,10 +3,9 @@ header("Content-Type: text/plain");
 echo "Diagnostics:\n";
 
 $dirs = [
-    '/home/sparkle7/test.sparklesapartments.ng/',
-    '/home/sparkle7/backend/',
-    '/home/sparkle7/pms-backend/',
-    '/home/sparkle7/backendgit/'
+    '/home/sparkle7/public_html/api/',
+    '/home/sparkle7/public_html/gittest.sparklesapartments.ng/api/',
+    '/home/sparkle7/public_html/test.sparklesapartments.ng/api/'
 ];
 
 foreach ($dirs as $dir) {
