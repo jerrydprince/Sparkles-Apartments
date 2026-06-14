@@ -7,17 +7,17 @@ import { getCachedData, setCachedData } from '../utils/cache';
 
 const defaultHeroSlides = [
   {
-    image: '',
+    image: 'https://pjmdlifojfwoviyugjwq.supabase.co/storage/v1/object/public/gallery_images/uploads/9a48a660-5a10-4f00-9690-6f2833d95c17.jpg',
     title: 'Experience True Luxury',
     subtitle: 'Elevate your stay in the heart of the city with our premium shortlets.'
   },
   {
-    image: '',
+    image: 'https://pjmdlifojfwoviyugjwq.supabase.co/storage/v1/object/public/gallery_images/uploads/1aec7ea7-b33f-4a56-9a98-527a63534b8d.webp',
     title: 'Designed for Comfort',
     subtitle: 'Every detail meticulously crafted for your ultimate relaxation.'
   },
   {
-    image: '',
+    image: 'https://pjmdlifojfwoviyugjwq.supabase.co/storage/v1/object/public/gallery_images/uploads/c4727319-aff1-4e23-8afa-305b63f4029e.webp',
     title: 'Your Private Sanctuary',
     subtitle: 'Exclusive amenities and serene environments await.'
   }
@@ -167,12 +167,13 @@ const Home = () => {
               background: 'radial-gradient(circle at center, #1e1e24 0%, #09090b 100%)'
             }}
           >
-            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/70 z-10" />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/55 to-black/80 z-10" />
             {heroSlides[currentSlide].image ? (
               <img 
                 src={heroSlides[currentSlide].image} 
                 alt={heroSlides[currentSlide].title}
                 className="w-full h-full object-cover"
+                loading="eager"
               />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center">
@@ -183,6 +184,9 @@ const Home = () => {
             )}
           </motion.div>
         </AnimatePresence>
+
+        {/* Global overlay above all slides for maximum text legibility */}
+        <div className="absolute inset-0 bg-black/35 z-10 pointer-events-none" />
 
         <div className="relative z-20 container mx-auto px-6 text-center">
           <motion.h1 
