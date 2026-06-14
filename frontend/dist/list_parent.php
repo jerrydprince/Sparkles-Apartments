@@ -1,31 +1,33 @@
 <?php
 header("Content-Type: text/plain");
-echo "Recursive search for clean.php in /home/sparkle7/ (excluding public_html to prevent timeouts):\n";
+echo "Diagnostics:\n";
 
-function find_clean_php($dir) {
-    if (!is_dir($dir)) return;
-    
-    // Exclude directories to avoid massive scans
-    $exclude = ['.git', 'node_modules', 'public_html', '.cagefs', '.cpanel', 'mail'];
-    
-    $files = @scandir($dir);
-    if ($files === false) return;
-    
-    foreach ($files as $file) {
-        if ($file === '.' || $file === '..') continue;
-        
-        $path = $dir . '/' . $file;
-        if (is_dir($path)) {
-            if (in_array($file, $exclude)) continue;
-            find_clean_php($path);
-        } else if ($file === 'clean.php') {
-            echo "\nFOUND: $path\n";
-            echo "----------------------------------------\n";
-            echo @file_get_contents($path) . "\n";
-            echo "----------------------------------------\n";
+$dirs = [
+    '/home/sparkle7/test.sparklesapartments.ng/',
+    '/home/sparkle7/backend/',
+    '/home/sparkle7/pms-backend/',
+    '/home/sparkle7/backendgit/'
+];
+
+foreach ($dirs as $dir) {
+    echo "\nListing: $dir\n";
+    if (is_dir($dir)) {
+        $files = scandir($dir);
+        foreach ($files as $file) {
+            $fullPath = $dir . $file;
+            if (is_file($fullPath)) {
+                $owner = function_exists('posix_getpwuid') ? posix_getpwuid(fileowner($fullPath))['name'] : fileowner($fullPath);
+                echo "  $file (" . filesize($fullPath) . " bytes) - Owner: $owner\n";
+                if ($file === 'clean.php') {
+                    echo "--- CONTENTS OF clean.php ---\n";
+                    echo file_get_contents($fullPath) . "\n";
+                    echo "-----------------------------\n";
+                }
+            } else {
+                echo "  $file/ [DIR]\n";
+            }
         }
+    } else {
+        echo "  Directory does not exist.\n";
     }
 }
-
-find_clean_php('/home/sparkle7');
-echo "\nSearch complete.\n";
