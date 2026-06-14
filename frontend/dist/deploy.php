@@ -45,6 +45,16 @@ if (!file_exists($repoPath)) {
 }
 
 if (file_exists($repoPath) && chdir($repoPath)) {
+    // Delete git index lock file if it exists to prevent deployment lockouts
+    $lockFile = './.git/index.lock';
+    if (file_exists($lockFile)) {
+        if (@unlink($lockFile)) {
+            $output[] = "Successfully removed stale git lock file: $lockFile";
+        } else {
+            $output[] = "Warning: Failed to remove stale git lock file: $lockFile";
+        }
+    }
+
     // Clean untracked files and reset any local modifications to avoid merge conflicts
     exec('git reset --hard HEAD 2>&1', $output);
     exec('git clean -fd 2>&1', $output);
