@@ -59,8 +59,8 @@ const Navbar = () => {
                 <path d="M25 15 L28 25 L38 28 L28 31 L25 41 L22 31 L12 28 L22 25 Z" fill="#DF6853"/>
               </svg>
               <div className="flex flex-col justify-center">
-                <span className="text-[22px] font-sans font-extrabold text-[#4A4A4A] dark:text-white leading-none tracking-wide">SPARKLES</span>
-                <span className="text-[11px] font-sans text-[#6B7280] dark:text-gray-400 leading-tight tracking-[0.25em] mt-1">APARTMENTS</span>
+                <span className={`text-[22px] font-sans font-extrabold leading-none tracking-wide transition-colors duration-300 ${scrolled ? 'text-[#4A4A4A]' : 'text-[#ffffff]'}`}>SPARKLES</span>
+                <span className={`text-[11px] font-sans leading-tight tracking-[0.25em] mt-1 transition-colors duration-300 ${scrolled ? 'text-[#6B7280]' : 'text-[#ffffff]/85'}`}>APARTMENTS</span>
               </div>
             </>
           )}
@@ -72,22 +72,32 @@ const Navbar = () => {
             <Link 
               key={link.name} 
               to={link.path}
-              className={`text-sm tracking-wide uppercase transition-colors hover:text-brand-500 ${location.pathname === link.path ? 'text-brand-500 font-medium' : 'text-gray-600'}`}
+              className={`text-sm tracking-wide uppercase transition-all duration-300 ${
+                scrolled 
+                  ? (location.pathname === link.path ? 'text-brand-500 font-bold border-b border-brand-500/30' : 'text-gray-600 hover:text-brand-500') 
+                  : (location.pathname === link.path ? 'text-[#ffffff] font-bold border-b border-[#ffffff]/70' : 'text-[#ffffff]/80 hover:text-[#ffffff]')
+              }`}
             >
               {link.name}
             </Link>
           ))}
           {user ? (
             <div className="flex items-center space-x-4 ml-4">
-              <Link to={user.role === 'guest' ? '/guest' : getDefaultAdminRoute(user.role)} className="text-sm tracking-wide uppercase text-gray-600 hover:text-brand-500 font-medium">
+              <Link 
+                to={user.role === 'guest' ? '/guest' : getDefaultAdminRoute(user.role)} 
+                className={`text-sm tracking-wide uppercase font-medium transition-colors duration-300 ${scrolled ? 'text-gray-600 hover:text-brand-500' : 'text-[#ffffff]/80 hover:text-[#ffffff]'}`}
+              >
                 Portal
               </Link>
-              <button onClick={logout} className="text-sm tracking-wide uppercase text-red-500 hover:text-red-600 font-medium">
+              <button onClick={logout} className="text-sm tracking-wide uppercase text-red-500 hover:text-red-600 font-medium transition-colors duration-300">
                 Logout
               </button>
             </div>
           ) : (
-            <Link to="/login" className="text-sm tracking-wide uppercase text-gray-600 hover:text-brand-500 font-medium ml-4">
+            <Link 
+              to="/login" 
+              className={`text-sm tracking-wide uppercase font-medium transition-colors duration-300 ml-4 ${scrolled ? 'text-gray-600 hover:text-brand-500' : 'text-[#ffffff]/80 hover:text-[#ffffff]'}`}
+            >
               Login
             </Link>
           )}
@@ -98,7 +108,7 @@ const Navbar = () => {
 
         {/* Mobile Toggle */}
         <button 
-          className="md:hidden text-white focus:outline-none"
+          className={`md:hidden focus:outline-none transition-colors duration-300 ${scrolled ? 'text-[#4A4A4A]' : 'text-[#ffffff]'}`}
           onClick={() => setIsOpen(!isOpen)}
         >
           {isOpen ? <X size={28} /> : <Menu size={28} />}

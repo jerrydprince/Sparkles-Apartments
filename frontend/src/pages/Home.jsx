@@ -186,14 +186,14 @@ const Home = () => {
         </AnimatePresence>
 
         {/* Global overlay above all slides for maximum text legibility */}
-        <div className="absolute inset-0 bg-black/35 z-10 pointer-events-none" />
+        <div className="absolute inset-0 bg-black/55 z-10 pointer-events-none" />
 
         <div className="relative z-20 container mx-auto px-6 text-center">
           <motion.h1 
             initial={{ y: 30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.2, duration: 0.8 }}
-            className="text-5xl md:text-7xl lg:text-8xl font-bold text-white mb-6 drop-shadow-[0_4px_20px_rgba(0,0,0,0.95)] tracking-tight"
+            className="text-5xl md:text-7xl lg:text-8xl font-bold text-[#ffffff] mb-6 drop-shadow-[0_4px_20px_rgba(0,0,0,0.95)] tracking-tight"
           >
             {heroSlides[currentSlide].title}
           </motion.h1>
@@ -201,7 +201,7 @@ const Home = () => {
             initial={{ y: 30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.4, duration: 0.8 }}
-            className="text-lg md:text-2xl text-white mb-10 max-w-3xl mx-auto font-normal drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)] leading-relaxed"
+            className="text-lg md:text-2xl text-[#ffffff]/95 mb-10 max-w-3xl mx-auto font-normal drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)] leading-relaxed"
           >
             {heroSlides[currentSlide].subtitle}
           </motion.p>
