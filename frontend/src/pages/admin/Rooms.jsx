@@ -287,7 +287,8 @@ const AdminRooms = () => {
           min_stay_days: fullRoom.min_stay_days || 1,
           max_stay_days: fullRoom.max_stay_days || 30,
           allowed_check_in_days: fullRoom.allowed_check_in_days || [0, 1, 2, 3, 4, 5, 6],
-          allowed_check_out_days: fullRoom.allowed_check_out_days || [0, 1, 2, 3, 4, 5, 6]
+          allowed_check_out_days: fullRoom.allowed_check_out_days || [0, 1, 2, 3, 4, 5, 6],
+          sub_category: extended.sub_category || ''
         });
         toast.dismiss(loadingToastId);
         setIsRoomModalOpen(true);
@@ -306,7 +307,8 @@ const AdminRooms = () => {
         bed_configuration: '1 King Bed',
         min_stay_days: 1, max_stay_days: 30,
         allowed_check_in_days: [0, 1, 2, 3, 4, 5, 6],
-        allowed_check_out_days: [0, 1, 2, 3, 4, 5, 6]
+        allowed_check_out_days: [0, 1, 2, 3, 4, 5, 6],
+        sub_category: ''
       });
       setIsRoomModalOpen(true);
     }
@@ -334,7 +336,8 @@ const AdminRooms = () => {
         text: newRoom.description,
         images: newRoom.images,
         video_url: newRoom.video_url,
-        bed_configuration: newRoom.bed_configuration
+        bed_configuration: newRoom.bed_configuration,
+        sub_category: newRoom.sub_category || ''
       })
     });
 
@@ -418,6 +421,85 @@ const AdminRooms = () => {
         ? prev.amenities.filter(f => f !== feature)
         : [...prev.amenities, feature]
     }));
+  };
+
+  const handleCategoryChange = (e) => {
+    const cat = e.target.value;
+    const isFlat = cat && cat.toLowerCase().includes('flat');
+    setNewRoom(prev => {
+      const updated = { ...prev, type: cat };
+      if (isFlat) {
+        updated.sub_category = '3 Bedroom Flat';
+        updated.bed_configuration = '3 King Beds';
+        updated.capacity = 6;
+      } else {
+        updated.sub_category = '';
+      }
+      return updated;
+    });
+  };
+
+  const handleSubCategoryChange = (e) => {
+    const subCat = e.target.value;
+    let defaultBedConfig = '1 King Bed';
+    let defaultCapacity = 2;
+    if (subCat.includes('4')) {
+      defaultBedConfig = '4 King Beds';
+      defaultCapacity = 8;
+    } else if (subCat.includes('3')) {
+      defaultBedConfig = '3 King Beds';
+      defaultCapacity = 6;
+    } else if (subCat.includes('2')) {
+      defaultBedConfig = '2 King Beds';
+      defaultCapacity = 4;
+    } else if (subCat.includes('1')) {
+      defaultBedConfig = '1 King Bed';
+      defaultCapacity = 2;
+    }
+    setNewRoom(prev => ({
+      ...prev,
+      sub_category: subCat,
+      bed_configuration: defaultBedConfig,
+      capacity: defaultCapacity
+    }));
+  };
+
+  const getBedConfigurationOptions = () => {
+    const sub = newRoom.sub_category || '';
+    if (sub.includes('4')) {
+      return [
+        { value: '4 King Beds', label: '4 King Beds' },
+        { value: '4 Queen Beds', label: '4 Queen Beds' },
+        { value: '3 King Beds, 2 Twin Beds', label: '3 King Beds, 2 Twin Beds' },
+        { value: '2 King Beds, 4 Twin Beds', label: '2 King Beds, 4 Twin Beds' }
+      ];
+    } else if (sub.includes('3')) {
+      return [
+        { value: '3 King Beds', label: '3 King Beds' },
+        { value: '3 Queen Beds', label: '3 Queen Beds' },
+        { value: '2 King Beds, 2 Twin Beds', label: '2 King Beds, 2 Twin Beds' },
+        { value: '1 King Bed, 4 Twin Beds', label: '1 King Bed, 4 Twin Beds' }
+      ];
+    } else if (sub.includes('2')) {
+      return [
+        { value: '2 King Beds', label: '2 King Beds' },
+        { value: '2 Queen Beds', label: '2 Queen Beds' },
+        { value: '1 King Bed, 2 Twin Beds', label: '1 King Bed, 2 Twin Beds' },
+        { value: '4 Twin Beds', label: '4 Twin Beds' }
+      ];
+    } else if (sub.includes('1')) {
+      return [
+        { value: '1 King Bed', label: '1 King Bed' },
+        { value: '1 Queen Bed', label: '1 Queen Bed' },
+        { value: '2 Twin Beds', label: '2 Twin Beds' }
+      ];
+    }
+    return [
+      { value: '1 King Bed', label: '1 King Bed' },
+      { value: '1 Queen Bed', label: '1 Queen Bed' },
+      { value: '2 Twin Beds', label: '2 Twin Beds' },
+      { value: '1 King, 1 Sofa Bed', label: '1 King, 1 Sofa Bed' }
+    ];
   };
 
   const [optimizingExisting, setOptimizingExisting] = useState(false);
@@ -905,11 +987,29 @@ const AdminRooms = () => {
                 </div>
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Room Category</label>
-                  <select required value={newRoom.type} onChange={e => setNewRoom({...newRoom, type: e.target.value})} className="w-full bg-dark-900 border border-dark-700 p-2 text-white outline-none focus:border-gold-500">
+                  <select required value={newRoom.type} onChange={handleCategoryChange} className="w-full bg-dark-900 border border-dark-700 p-2 text-white outline-none focus:border-gold-500">
                     {categories.map((cat, idx) => <option key={idx} value={cat}>{cat}</option>)}
                   </select>
                 </div>
               </div>
+
+              {newRoom.type && newRoom.type.toLowerCase().includes('flat') && (
+                <div className="bg-dark-900/50 border border-dark-700 p-4 rounded-lg space-y-2 animate-in slide-in-from-top-4 duration-300">
+                  <label className="block text-sm text-gray-400 mb-1 font-semibold">Room Sub-Category</label>
+                  <select 
+                    required 
+                    value={newRoom.sub_category || '3 Bedroom Flat'} 
+                    onChange={handleSubCategoryChange} 
+                    className="w-full bg-dark-900 border border-dark-700 p-2 text-white outline-none focus:border-gold-500 rounded"
+                  >
+                    <option value="4 Bedroom Flat">4 Bedroom Flat</option>
+                    <option value="3 Bedroom Flat">3 Bedroom Flat</option>
+                    <option value="2 Bedroom Flat">2 Bedroom Flat</option>
+                    <option value="1 Bedroom Flat">1 Bedroom Flat</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Selecting a sub-category dynamically adjusts capacity and bed configuration options.</p>
+                </div>
+              )}
 
               <div className="grid grid-cols-4 gap-4">
                 <div className="col-span-2 md:col-span-1">
@@ -927,10 +1027,9 @@ const AdminRooms = () => {
                 <div className="col-span-2 md:col-span-1">
                   <label className="block text-sm text-gray-400 mb-1">Bed Configuration</label>
                   <select required value={newRoom.bed_configuration} onChange={e => setNewRoom({...newRoom, bed_configuration: e.target.value})} className="w-full bg-dark-900 border border-dark-700 p-2 text-white outline-none focus:border-gold-500">
-                    <option value="1 King Bed">1 King Bed</option>
-                    <option value="1 Queen Bed">1 Queen Bed</option>
-                    <option value="2 Twin Beds">2 Twin Beds</option>
-                    <option value="1 King, 1 Sofa Bed">1 King, 1 Sofa Bed</option>
+                    {getBedConfigurationOptions().map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
                   </select>
                 </div>
               </div>
