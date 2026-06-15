@@ -84,6 +84,8 @@ const AdminAccounting = () => {
   const [attendanceAuditNotes, setAttendanceAuditNotes] = useState('');
   const [payrollForm, setPayrollForm] = useState({
     base_salary: 150000,
+    allowances: 0,
+    extra_bonuses: 0,
     bonuses: 0,
     deductions: 0,
     pay_period_start: format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd'),
@@ -94,6 +96,9 @@ const AdminAccounting = () => {
   });
 
   const [activePayslip, setActivePayslip] = useState(null);
+  const [showBankSettlementModal, setShowBankSettlementModal] = useState(false);
+  const [settlementMonth, setSettlementMonth] = useState(new Date().getMonth()); // 0-indexed
+  const [settlementYear, setSettlementYear] = useState(new Date().getFullYear());
 
   // Phase 55 states
   const [debtors, setDebtors] = useState([]);
@@ -529,6 +534,8 @@ const AdminAccounting = () => {
 
     setPayrollForm({
       base_salary: baseVal,
+      allowances: allowancesVal,
+      extra_bonuses: 0,
       bonuses: allowancesVal,
       deductions: deductionsVal,
       deductions_list: staffMember.deductions_list || [],
@@ -682,7 +689,8 @@ const AdminAccounting = () => {
       setPayrollForm(prev => ({
         ...prev,
         base_salary: baseVal,
-        bonuses: allowancesVal,
+        allowances: allowancesVal,
+        bonuses: allowancesVal + (prev.extra_bonuses || 0),
         deductions: parseFloat(totalDeductions.toFixed(2)),
         deductions_list: processedDeductionsList,
         notes: auditNote
@@ -2856,7 +2864,15 @@ const AdminAccounting = () => {
           {/* Active staff list & process panel */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="glass-panel p-5 rounded-2xl border border-dark-700/50 lg:col-span-2">
-              <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><User size={20} className="text-brand-500" /> Active System Staff Directory</h3>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                <h3 className="text-lg font-bold flex items-center gap-2"><User size={20} className="text-brand-500" /> Active System Staff Directory</h3>
+                <button
+                  onClick={() => setShowBankSettlementModal(true)}
+                  className="bg-brand-500 hover:bg-brand-600 text-white font-bold py-2.5 px-4.5 rounded-xl text-xs transition-all shadow-sm flex items-center gap-1.5 hover:scale-[1.02]"
+                >
+                  <FileText size={14} /> Generate Settlement Sheet
+                </button>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm whitespace-nowrap">
                   <thead className="bg-dark-900 border-b border-dark-700/50 text-gray-400">
@@ -4227,7 +4243,7 @@ const AdminAccounting = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-400 mb-2 font-medium">Base Salary</label>
                   <input 
@@ -4239,20 +4255,44 @@ const AdminAccounting = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2 font-medium">Allowances</label>
-                  <input 
-                    type="number" 
-                    value={payrollForm.bonuses}
-                    onChange={e => setPayrollForm({...payrollForm, bonuses: Number(e.target.value)})}
-                    className="w-full bg-dark-900 border border-dark-700 p-3 rounded-xl text-white outline-none focus:border-brand-500 text-sm font-mono"
-                  />
-                </div>
-                <div>
                   <label className="block text-sm text-gray-400 mb-2 font-medium">Deductions</label>
                   <input 
                     type="number" 
                     value={payrollForm.deductions}
                     onChange={e => setPayrollForm({...payrollForm, deductions: Number(e.target.value)})}
+                    className="w-full bg-dark-900 border border-dark-700 p-3 rounded-xl text-white outline-none focus:border-brand-500 text-sm font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2 font-medium">Standard Allowances</label>
+                  <input 
+                    type="number" 
+                    value={payrollForm.allowances}
+                    onChange={e => {
+                      const allow = Number(e.target.value);
+                      setPayrollForm({
+                        ...payrollForm,
+                        allowances: allow,
+                        bonuses: allow + (payrollForm.extra_bonuses || 0)
+                      });
+                    }}
+                    className="w-full bg-dark-900 border border-dark-700 p-3 rounded-xl text-white outline-none focus:border-brand-500 text-sm font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2 font-medium">Extra Bonuses</label>
+                  <input 
+                    type="number" 
+                    value={payrollForm.extra_bonuses}
+                    onChange={e => {
+                      const extra = Number(e.target.value);
+                      setPayrollForm({
+                        ...payrollForm,
+                        extra_bonuses: extra,
+                        bonuses: (payrollForm.allowances || 0) + extra
+                      });
+                    }}
+                    placeholder="One-off performance bonus"
                     className="w-full bg-dark-900 border border-dark-700 p-3 rounded-xl text-white outline-none focus:border-brand-500 text-sm font-mono"
                   />
                 </div>
@@ -5968,6 +6008,235 @@ const AdminAccounting = () => {
               >
                 Close Report
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Comprehensive Bank Settlement Payroll Modal */}
+      {showBankSettlementModal && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4 print:p-0 print:bg-white print:absolute print:inset-0">
+          <div className="bg-pure-white text-pure-black w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] border border-pure-gray-200 print-container print-a4 print:max-h-none print:shadow-none print:border-none print:w-full print:m-0">
+            {/* Modal actions */}
+            <div className="p-4 bg-gray-100 border-b border-gray-200 flex justify-between items-center select-none print:hidden">
+              <span className="font-bold text-xs uppercase tracking-wider text-pure-gray-500 flex items-center gap-2">
+                <Sparkles size={16} className="text-brand-500" /> Bank Settlement Payroll
+              </span>
+              
+              {/* Date Filter selector in modal header */}
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-semibold text-pure-gray-500">Month:</span>
+                  <select
+                    value={settlementMonth}
+                    onChange={e => setSettlementMonth(Number(e.target.value))}
+                    className="bg-white border border-gray-300 rounded-lg px-2.5 py-1 text-xs outline-none focus:border-brand-500 font-semibold cursor-pointer text-pure-black"
+                  >
+                    {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((m, idx) => (
+                      <option key={idx} value={idx}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-semibold text-pure-gray-500">Year:</span>
+                  <select
+                    value={settlementYear}
+                    onChange={e => setSettlementYear(Number(e.target.value))}
+                    className="bg-white border border-gray-300 rounded-lg px-2.5 py-1 text-xs outline-none focus:border-brand-500 font-semibold cursor-pointer text-pure-black"
+                  >
+                    {[2024, 2025, 2026, 2027, 2028].map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <button 
+                  onClick={() => window.print()}
+                  className="bg-brand-500 hover:bg-brand-600 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-sm"
+                >
+                  <Printer size={14} /> Print Document
+                </button>
+                <button 
+                  onClick={() => setShowBankSettlementModal(false)} 
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-600 font-bold p-2 rounded-xl transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Area starts */}
+            <div className="p-8 overflow-y-auto space-y-8 print:p-0 print:overflow-visible flex-1">
+              
+              {/* Receipt Header / Letterhead */}
+              <div className="flex justify-between items-start border-b-2 border-gray-100 pb-6">
+                <div>
+                  <div className="flex items-center gap-2">
+                    {contactInfo.logo ? (
+                      <img src={contactInfo.logo} alt="Brand Logo" className="max-h-12 object-contain" />
+                    ) : (
+                      <svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M50 10 L10 90 L35 90 L60 40 Z" fill="#DF6853"/>
+                        <path d="M40 90 L90 90 L75 60 L50 90 Z" fill="#DF6853"/>
+                      </svg>
+                    )}
+                    <div className="flex flex-col justify-center">
+                      <span className="text-base font-extrabold text-pure-black tracking-wider uppercase">{contactInfo.companyName}</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-pure-gray-500 mt-2 max-w-[340px] leading-relaxed">
+                    {contactInfo.address}<br />
+                    Tel: {contactInfo.phone} | Email: {contactInfo.email}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <h3 className="text-lg font-black text-pure-black tracking-tight uppercase">
+                    Bank Settlement Payroll
+                  </h3>
+                  <div className="text-xs text-pure-gray-500 font-mono mt-1 font-semibold">
+                    PERIOD: {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][settlementMonth].toUpperCase()} {settlementYear}
+                  </div>
+                  <div className="text-[10px] text-pure-gray-400 mt-0.5 font-bold uppercase tracking-wider font-mono">
+                    GENERATED ON: {new Date().toLocaleDateString('en-GB')}
+                  </div>
+                </div>
+              </div>
+
+              {/* Settlement table */}
+              <div className="space-y-4">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100 text-pure-black font-bold uppercase text-[10px] tracking-wider border-b border-gray-200">
+                      <th className="p-3">Staff Details</th>
+                      <th className="p-3">Designation</th>
+                      <th className="p-3">Bank Name</th>
+                      <th className="p-3">Account Number</th>
+                      <th className="p-3">Account Name</th>
+                      <th className="p-3 text-right">Base Salary</th>
+                      <th className="p-3 text-right">Bonuses</th>
+                      <th className="p-3 text-right">Deductions</th>
+                      <th className="p-3 text-right">Net Payout</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {(() => {
+                      const filteredSalaries = salaries.filter(sal => {
+                        const dateObj = new Date(sal.pay_period_end);
+                        return dateObj.getMonth() === settlementMonth && dateObj.getFullYear() === settlementYear;
+                      });
+
+                      if (filteredSalaries.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan="9" className="p-8 text-center text-pure-gray-500 italic">No processed payroll payouts found for the selected period.</td>
+                          </tr>
+                        );
+                      }
+
+                      let totalBase = 0;
+                      let totalBonuses = 0;
+                      let totalDeductions = 0;
+                      let totalNet = 0;
+
+                      const rows = filteredSalaries.map(sal => {
+                        const matchedStaff = staff.find(s => s.id === sal.staff_id) || {};
+                        const netPay = sal.net_salary || (Number(sal.base_salary) + Number(sal.bonuses) - Number(sal.deductions));
+                        
+                        totalBase += Number(sal.base_salary);
+                        totalBonuses += Number(sal.bonuses);
+                        totalDeductions += Number(sal.deductions);
+                        totalNet += netPay;
+
+                        return (
+                          <tr key={sal.id} className="hover:bg-gray-50 transition-colors">
+                            <td className="p-3 font-semibold text-pure-black">
+                              {matchedStaff.first_name ? `${matchedStaff.first_name} ${matchedStaff.last_name}` : 'Staff Member'}
+                              <div className="text-[10px] text-pure-gray-400 font-mono font-medium">{matchedStaff.email || 'No email'}</div>
+                            </td>
+                            <td className="p-3 uppercase text-[10px] font-bold text-pure-gray-500">
+                              {matchedStaff.role?.replace('_', ' ') || 'N/A'}
+                            </td>
+                            <td className="p-3">
+                              {matchedStaff.bank_name || (
+                                <span className="bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border border-rose-100">MISSING</span>
+                              )}
+                            </td>
+                            <td className="p-3 font-mono font-semibold">
+                              {matchedStaff.account_number || '—'}
+                            </td>
+                            <td className="p-3 text-pure-gray-500">
+                              {matchedStaff.account_name || '—'}
+                            </td>
+                            <td className="p-3 text-right font-mono">
+                              ₦{Number(sal.base_salary).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="p-3 text-right font-mono text-green-600">
+                              +₦{Number(sal.bonuses).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="p-3 text-right font-mono text-rose-600">
+                              -₦{Number(sal.deductions).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="p-3 text-right font-mono font-bold text-pure-black">
+                              ₦{netPay.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        );
+                      });
+
+                      // Append a Grand Total row
+                      rows.push(
+                        <tr key="totals" className="bg-gray-50 border-t-2 border-pure-black font-black text-pure-black">
+                          <td colSpan="5" className="p-3 uppercase tracking-wider text-[10px] font-black">Grand Totals</td>
+                          <td className="p-3 text-right font-mono">₦{totalBase.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3 text-right font-mono text-green-600">+₦{totalBonuses.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3 text-right font-mono text-rose-600">-₦{totalDeductions.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3 text-right font-mono text-lg text-brand-600">₦{totalNet.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                      );
+
+                      return rows;
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Bank Settlement Summary Instructions */}
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 text-xs text-pure-gray-500 space-y-2 mt-8 leading-relaxed">
+                <strong className="text-pure-black block mb-1 uppercase tracking-wider text-[10px]">Bank Settlement Instructions</strong>
+                <p>Please initiate bank transfer payouts for the employees listed above from the hotel corporate account:</p>
+                <div className="grid grid-cols-3 gap-4 font-mono text-[11px] text-pure-black py-2 bg-white p-3 rounded-lg border border-gray-100">
+                  <div>
+                    <span className="text-[9px] text-pure-gray-400 block font-bold font-sans uppercase">Source Bank</span>
+                    <strong>{settings.hotel_bank_name || 'Access Bank Plc'}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-pure-gray-400 block font-bold font-sans uppercase">Account Name</span>
+                    <strong>{settings.hotel_account_name || 'Luxe Elite Hotels Ltd'}</strong>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-pure-gray-400 block font-bold font-sans uppercase">Account Number</span>
+                    <strong>{settings.hotel_account_number || '0098172635'}</strong>
+                  </div>
+                </div>
+                <p className="text-[10px] text-pure-gray-450 italic mt-2">Note: This is an official audit-locked document. All calculations have been cross-checked with active duty attendance clock logs and verified role salary exceptions.</p>
+              </div>
+
+              {/* Signatures */}
+              <div className="flex justify-between items-end pt-12 border-t border-dashed border-gray-200 mt-12">
+                <div className="text-center w-48 relative">
+                  <div className="font-serif italic text-pure-black text-sm h-8 flex items-end justify-center">Luxe Accountant</div>
+                  <div className="border-b border-gray-300"></div>
+                  <span className="text-[10px] text-pure-gray-400 font-semibold block mt-1.5 uppercase">Prepared By</span>
+                </div>
+                <div className="text-center w-48 relative">
+                  <div className="absolute top-[-30px] left-1/2 -translate-x-1/2 text-green-600/10 font-bold border-4 border-green-600/10 rounded-xl px-4 py-1 rotate-[-12deg] text-xs select-none">
+                    PAYROLL AUDITED
+                  </div>
+                  <div className="border-b border-gray-300 h-8"></div>
+                  <span className="text-[10px] text-pure-gray-400 font-semibold block mt-1.5 uppercase">Audited By (Hotel Manager)</span>
+                </div>
+              </div>
+
             </div>
           </div>
         </div>

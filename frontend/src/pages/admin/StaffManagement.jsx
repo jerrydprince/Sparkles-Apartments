@@ -513,10 +513,37 @@ const AdminStaffManagement = () => {
     pos_outlets: [], biometric_key: '',
     base_salary: '', allowances: '', deductions: '',
     deduction_type: 'amount', has_salary_exception: false,
-    salary_exception_reason: '', exempt_from_attendance_deduction: false
+    salary_exception_reason: '', exempt_from_attendance_deduction: false,
+    bank_name: '', account_number: '', account_name: ''
   });
   const [showAddPassword, setShowAddPassword] = useState(false);
   const [showEditPassword, setShowEditPassword] = useState(false);
+  const [nigerianBanks, setNigerianBanks] = useState([
+    "Access Bank Plc",
+    "Guaranty Trust Bank (GTBank)",
+    "Zenith Bank Plc",
+    "United Bank for Africa (UBA)",
+    "First Bank of Nigeria (FirstBank)",
+    "Union Bank of Nigeria",
+    "Fidelity Bank Plc",
+    "Ecobank Nigeria",
+    "Stanbic IBTC Bank",
+    "Sterling Bank",
+    "Wema Bank Plc",
+    "Keystone Bank",
+    "First City Monument Bank (FCMB)",
+    "Polaris Bank Limited",
+    "Providus Bank",
+    "Titan Trust Bank",
+    "Globus Bank",
+    "Taj Bank",
+    "Jaiz Bank",
+    "Lotus Bank",
+    "Standard Chartered Bank",
+    "Signature Bank",
+    "Optimus Bank",
+    "Premium Trust Bank"
+  ]);
 
   // Biometric Shift Scanner Simulation States
   const [isScanning, setIsScanning] = useState(false);
@@ -648,16 +675,27 @@ const AdminStaffManagement = () => {
     setLoading(true);
     try {
       await fetchCustomRoles();
-      // Load all staff deductions overrides from system_settings
-      const { data: staffDeductionsData } = await supabase
+      // Load all staff deductions overrides and nigerian_banks from system_settings
+      const { data: systemSettingsData } = await supabase
         .from('system_settings')
         .select('setting_key, setting_value')
-        .like('setting_key', 'salary_deductions_staff_%');
+        .or('setting_key.eq.nigerian_banks,setting_key.like.salary_deductions_staff_%');
       
       const staffDedsMap = {};
-      (staffDeductionsData || []).forEach(s => {
-        const staffId = s.setting_key.replace('salary_deductions_staff_', '');
-        staffDedsMap[staffId] = s.setting_value;
+      (systemSettingsData || []).forEach(s => {
+        if (s.setting_key.startsWith('salary_deductions_staff_')) {
+          const staffId = s.setting_key.replace('salary_deductions_staff_', '');
+          staffDedsMap[staffId] = s.setting_value;
+        } else if (s.setting_key === 'nigerian_banks' && s.setting_value) {
+          try {
+            const parsed = typeof s.setting_value === 'string' ? JSON.parse(s.setting_value) : s.setting_value;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setNigerianBanks(parsed);
+            }
+          } catch (e) {
+            console.warn("Failed to parse nigerian_banks in StaffManagement:", e);
+          }
+        }
       });
 
       if (activeTab === 'directory') {
@@ -1103,7 +1141,10 @@ const AdminStaffManagement = () => {
         deduction_type: editingStaffForm.deduction_type || 'amount',
         has_salary_exception: !!editingStaffForm.has_salary_exception,
         salary_exception_reason: editingStaffForm.salary_exception_reason || null,
-        exempt_from_attendance_deduction: !!editingStaffForm.exempt_from_attendance_deduction
+        exempt_from_attendance_deduction: !!editingStaffForm.exempt_from_attendance_deduction,
+        bank_name: editingStaffForm.bank_name || null,
+        account_number: editingStaffForm.account_number || null,
+        account_name: editingStaffForm.account_name || null
       }).eq('id', editingStaffForm.id);
 
       if (profileError) throw profileError;
@@ -1189,7 +1230,10 @@ const AdminStaffManagement = () => {
             deduction_type: newStaffForm.deduction_type || 'amount',
             has_salary_exception: !!newStaffForm.has_salary_exception,
             salary_exception_reason: newStaffForm.salary_exception_reason || null,
-            exempt_from_attendance_deduction: !!newStaffForm.exempt_from_attendance_deduction
+            exempt_from_attendance_deduction: !!newStaffForm.exempt_from_attendance_deduction,
+            bank_name: newStaffForm.bank_name || null,
+            account_number: newStaffForm.account_number || null,
+            account_name: newStaffForm.account_name || null
           });
 
           if (profileError) throw profileError;
@@ -1228,7 +1272,8 @@ const AdminStaffManagement = () => {
             email: '', password: '', username: '', residential_address: '',
             pos_outlets: [], biometric_key: '', base_salary: '', allowances: '', deductions: '',
             deduction_type: 'amount', has_salary_exception: false,
-            salary_exception_reason: '', exempt_from_attendance_deduction: false
+            salary_exception_reason: '', exempt_from_attendance_deduction: false,
+            bank_name: '', account_number: '', account_name: ''
           });
           fetchData();
           return;
@@ -1268,7 +1313,10 @@ const AdminStaffManagement = () => {
         deduction_type: newStaffForm.deduction_type || 'amount',
         has_salary_exception: !!newStaffForm.has_salary_exception,
         salary_exception_reason: newStaffForm.salary_exception_reason || null,
-        exempt_from_attendance_deduction: !!newStaffForm.exempt_from_attendance_deduction
+        exempt_from_attendance_deduction: !!newStaffForm.exempt_from_attendance_deduction,
+        bank_name: newStaffForm.bank_name || null,
+        account_number: newStaffForm.account_number || null,
+        account_name: newStaffForm.account_name || null
       });
 
       if (profileError) throw profileError;
@@ -1297,7 +1345,8 @@ const AdminStaffManagement = () => {
         email: '', password: '', username: '', residential_address: '',
         pos_outlets: [], biometric_key: '', base_salary: '', allowances: '', deductions: '',
         deduction_type: 'amount', has_salary_exception: false,
-        salary_exception_reason: '', exempt_from_attendance_deduction: false
+        salary_exception_reason: '', exempt_from_attendance_deduction: false,
+        bank_name: '', account_number: '', account_name: ''
       });
       fetchData();
     } catch (e) {
@@ -2427,6 +2476,15 @@ const AdminStaffManagement = () => {
                         <td className="p-4 text-gray-300">
                           <div className="text-sm font-medium">{s.email || 'No email'}</div>
                           <div className="text-xs sm:text-[13px] text-gray-400 mt-0.5">{s.phone || 'No phone'}</div>
+                          {s.bank_name ? (
+                            <div className="text-[11px] text-brand-400 font-mono mt-1 font-semibold">
+                              🏦 {s.bank_name} - {s.account_number}
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-rose-400 italic font-mono mt-1 font-bold">
+                              ⚠️ Bank details missing
+                            </div>
+                          )}
                         </td>
                         <td className="p-4">
                           <div className="flex flex-col gap-1.5 items-start">
@@ -3775,6 +3833,49 @@ const AdminStaffManagement = () => {
                 </div>
               </div>
 
+              {/* Bank Settlement Details */}
+              <div className="bg-dark-950/40 border border-dark-800/80 p-5 rounded-2xl shadow-[inset_0_1px_2px_rgba(0,0,0,0.2)] space-y-4 hover:border-dark-700/50 transition-colors">
+                <h3 className="text-[11px] font-black uppercase tracking-widest text-brand-400/80 flex items-center gap-2 border-b border-dark-750 pb-2 mb-2">
+                  🏦 Bank Settlement Details
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Bank Name</label>
+                    <select
+                      value={newStaffForm.bank_name || ''}
+                      onChange={e => setNewStaffForm({...newStaffForm, bank_name: e.target.value})}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm cursor-pointer"
+                    >
+                      <option value="">Select Bank</option>
+                      {nigerianBanks.map((bank, index) => (
+                        <option key={index} value={bank}>{bank}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Account Number</label>
+                    <input
+                      type="text"
+                      maxLength={10}
+                      value={newStaffForm.account_number || ''}
+                      onChange={e => setNewStaffForm({...newStaffForm, account_number: e.target.value.replace(/\D/g, '')})}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white placeholder-gray-650 outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm sm:text-base font-mono"
+                      placeholder="e.g. 0123456789"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Account Name</label>
+                    <input
+                      type="text"
+                      value={newStaffForm.account_name || ''}
+                      onChange={e => setNewStaffForm({...newStaffForm, account_name: e.target.value})}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white placeholder-gray-600 outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm sm:text-base"
+                      placeholder="e.g. John Doe"
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* Role Assignment */}
               <div className="bg-dark-950/40 border border-dark-800/80 p-5 rounded-2xl shadow-[inset_0_1px_2px_rgba(0,0,0,0.2)] hover:border-dark-700/50 transition-colors">
                 <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">System Access Role</label>
@@ -4048,6 +4149,49 @@ const AdminStaffManagement = () => {
                 <div>
                   <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Residential Address</label>
                   <textarea required rows={2} value={editingStaffForm.residential_address} onChange={e => setEditingStaffForm({...editingStaffForm, residential_address: e.target.value})} className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm sm:text-base"></textarea>
+                </div>
+              </div>
+
+              {/* Bank Settlement Details */}
+              <div className="bg-dark-950/40 border border-dark-800/80 p-5 rounded-2xl shadow-[inset_0_1px_2px_rgba(0,0,0,0.2)] space-y-4 hover:border-dark-700/50 transition-colors">
+                <h3 className="text-[11px] font-black uppercase tracking-widest text-brand-400/80 flex items-center gap-2 border-b border-dark-750 pb-2 mb-2">
+                  🏦 Bank Settlement Details
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Bank Name</label>
+                    <select
+                      value={editingStaffForm.bank_name || ''}
+                      onChange={e => setEditingStaffForm({...editingStaffForm, bank_name: e.target.value})}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm cursor-pointer"
+                    >
+                      <option value="">Select Bank</option>
+                      {nigerianBanks.map((bank, index) => (
+                        <option key={index} value={bank}>{bank}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Account Number</label>
+                    <input
+                      type="text"
+                      maxLength={10}
+                      value={editingStaffForm.account_number || ''}
+                      onChange={e => setEditingStaffForm({...editingStaffForm, account_number: e.target.value.replace(/\D/g, '')})}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white placeholder-gray-655 outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm sm:text-base font-mono"
+                      placeholder="e.g. 0123456789"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Account Name</label>
+                    <input
+                      type="text"
+                      value={editingStaffForm.account_name || ''}
+                      onChange={e => setEditingStaffForm({...editingStaffForm, account_name: e.target.value})}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white placeholder-gray-600 outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm sm:text-base"
+                      placeholder="e.g. John Doe"
+                    />
+                  </div>
                 </div>
               </div>
 

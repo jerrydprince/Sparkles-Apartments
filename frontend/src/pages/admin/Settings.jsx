@@ -79,7 +79,8 @@ const AdminSettings = () => {
     quickbooks_enabled: false,
     hotel_bank_name: 'Access Bank Plc',
     hotel_account_name: 'Luxe Elite Hotels Ltd',
-    hotel_account_number: '0098172635'
+    hotel_account_number: '0098172635',
+    nigerian_banks: []
   });
 
   // API Tab Interactive States
@@ -163,6 +164,53 @@ const AdminSettings = () => {
           activeSettings.fx_rates_cache = JSON.parse(activeSettings.fx_rates_cache);
         } catch(e){}
       }
+
+      // Parse or seed Nigerian banks list
+      let banksList = [];
+      if (sysMap.nigerian_banks) {
+        try {
+          banksList = typeof sysMap.nigerian_banks === 'string' ? JSON.parse(sysMap.nigerian_banks) : sysMap.nigerian_banks;
+        } catch (e) {
+          console.warn("Failed to parse nigerian_banks:", e);
+          banksList = [];
+        }
+      }
+      if (!banksList || banksList.length === 0) {
+        banksList = [
+          "Access Bank Plc",
+          "Guaranty Trust Bank (GTBank)",
+          "Zenith Bank Plc",
+          "United Bank for Africa (UBA)",
+          "First Bank of Nigeria (FirstBank)",
+          "Union Bank of Nigeria",
+          "Fidelity Bank Plc",
+          "Ecobank Nigeria",
+          "Stanbic IBTC Bank",
+          "Sterling Bank",
+          "Wema Bank Plc",
+          "Keystone Bank",
+          "First City Monument Bank (FCMB)",
+          "Polaris Bank Limited",
+          "Providus Bank",
+          "Titan Trust Bank",
+          "Globus Bank",
+          "Taj Bank",
+          "Jaiz Bank",
+          "Lotus Bank",
+          "Standard Chartered Bank",
+          "Signature Bank",
+          "Optimus Bank",
+          "Premium Trust Bank"
+        ];
+        // Automatically upsert to system_settings so it exists in db
+        supabase.from('system_settings').upsert({
+          setting_key: 'nigerian_banks',
+          setting_value: banksList
+        }, { onConflict: 'setting_key' }).then(({ error }) => {
+          if (error) console.warn("Failed to seed default nigerian_banks:", error.message);
+        });
+      }
+      activeSettings.nigerian_banks = banksList;
       
       setSettings(activeSettings);
 
@@ -546,6 +594,7 @@ const AdminSettings = () => {
     { id: 'localization', label: 'Localization & Tax', icon: <Globe size={18} /> },
     { id: 'policies', label: 'Booking Policies', icon: <Shield size={18} /> },
     { id: 'invoices', label: 'Invoice Settings', icon: <FileText size={18} /> },
+    { id: 'payroll', label: 'Payroll & Bank Settings', icon: <CreditCard size={18} /> },
     { id: 'api', label: 'API & Plugins', icon: <Puzzle size={18} /> },
     ...(hasAccess('Automations & Alerts') ? [{ id: 'automations', label: 'Automations & Alerts', icon: <Zap size={18} /> }] : []),
     ...(hasAccess('Security & Privacy') ? [{ id: 'security', label: 'Security & Privacy', icon: <ShieldAlert size={18} /> }] : [])
@@ -1718,6 +1767,117 @@ const AdminSettings = () => {
                     <div className="pt-4 flex items-center justify-between border-t border-dark-700/60 mt-6">
                       <p className="text-xs text-gray-500">Note: Saving credential edits takes effect immediately on all transactions and routes.</p>
                       <button type="submit" className="btn-primary flex items-center gap-2 py-3.5 px-8 text-sm font-bold rounded-xl shadow-lg shadow-gold-500/10 transition-all"><Save size={18} /> Save Settings & Credentials</button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {activeTab === 'payroll' && (
+                <div className="animate-in fade-in zoom-in-95 duration-200">
+                  <h3 className="text-xl font-bold text-white mb-6 border-b border-dark-700 pb-4">Payroll & Bank Dropdown Settings</h3>
+                  <form onSubmit={handleSaveSettings} className="space-y-6">
+                    <div className="bg-dark-900/40 p-6 rounded-2xl border border-dark-750">
+                      <h4 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-4">Configured Nigerian Banks</h4>
+                      <p className="text-xs text-gray-405 mb-4">These banks will appear as options in the staff registration and payout bank settlement profile settings.</p>
+                      
+                      {/* Grid / list of banks */}
+                      <div className="flex flex-wrap gap-2 max-h-[250px] overflow-y-auto p-3.5 border border-dark-700 rounded-xl bg-dark-950/20 mb-6">
+                        {(settings.nigerian_banks || []).map((bank, index) => (
+                          <div key={index} className="flex items-center gap-1.5 bg-dark-700 hover:bg-dark-600 text-white border border-dark-600/50 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors">
+                            <span>{bank}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const list = (settings.nigerian_banks || []).filter((_, i) => i !== index);
+                                setSettings({ ...settings, nigerian_banks: list });
+                              }}
+                              className="text-gray-400 hover:text-rose-500 rounded-full transition-colors ml-1"
+                              title="Delete bank"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ))}
+                        {(settings.nigerian_banks || []).length === 0 && (
+                          <span className="text-xs text-gray-500 p-2 italic">No banks configured yet. Auto-seed will initialize defaults.</span>
+                        )}
+                      </div>
+
+                      {/* Add new bank form */}
+                      <div className="flex flex-col sm:flex-row gap-3 max-w-md">
+                        <input
+                          type="text"
+                          id="new_bank_name_input"
+                          placeholder="e.g. Sterling Bank Plc"
+                          className="flex-1 bg-dark-900 text-white border border-dark-700 rounded-xl p-2.5 text-xs focus:border-gold-500 outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const input = document.getElementById('new_bank_name_input');
+                            const val = input ? input.value.trim() : '';
+                            if (!val) {
+                              toast.error("Please enter a bank name.");
+                              return;
+                            }
+                            if ((settings.nigerian_banks || []).includes(val)) {
+                              toast.error("This bank is already in the list.");
+                              return;
+                            }
+                            const list = [...(settings.nigerian_banks || []), val];
+                            setSettings({ ...settings, nigerian_banks: list });
+                            if (input) input.value = '';
+                            toast.success(`Added ${val} to list!`);
+                          }}
+                          className="bg-brand-500/10 hover:bg-brand-500 text-brand-400 hover:text-white border border-brand-500/20 hover:border-transparent transition-all py-2.5 px-5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+                        >
+                          <Plus size={14} /> Add Bank
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="bg-dark-900/40 p-6 rounded-2xl border border-dark-750 space-y-4">
+                      <h4 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-2">Default Hotel Bank Account (Payout Source)</h4>
+                      <p className="text-xs text-gray-405">Specify the bank details of the hotel from which payroll payouts are processed and bank transfers are initiated.</p>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Hotel Bank Name</label>
+                          <input 
+                            type="text" 
+                            value={settings.hotel_bank_name || ''} 
+                            onChange={e => setSettings({...settings, hotel_bank_name: e.target.value})} 
+                            className="w-full bg-dark-900 border border-dark-700 rounded-xl p-3 text-white outline-none focus:border-gold-500 text-sm font-semibold" 
+                            placeholder="e.g. Access Bank Plc" 
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Hotel Account Name</label>
+                          <input 
+                            type="text" 
+                            value={settings.hotel_account_name || ''} 
+                            onChange={e => setSettings({...settings, hotel_account_name: e.target.value})} 
+                            className="w-full bg-dark-900 border border-dark-700 rounded-xl p-3 text-white outline-none focus:border-gold-500 text-sm font-semibold" 
+                            placeholder="e.g. Luxe Apartments Ltd" 
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Hotel Account Number</label>
+                          <input 
+                            type="text" 
+                            maxLength={10}
+                            value={settings.hotel_account_number || ''} 
+                            onChange={e => setSettings({...settings, hotel_account_number: e.target.value.replace(/\D/g, '')})} 
+                            className="w-full bg-dark-900 border border-dark-700 rounded-xl p-3 text-white outline-none focus:border-gold-500 text-sm font-semibold font-mono" 
+                            placeholder="10-digit number" 
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 flex items-center justify-between border-t border-dark-700/60 mt-6">
+                      <p className="text-xs text-gray-500">Note: Saving bank changes updates the bank dropdown configurations immediately.</p>
+                      <button type="submit" className="btn-primary flex items-center gap-2 py-3.5 px-8 text-sm font-bold rounded-xl shadow-lg shadow-gold-500/10 transition-all"><Save size={18} /> Save Bank & Payroll Settings</button>
                     </div>
                   </form>
                 </div>
