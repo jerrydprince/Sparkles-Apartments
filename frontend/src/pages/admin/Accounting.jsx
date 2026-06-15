@@ -178,13 +178,21 @@ const AdminAccounting = () => {
       const resolvedProperties = propData || [{ id: 'mock-hq', name: 'Luxe Headquarters', base_currency: 'NGN' }];
       setProperties(resolvedProperties);
 
-      // 1b. Fetch contact details from system_settings
+      // 1b. Fetch contact details and bank source settings from system_settings
       let settingsMap = {};
       try {
         const { data: settingsData } = await supabase
           .from('system_settings')
           .select('setting_key, setting_value')
-          .in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo']);
+          .in('setting_key', [
+            'contact_address', 
+            'contact_phone', 
+            'contact_email', 
+            'contact_logo', 
+            'hotel_bank_name', 
+            'hotel_account_name', 
+            'hotel_account_number'
+          ]);
         
         if (settingsData && settingsData.length > 0) {
           settingsData.forEach(s => {
@@ -207,7 +215,10 @@ const AdminAccounting = () => {
         phone: contactPhone,
         email: contactEmail,
         companyName: companyName,
-        logo: contactLogo
+        logo: contactLogo,
+        hotel_bank_name: settingsMap['hotel_bank_name'] || '',
+        hotel_account_name: settingsMap['hotel_account_name'] || '',
+        hotel_account_number: settingsMap['hotel_account_number'] || ''
       });
 
       // 2. Fetch staff members
@@ -535,6 +546,7 @@ const AdminAccounting = () => {
     setPayrollForm({
       base_salary: baseVal,
       allowances: allowancesVal,
+      allowances_list: staffMember.allowances_list || [],
       extra_bonuses: 0,
       bonuses: allowancesVal,
       deductions: deductionsVal,
@@ -744,6 +756,7 @@ const AdminAccounting = () => {
       bonuses: bonus,
       deductions: ded,
       deductions_list: finalDeductionsPayloadList,
+      allowances_list: payrollForm.allowances_list || [],
       pay_period_start: payrollForm.pay_period_start,
       pay_period_end: payrollForm.pay_period_end,
       payment_method: payrollForm.payment_method,
@@ -795,10 +808,11 @@ const AdminAccounting = () => {
         let insertPayload = { ...payload };
         let result = await supabase.from('staff_salaries').insert([insertPayload]).select();
         
-        if (result.error && result.error.message && result.error.message.includes('deductions_list')) {
-          console.warn("Database schema cache missing 'deductions_list' column. Retrying insert without 'deductions_list'...");
+        if (result.error && result.error.message && (result.error.message.includes('deductions_list') || result.error.message.includes('allowances_list'))) {
+          console.warn("Database schema cache missing list columns. Retrying insert without list columns...");
           const fallbackPayload = { ...insertPayload };
           delete fallbackPayload.deductions_list;
+          delete fallbackPayload.allowances_list;
           result = await supabase.from('staff_salaries').insert([fallbackPayload]).select();
         }
         
@@ -2868,7 +2882,7 @@ const AdminAccounting = () => {
                 <h3 className="text-lg font-bold flex items-center gap-2"><User size={20} className="text-brand-500" /> Active System Staff Directory</h3>
                 <button
                   onClick={() => setShowBankSettlementModal(true)}
-                  className="bg-brand-500 hover:bg-brand-600 text-white font-bold py-2.5 px-4.5 rounded-xl text-xs transition-all shadow-sm flex items-center gap-1.5 hover:scale-[1.02]"
+                  className="bg-brand-500 hover:bg-brand-600 text-white font-bold py-2.5 px-6 rounded-xl text-xs transition-all shadow-sm flex items-center gap-1.5 hover:scale-[1.02]"
                 >
                   <FileText size={14} /> Generate Settlement Sheet
                 </button>
@@ -4264,20 +4278,24 @@ const AdminAccounting = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-2 font-medium">Standard Allowances</label>
+                  <label className="block text-sm text-gray-400 mb-2 font-medium font-sans">Standard Allowances (Entitled)</label>
                   <input 
+                    disabled={true}
                     type="number" 
                     value={payrollForm.allowances}
-                    onChange={e => {
-                      const allow = Number(e.target.value);
-                      setPayrollForm({
-                        ...payrollForm,
-                        allowances: allow,
-                        bonuses: allow + (payrollForm.extra_bonuses || 0)
-                      });
-                    }}
-                    className="w-full bg-dark-900 border border-dark-700 p-3 rounded-xl text-white outline-none focus:border-brand-500 text-sm font-mono"
+                    className="w-full bg-dark-900 border border-dark-700 p-3 rounded-xl text-white outline-none text-sm font-mono opacity-60 cursor-not-allowed"
                   />
+                  {payrollForm.allowances_list && payrollForm.allowances_list.length > 0 ? (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {payrollForm.allowances_list.map((allow, idx) => (
+                        <span key={idx} className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
+                          {allow.name}: ₦{parseFloat(allow.amount).toLocaleString()}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-gray-500 italic mt-1 block">No entitled standard allowances</span>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm text-gray-400 mb-2 font-medium">Extra Bonuses</label>
@@ -6207,15 +6225,15 @@ const AdminAccounting = () => {
                 <div className="grid grid-cols-3 gap-4 font-mono text-[11px] text-pure-black py-2 bg-white p-3 rounded-lg border border-gray-100">
                   <div>
                     <span className="text-[9px] text-pure-gray-400 block font-bold font-sans uppercase">Source Bank</span>
-                    <strong>{settings.hotel_bank_name || 'Access Bank Plc'}</strong>
+                    <strong>{contactInfo.hotel_bank_name || 'Access Bank Plc'}</strong>
                   </div>
                   <div>
                     <span className="text-[9px] text-pure-gray-400 block font-bold font-sans uppercase">Account Name</span>
-                    <strong>{settings.hotel_account_name || 'Luxe Elite Hotels Ltd'}</strong>
+                    <strong>{contactInfo.hotel_account_name || 'Luxe Elite Hotels Ltd'}</strong>
                   </div>
                   <div>
                     <span className="text-[9px] text-pure-gray-400 block font-bold font-sans uppercase">Account Number</span>
-                    <strong>{settings.hotel_account_number || '0098172635'}</strong>
+                    <strong>{contactInfo.hotel_account_number || '0098172635'}</strong>
                   </div>
                 </div>
                 <p className="text-[10px] text-pure-gray-450 italic mt-2">Note: This is an official audit-locked document. All calculations have been cross-checked with active duty attendance clock logs and verified role salary exceptions.</p>

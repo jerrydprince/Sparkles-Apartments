@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
-import { Users, Clock, Activity, Shield, CheckCircle, XCircle, Search, Edit2, UserPlus, ToggleRight, ToggleLeft, Eye, EyeOff, PlusCircle, Fingerprint, Server, CalendarClock, MailOpen, X } from 'lucide-react';
+import { Users, Clock, Activity, Shield, CheckCircle, XCircle, Search, Edit2, UserPlus, ToggleRight, ToggleLeft, Eye, EyeOff, PlusCircle, Fingerprint, Server, CalendarClock, MailOpen, X, Plus, Trash2, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, differenceInDays } from 'date-fns';
 import { useAuth, validateStrongPassword } from '../../context/AuthContext';
@@ -514,7 +514,8 @@ const AdminStaffManagement = () => {
     base_salary: '', allowances: '', deductions: '',
     deduction_type: 'amount', has_salary_exception: false,
     salary_exception_reason: '', exempt_from_attendance_deduction: false,
-    bank_name: '', account_number: '', account_name: ''
+    bank_name: '', account_number: '', account_name: '',
+    allowances_list: []
   });
   const [showAddPassword, setShowAddPassword] = useState(false);
   const [showEditPassword, setShowEditPassword] = useState(false);
@@ -675,11 +676,11 @@ const AdminStaffManagement = () => {
     setLoading(true);
     try {
       await fetchCustomRoles();
-      // Load all staff deductions overrides and nigerian_banks from system_settings
+      // Load all staff deductions overrides, nigerian_banks, and salary_allowances_list from system_settings
       const { data: systemSettingsData } = await supabase
         .from('system_settings')
         .select('setting_key, setting_value')
-        .or('setting_key.eq.nigerian_banks,setting_key.like.salary_deductions_staff_%');
+        .or('setting_key.eq.nigerian_banks,setting_key.eq.salary_allowances_list,setting_key.like.salary_deductions_staff_%');
       
       const staffDedsMap = {};
       (systemSettingsData || []).forEach(s => {
@@ -695,6 +696,15 @@ const AdminStaffManagement = () => {
           } catch (e) {
             console.warn("Failed to parse nigerian_banks in StaffManagement:", e);
           }
+        } else if (s.setting_key === 'salary_allowances_list' && s.setting_value) {
+          try {
+            const parsed = typeof s.setting_value === 'string' ? JSON.parse(s.setting_value) : s.setting_value;
+            if (Array.isArray(parsed)) {
+              setGlobalAllowances(parsed);
+            }
+          } catch (e) {
+            console.warn("Failed to parse salary_allowances_list in StaffManagement:", e);
+          }
         }
       });
 
@@ -703,7 +713,8 @@ const AdminStaffManagement = () => {
         if (error) throw error;
         const resolved = (data || []).map(p => ({
           ...p,
-          deductions_list: staffDedsMap[p.id] || p.deductions_list || []
+          deductions_list: staffDedsMap[p.id] || p.deductions_list || [],
+          allowances_list: p.allowances_list || []
         }));
         setStaff(resolved);
       } else if (activeTab === 'attendance' || activeTab === 'shift_audits') {
@@ -711,7 +722,8 @@ const AdminStaffManagement = () => {
         if (profilesData) {
           const resolved = (profilesData || []).map(p => ({
             ...p,
-            deductions_list: staffDedsMap[p.id] || p.deductions_list || []
+            deductions_list: staffDedsMap[p.id] || p.deductions_list || [],
+            allowances_list: p.allowances_list || []
           }));
           setStaff(resolved);
         }
@@ -801,6 +813,37 @@ const AdminStaffManagement = () => {
   const [roleStructures, setRoleStructures] = useState([]);
   const [loadingStructures, setLoadingStructures] = useState(false);
   const [activeRoleDeductions, setActiveRoleDeductions] = useState(null);
+  const [globalAllowances, setGlobalAllowances] = useState([]);
+
+  const handleToggleStaffAllowance = (allowance, isChecked) => {
+    let list = [...(newStaffForm.allowances_list || [])];
+    if (isChecked) {
+      list.push(allowance);
+    } else {
+      list = list.filter(item => item.name !== allowance.name);
+    }
+    const totalAllowances = list.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+    setNewStaffForm(prev => ({
+      ...prev,
+      allowances_list: list,
+      allowances: totalAllowances
+    }));
+  };
+
+  const handleToggleEditingStaffAllowance = (allowance, isChecked) => {
+    let list = [...(editingStaffForm.allowances_list || [])];
+    if (isChecked) {
+      list.push(allowance);
+    } else {
+      list = list.filter(item => item.name !== allowance.name);
+    }
+    const totalAllowances = list.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+    setEditingStaffForm(prev => ({
+      ...prev,
+      allowances_list: list,
+      allowances: totalAllowances
+    }));
+  };
 
   const handleAddRoleDeduction = (roleId, name, amount, type) => {
     if (!name || !amount) return toast.error("Deduction name and amount are required.");
@@ -881,16 +924,27 @@ const AdminStaffManagement = () => {
 
       if (error) throw error;
 
-      // Fetch standard role deductions lists from system_settings
+      // Fetch standard role deductions lists and salary_allowances_list from system_settings
       const { data: settingsData } = await supabase
         .from('system_settings')
         .select('setting_key, setting_value')
-        .like('setting_key', 'salary_deductions_role_%');
+        .or('setting_key.like.salary_deductions_role_%,setting_key.eq.salary_allowances_list');
 
       const roleDedsMap = {};
       (settingsData || []).forEach(s => {
-        const roleId = s.setting_key.replace('salary_deductions_role_', '');
-        roleDedsMap[roleId] = s.setting_value;
+        if (s.setting_key.startsWith('salary_deductions_role_')) {
+          const roleId = s.setting_key.replace('salary_deductions_role_', '');
+          roleDedsMap[roleId] = s.setting_value;
+        } else if (s.setting_key === 'salary_allowances_list' && s.setting_value) {
+          try {
+            const parsed = typeof s.setting_value === 'string' ? JSON.parse(s.setting_value) : s.setting_value;
+            if (Array.isArray(parsed)) {
+              setGlobalAllowances(parsed);
+            }
+          } catch (e) {
+            console.warn("Failed to parse salary_allowances_list:", e);
+          }
+        }
       });
       
       const seededRoles = ROLES.map(role => {
@@ -1137,6 +1191,7 @@ const AdminStaffManagement = () => {
         biometric_key: editingStaffForm.biometric_key || null,
         base_salary: parseFloat(editingStaffForm.base_salary) || 0,
         allowances: parseFloat(editingStaffForm.allowances) || 0,
+        allowances_list: editingStaffForm.allowances_list || [],
         deductions: parseFloat(editingStaffForm.deductions) || 0,
         deduction_type: editingStaffForm.deduction_type || 'amount',
         has_salary_exception: !!editingStaffForm.has_salary_exception,
@@ -1226,6 +1281,7 @@ const AdminStaffManagement = () => {
             biometric_key: newStaffForm.biometric_key || null,
             base_salary: parseFloat(newStaffForm.base_salary) || 0,
             allowances: parseFloat(newStaffForm.allowances) || 0,
+            allowances_list: newStaffForm.allowances_list || [],
             deductions: parseFloat(newStaffForm.deductions) || 0,
             deduction_type: newStaffForm.deduction_type || 'amount',
             has_salary_exception: !!newStaffForm.has_salary_exception,
@@ -1309,6 +1365,7 @@ const AdminStaffManagement = () => {
         biometric_key: newStaffForm.biometric_key || null,
         base_salary: parseFloat(newStaffForm.base_salary) || 0,
         allowances: parseFloat(newStaffForm.allowances) || 0,
+        allowances_list: newStaffForm.allowances_list || [],
         deductions: parseFloat(newStaffForm.deductions) || 0,
         deduction_type: newStaffForm.deduction_type || 'amount',
         has_salary_exception: !!newStaffForm.has_salary_exception,
@@ -3897,7 +3954,7 @@ const AdminStaffManagement = () => {
                     <span className="text-base font-extrabold text-white font-mono mt-1">₦{parseFloat(newStaffForm.base_salary || 0).toLocaleString()}</span>
                   </div>
                   <div className="bg-dark-950/60 border border-dark-750/50 p-4 rounded-xl flex flex-col justify-center select-all">
-                    <span className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Allowances</span>
+                    <span className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Allowances (Summed)</span>
                     <span className="text-base font-extrabold text-emerald-450 font-mono mt-1">₦{parseFloat(newStaffForm.allowances || 0).toLocaleString()}</span>
                   </div>
                   <div className="bg-dark-950/60 border border-dark-750/50 p-4 rounded-xl flex flex-col justify-center select-all">
@@ -3914,6 +3971,33 @@ const AdminStaffManagement = () => {
                       )}
                     </div>
                   </div>
+                </div>
+
+                <div className="bg-dark-950/60 border border-dark-750/50 p-4 rounded-xl space-y-2.5">
+                  <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">Entitled Allowances</span>
+                  {globalAllowances.length === 0 ? (
+                    <span className="text-xs text-gray-500 italic block">No standard allowances configured. Configure them in Salary Structures.</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-3">
+                      {globalAllowances.map((allow, idx) => {
+                        const isChecked = (newStaffForm.allowances_list || []).some(a => a.name === allow.name);
+                        return (
+                          <label key={idx} className="flex items-center gap-2 bg-dark-900 border border-dark-750/70 p-2.5 rounded-xl cursor-pointer hover:border-brand-500/40 select-none transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={e => handleToggleStaffAllowance(allow, e.target.checked)}
+                              className="w-4.5 h-4.5 rounded text-brand-500 focus:ring-brand-500 bg-dark-950 border-dark-700 cursor-pointer"
+                            />
+                            <div className="flex flex-col font-sans">
+                              <span className="text-xs font-bold text-white leading-none">{allow.name}</span>
+                              <span className="text-[9px] text-emerald-400 font-bold font-mono mt-1">₦{parseFloat(allow.amount).toLocaleString()}</span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
                 <p className="text-[10px] text-gray-500 leading-normal">
                   Note: These standard payroll rates are automatically loaded from the global salary structure for the <span className="font-bold text-gray-400">{allRoles.find(r => r.id === newStaffForm.role)?.label || newStaffForm.role}</span> access level and cannot be modified here. Adjust these defaults in the Standard Salary Structure explorer modal if needed.
@@ -4221,13 +4305,13 @@ const AdminStaffManagement = () => {
                           step="0.01" 
                           placeholder="e.g. 150000" 
                           value={baseSalaryVal} 
-                          className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white placeholder-gray-600 outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm sm:text-base font-mono opacity-60 cursor-not-allowed" 
+                          className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white placeholder-gray-655 outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm sm:text-base font-mono opacity-60 cursor-not-allowed" 
                         />
                       );
                     })()}
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Allowances</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Allowances (Summed)</label>
                     {(() => {
                       const matchingStructure = roleStructures.find(struct => struct.role === editingStaffForm.role);
                       const defaultAllow = matchingStructure ? matchingStructure.allowances : 0;
@@ -4240,11 +4324,38 @@ const AdminStaffManagement = () => {
                           step="0.01" 
                           placeholder="e.g. 20000" 
                           value={allowancesVal} 
-                          className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white placeholder-gray-600 outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm sm:text-base font-mono opacity-60 cursor-not-allowed" 
+                          className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white placeholder-gray-655 outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm sm:text-base font-mono opacity-60 cursor-not-allowed" 
                         />
                       );
                     })()}
                   </div>
+                </div>
+
+                <div className="bg-dark-950/60 border border-dark-750/50 p-4 rounded-xl space-y-2.5">
+                  <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">Entitled Allowances</span>
+                  {globalAllowances.length === 0 ? (
+                    <span className="text-xs text-gray-500 italic block">No standard allowances configured. Configure them in Salary Structures.</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-3">
+                      {globalAllowances.map((allow, idx) => {
+                        const isChecked = (editingStaffForm.allowances_list || []).some(a => a.name === allow.name);
+                        return (
+                          <label key={idx} className="flex items-center gap-2 bg-dark-900 border border-dark-750/70 p-2.5 rounded-xl cursor-pointer hover:border-brand-500/40 select-none transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={e => handleToggleEditingStaffAllowance(allow, e.target.checked)}
+                              className="w-4.5 h-4.5 rounded text-brand-500 focus:ring-brand-500 bg-dark-950 border-dark-700 cursor-pointer"
+                            />
+                            <div className="flex flex-col font-sans">
+                              <span className="text-xs font-bold text-white leading-none">{allow.name}</span>
+                              <span className="text-[9px] text-emerald-400 font-bold font-mono mt-1">₦{parseFloat(allow.amount).toLocaleString()}</span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 <div className="border-t border-dark-750 pt-4 mt-2">
@@ -4424,6 +4535,16 @@ const AdminStaffManagement = () => {
                   }`}
                 >
                   👤 Staff Overrides & Exceptions
+                </button>
+                <button
+                  onClick={() => setSalaryStructuresTab('allowances')}
+                  className={`pb-3 px-1 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
+                    salaryStructuresTab === 'allowances' 
+                      ? 'border-brand-500 text-brand-400' 
+                      : 'border-transparent text-gray-400 hover:text-white'
+                  }`}
+                >
+                  💰 Standard Allowances
                 </button>
               </div>
             </div>
@@ -4771,6 +4892,136 @@ const AdminStaffManagement = () => {
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: STANDARD ALLOWANCES MANAGEMENT */}
+              {salaryStructuresTab === 'allowances' && (
+                <div className="space-y-6 animate-fade-in text-gray-300">
+                  <p className="text-xs text-gray-400 leading-relaxed">
+                    Define standard hotel allowances (e.g., Housing, Transport, Utility). Once configured here, these allowances can be assigned to individual staff members during registration or profile editing.
+                  </p>
+
+                  {/* Table of active allowances */}
+                  <div className="bg-dark-950/40 border border-dark-750/70 rounded-2xl overflow-hidden shadow-inner">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-dark-900 border-b border-dark-750 text-gray-400 uppercase tracking-widest font-black text-[10px]">
+                        <tr>
+                          <th className="p-4">Allowance Name / Title</th>
+                          <th className="p-4">Default Monthly Amount (NGN)</th>
+                          <th className="p-4 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-dark-750">
+                        {(globalAllowances || []).map((allow, index) => (
+                          <tr key={index} className="hover:bg-dark-900/35 transition-colors">
+                            <td className="p-4 font-bold text-white">{allow.name}</td>
+                            <td className="p-4 font-mono text-emerald-450">₦{parseFloat(allow.amount || 0).toLocaleString()}</td>
+                            <td className="p-4 text-right">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const list = (globalAllowances || []).filter((_, i) => i !== index);
+                                  setGlobalAllowances(list);
+                                }}
+                                className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-red-400 rounded-xl transition-all cursor-pointer"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {(globalAllowances || []).length === 0 && (
+                          <tr>
+                            <td colSpan="3" className="p-8 text-center text-gray-500 italic">No standard allowances configured. Add one below!</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Add new allowance form */}
+                  <div className="bg-dark-900 border border-dark-750/70 rounded-2xl p-4 space-y-4">
+                    <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Plus size={14} className="text-brand-500" /> Configure New Allowance
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[10px] text-gray-400 uppercase font-black tracking-widest block mb-1">Allowance Title</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Utility Allowance"
+                          id="new-allowance-name"
+                          className="w-full bg-dark-950 border border-dark-700/60 p-2.5 rounded-xl text-xs text-white placeholder-gray-650 outline-none focus:border-brand-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-400 uppercase font-black tracking-widest block mb-1">Monthly Amount (NGN)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="e.g. 15000"
+                          id="new-allowance-amount"
+                          className="w-full bg-dark-950 border border-dark-700/60 p-2.5 rounded-xl text-xs text-white placeholder-gray-650 outline-none focus:border-brand-500 font-mono"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nameEl = document.getElementById('new-allowance-name');
+                          const amtEl = document.getElementById('new-allowance-amount');
+                          if (nameEl && amtEl) {
+                            const name = nameEl.value.trim();
+                            const amount = parseFloat(amtEl.value) || 0;
+                            if (!name) return toast.error("Allowance title is required");
+                            if (amount <= 0) return toast.error("Allowance amount must be greater than 0");
+
+                            if ((globalAllowances || []).some(a => a.name.toLowerCase() === name.toLowerCase())) {
+                              return toast.error("An allowance with this title already exists");
+                            }
+
+                            const updatedList = [...(globalAllowances || []), { name, amount }];
+                            setGlobalAllowances(updatedList);
+                            nameEl.value = '';
+                            amtEl.value = '';
+                          }
+                        }}
+                        className="bg-brand-500 hover:bg-brand-600 text-white font-bold py-2 px-4 rounded-xl text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        Add to List
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Global Save Button */}
+                  <div className="flex justify-end border-t border-dark-750 pt-4">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const loadingToast = toast.loading('Saving standard allowances...');
+                        try {
+                          const { error } = await supabase
+                            .from('system_settings')
+                            .upsert({
+                              setting_key: 'salary_allowances_list',
+                              setting_value: globalAllowances
+                            }, { onConflict: 'setting_key' });
+
+                          if (error) throw error;
+                          toast.success('[✓] Standard allowances list saved successfully!', { id: loadingToast });
+                        } catch (err) {
+                          console.error(err);
+                          toast.error(`Save failed: ${err.message}`, { id: loadingToast });
+                        }
+                      }}
+                      className="btn-primary py-2.5 px-5 text-xs font-black uppercase tracking-wider flex items-center gap-2 cursor-pointer animate-pulse"
+                    >
+                      <Save size={14} /> Save Allowances
+                    </button>
                   </div>
                 </div>
               )}
