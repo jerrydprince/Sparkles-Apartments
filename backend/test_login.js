@@ -6,10 +6,9 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANO
 
 async function test() {
   const accounts = [
+    { email: 'newadmin@sparkles.com', password: 'password123' },
     { email: 'jerrydprince@gmail.com', password: 'Jerry08283139' },
     { email: 'testuser@gmail.com', password: 'password' },
-    { email: 'testuser@gmail.com', password: 'Password123!' },
-    { email: 'testuser@gmail.com', password: 'testuser' },
     { email: 'admin@gmail.com', password: 'password' }
   ];
 
