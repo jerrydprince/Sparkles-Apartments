@@ -108,6 +108,7 @@ const AdminCalendar = () => {
     if (event.status === 'confirmed') backgroundColor = '#38a169'; // green
     if (event.status === 'checked_in') backgroundColor = '#805ad5'; // purple
     if (event.status === 'cancelled') backgroundColor = '#e53e3e'; // red
+    if (event.status === 'no_show') backgroundColor = '#dd6b20'; // orange
 
     return {
       style: {

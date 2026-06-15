@@ -198,6 +198,7 @@ const AdminFrontDesk = () => {
   // Advanced Modals & Check-in / Visitor states
   const [activeCheckIn, setActiveCheckIn] = useState(null); // stores booking obj
   const [activeCheckOut, setActiveCheckOut] = useState(null);
+  const [activeNoShowModal, setActiveNoShowModal] = useState(null);
   const [checkoutSettleMode, setCheckoutSettleMode] = useState('ar_wallet');
   const [checkoutPaymentMethod, setCheckoutPaymentMethod] = useState('ar');
   const [checkoutARProfile, setCheckoutARProfile] = useState(null);
@@ -207,6 +208,58 @@ const AdminFrontDesk = () => {
   const [loadingUnpaidServices, setLoadingUnpaidServices] = useState(false);
   const [activeVisitorRegistration, setActiveVisitorRegistration] = useState(null);
   const [lateCheckoutBookings, setLateCheckoutBookings] = useState([]);
+  const [rebookCheckIn, setRebookCheckIn] = useState('');
+  const [rebookCheckOut, setRebookCheckOut] = useState('');
+  const [rebookRoomId, setRebookRoomId] = useState('');
+  const [rebookRoomsList, setRebookRoomsList] = useState([]);
+  const [loadingRebookRooms, setLoadingRebookRooms] = useState(false);
+  const [rebookProcessing, setRebookProcessing] = useState(false);
+
+  const fetchRebookAvailability = async (checkIn, checkOut) => {
+    if (!checkIn || !checkOut) return;
+    setLoadingRebookRooms(true);
+    try {
+      const { data: rooms } = await supabase.from('rooms').select('id, name, room_number, base_price_ngn');
+      if (!rooms) return setRebookRoomsList([]);
+
+      const { data: bookedRooms, error: queryError } = await supabase.rpc('get_booked_room_ids', {
+        req_start_date: checkIn,
+        req_end_date: checkOut
+      });
+        
+      if (queryError) console.error('Availability check error:', queryError);
+
+      const bookedRoomIds = new Set((bookedRooms || []).map(b => typeof b === 'string' ? b : (b.booked_room_id || b.room_id || b.id || Object.values(b)[0])));
+      
+      const actuallyAvailable = rooms.filter(r => !bookedRoomIds.has(r.id));
+      setRebookRoomsList(actuallyAvailable);
+    } catch (err) {
+      console.error('Rebooking check failed:', err);
+    } finally {
+      setLoadingRebookRooms(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeNoShowModal) {
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const tomorrowStr = format(addDays(new Date(), 1), 'yyyy-MM-dd');
+      setRebookCheckIn(todayStr);
+      setRebookCheckOut(tomorrowStr);
+      setRebookRoomId(activeNoShowModal.room_id || '');
+    } else {
+      setRebookCheckIn('');
+      setRebookCheckOut('');
+      setRebookRoomId('');
+      setRebookRoomsList([]);
+    }
+  }, [activeNoShowModal]);
+
+  useEffect(() => {
+    if (activeNoShowModal && rebookCheckIn && rebookCheckOut) {
+      fetchRebookAvailability(rebookCheckIn, rebookCheckOut);
+    }
+  }, [rebookCheckIn, rebookCheckOut, activeNoShowModal]);
 
   // Add Addon Service to Stayed Guest state
   const [activeAddServiceBooking, setActiveAddServiceBooking] = useState(null);
@@ -1399,6 +1452,107 @@ const AdminFrontDesk = () => {
       toast.success(`🎉 Guest earned ${pointsEarned} loyalty points! Total: ${newPoints} pts. Tier: ${newSegment.toUpperCase()}`, { duration: 6000 });
     } catch (err) {
       console.warn("Failed to award loyalty points:", err);
+    }
+  };
+
+  const handleMarkAsNoShowOnly = async (booking) => {
+    setRebookProcessing(true);
+    const toastId = toast.loading(`Marking ${booking.profiles ? `${booking.profiles.first_name} ${booking.profiles.last_name}` : booking.guest_name} as No-Show...`);
+    try {
+      // 1. Update booking status
+      const { error: bookingErr } = await supabase
+        .from('bookings')
+        .update({ status: 'no_show' })
+        .eq('id', booking.id);
+      if (bookingErr) throw bookingErr;
+
+      // 2. Release room
+      if (booking.room_id) {
+        const { error: roomErr } = await supabase
+          .from('rooms')
+          .update({ status: 'available' })
+          .eq('id', booking.room_id);
+        if (roomErr) throw roomErr;
+      }
+
+      toast.success('Reservation status updated to No-Show & room released.', { id: toastId });
+      setActiveNoShowModal(null);
+      fetchFrontDeskData(false);
+    } catch (err) {
+      console.error(err);
+      toast.error(`Operation failed: ${err.message || 'Error occurred'}`, { id: toastId });
+    } finally {
+      setRebookProcessing(false);
+    }
+  };
+
+  const handleConfirmRebooking = async (e) => {
+    e.preventDefault();
+    if (!rebookRoomId) {
+      toast.error('Please select an available room.');
+      return;
+    }
+    setRebookProcessing(true);
+    const toastId = toast.loading('Processing guest rebooking...');
+    try {
+      const selectedRoom = rebookRoomsList.find(r => r.id === rebookRoomId);
+      if (!selectedRoom) throw new Error('Selected room is invalid or unavailable.');
+
+      const nights = Math.max(1, differenceInDays(new Date(rebookCheckOut), new Date(rebookCheckIn)));
+      const newRoomPrice = Number(selectedRoom.base_price_ngn) * nights;
+      const newTotalAmount = newRoomPrice + (activeNoShowModal.total_extras_price_ngn || 0);
+
+      // Preserve payment but update date, status, room, and recalculated price.
+      const amountPaid = Number(activeNoShowModal.amount_paid_ngn || 0);
+      const newPaymentStatus = amountPaid >= newTotalAmount ? 'paid' : (amountPaid > 0 ? 'partial' : 'unpaid');
+
+      // 1. Release original room
+      if (activeNoShowModal.room_id) {
+        const { error: oldRoomErr } = await supabase
+          .from('rooms')
+          .update({ status: 'available' })
+          .eq('id', activeNoShowModal.room_id);
+        if (oldRoomErr) throw oldRoomErr;
+      }
+
+      // 2. Update booking details
+      const { error: updateErr } = await supabase
+        .from('bookings')
+        .update({
+          check_in_date: rebookCheckIn,
+          check_out_date: rebookCheckOut,
+          room_id: rebookRoomId,
+          total_room_price_ngn: newRoomPrice,
+          total_amount_ngn: newTotalAmount,
+          payment_status: newPaymentStatus,
+          status: 'confirmed'
+        })
+        .eq('id', activeNoShowModal.id);
+      if (updateErr) throw updateErr;
+
+      // 3. Log ₦0 payment in stay ledger with notes = 'Rebook'
+      const { error: paymentErr } = await supabase
+        .from('payments')
+        .insert([{
+          booking_id: activeNoShowModal.id,
+          amount: 0,
+          currency: 'NGN',
+          method: 'rebook',
+          status: 'completed',
+          is_refund: false,
+          transaction_ref: `REBOOK-${Math.random().toString(36).substring(2, 8).toUpperCase()}-${Date.now()}`,
+          notes: 'Rebook'
+        }]);
+      if (paymentErr) console.warn("Failed to log rebooking payment ledger entry:", paymentErr);
+
+      toast.success('Guest successfully rebooked for the new dates!', { id: toastId });
+      setActiveNoShowModal(null);
+      fetchFrontDeskData(false);
+    } catch (err) {
+      console.error(err);
+      toast.error(`Rebooking failed: ${err.message || 'Error occurred'}`, { id: toastId });
+    } finally {
+      setRebookProcessing(false);
     }
   };
 
@@ -3353,6 +3507,9 @@ const AdminFrontDesk = () => {
                                     } else if (booking.status === 'checked_out') {
                                       statusColorClass = 'bg-gradient-to-r from-gray-500/15 to-gray-500/5 border-gray-500/30 border-l-[5px] border-l-gray-400 text-gray-300 hover:from-gray-500/25 hover:to-gray-500/10 shadow-[0_4px_12px_rgba(156,163,175,0.05)]';
                                       StatusIcon = LogOut;
+                                    } else if (booking.status === 'no_show') {
+                                      statusColorClass = 'bg-gradient-to-r from-orange-500/15 to-orange-500/5 border-orange-500/30 border-l-[5px] border-l-orange-500 text-orange-400 hover:from-orange-500/25 hover:to-orange-500/10 shadow-[0_4px_12px_rgba(249,115,22,0.08)]';
+                                      StatusIcon = AlertTriangle;
                                     } else if (room.status === 'maintenance' || booking.status === 'maintenance') {
                                       statusColorClass = 'bg-gradient-to-r from-red-500/15 to-red-500/5 border-red-500/30 border-l-[5px] border-l-red-500 text-red-400 hover:from-red-500/25 hover:to-red-500/10 shadow-[0_4px_12px_rgba(239,68,68,0.08)]';
                                       StatusIcon = Wrench;
@@ -3658,6 +3815,7 @@ const AdminFrontDesk = () => {
                       selectedCalendarBooking.status === 'confirmed' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
                       selectedCalendarBooking.status === 'pending' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
                       selectedCalendarBooking.status === 'checked_in' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
+                      selectedCalendarBooking.status === 'no_show' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
                       'bg-red-500/10 text-red-400 border border-red-500/20'
                     }`}>
                       {selectedCalendarBooking.status?.replace('_', ' ')}
@@ -3720,6 +3878,28 @@ const AdminFrontDesk = () => {
                       <Users size={13} /> Register Guest Visitor
                     </button>
                   </>
+                )}
+                {(selectedCalendarBooking.status === 'confirmed' || selectedCalendarBooking.status === 'pending') && (
+                  <button 
+                    onClick={() => {
+                      setActiveNoShowModal(selectedCalendarBooking);
+                      setSelectedCalendarBooking(null);
+                    }}
+                    className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-2.5 rounded border border-orange-600/30 transition-all text-xs flex items-center justify-center gap-1.5 shadow-[0_2px_6px_rgba(249,115,22,0.15)]"
+                  >
+                    <AlertTriangle size={13} /> Mark as No-Show / Rebook
+                  </button>
+                )}
+                {selectedCalendarBooking.status === 'no_show' && (
+                  <button 
+                    onClick={() => {
+                      setActiveNoShowModal(selectedCalendarBooking);
+                      setSelectedCalendarBooking(null);
+                    }}
+                    className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-2.5 rounded border border-orange-600/30 transition-all text-xs flex items-center justify-center gap-1.5 shadow-[0_2px_6px_rgba(249,115,22,0.15)]"
+                  >
+                    <AlertTriangle size={13} /> Rebook No-Show Guest
+                  </button>
                 )}
                 <button 
                   onClick={() => {
@@ -4183,6 +4363,152 @@ const AdminFrontDesk = () => {
                   </>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- No-Show & Rebook Modal --- */}
+      {activeNoShowModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-800 border border-dark-700 w-full max-w-lg rounded-xl shadow-2xl animate-in zoom-in-95 overflow-hidden flex flex-col">
+            <div className="bg-dark-900 p-5 border-b border-dark-700 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <AlertTriangle className="text-orange-500"/> No-Show / Guest Rebooking
+              </h2>
+              <button onClick={() => setActiveNoShowModal(null)} className="text-gray-400 hover:text-white"><X size={24}/></button>
+            </div>
+            
+            <div className="p-6 space-y-6 max-h-[550px] overflow-y-auto custom-scrollbar">
+              {/* Guest Details */}
+              <div className="bg-dark-900/40 border border-dark-700/60 p-4 rounded-xl space-y-2">
+                <p className="text-xs uppercase font-extrabold tracking-wider text-gray-500">Current Reservation Details</p>
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div>
+                    <span className="text-gray-400 block">Guest Name:</span>
+                    <strong className="text-white text-sm">{activeNoShowModal.profiles ? `${activeNoShowModal.profiles.first_name} ${activeNoShowModal.profiles.last_name}` : activeNoShowModal.guest_name}</strong>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block">Original Room:</span>
+                    <strong className="text-white text-sm">Room {activeNoShowModal.rooms?.room_number}</strong>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block">Original Dates:</span>
+                    <strong className="text-white">{activeNoShowModal.check_in_date} to {activeNoShowModal.check_out_date}</strong>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block">Amount Paid originally:</span>
+                    <strong className="text-green-400 font-mono">₦{Number(activeNoShowModal.amount_paid_ngn || 0).toLocaleString()}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action 1: Mark No-Show Only (if not already no-show) */}
+              {activeNoShowModal.status !== 'no_show' && (
+                <div className="bg-dark-900/20 border border-dark-850 p-4 rounded-xl space-y-3">
+                  <p className="text-xs text-gray-400">If the guest will not arrive and you only want to release the room to available inventory without rebooking:</p>
+                  <button 
+                    type="button"
+                    disabled={rebookProcessing}
+                    onClick={() => handleMarkAsNoShowOnly(activeNoShowModal)}
+                    className="bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white px-4 py-2 text-xs font-bold rounded border border-red-500/20 transition-all flex items-center gap-1.5 active:scale-[0.98] disabled:opacity-50"
+                  >
+                    <AlertTriangle size={13} /> Mark as No-Show & Release Room
+                  </button>
+                </div>
+              )}
+
+              {/* Action 2: Rebook Form */}
+              <form onSubmit={handleConfirmRebooking} className="space-y-4 pt-2 border-t border-dark-700/60">
+                <p className="text-xs uppercase font-extrabold tracking-wider text-gray-500 mb-2">Rebook Guest for New Dates</p>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1 font-semibold">New Check-In Date *</label>
+                    <input 
+                      required 
+                      type="date" 
+                      value={rebookCheckIn} 
+                      onChange={e => setRebookCheckIn(e.target.value)} 
+                      className="w-full bg-dark-900 border border-dark-700 p-2.5 rounded text-white outline-none focus:border-brand-500 text-xs font-mono" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1 font-semibold">New Check-Out Date *</label>
+                    <input 
+                      required 
+                      type="date" 
+                      value={rebookCheckOut} 
+                      onChange={e => setRebookCheckOut(e.target.value)} 
+                      className="w-full bg-dark-900 border border-dark-700 p-2.5 rounded text-white outline-none focus:border-brand-500 text-xs font-mono" 
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1 font-semibold">Select Room *</label>
+                  {loadingRebookRooms ? (
+                    <div className="text-xs text-gray-500 italic py-2">Loading available rooms...</div>
+                  ) : (
+                    <select 
+                      required
+                      value={rebookRoomId} 
+                      onChange={e => setRebookRoomId(e.target.value)} 
+                      className="w-full bg-dark-900 border border-dark-700 p-2.5 rounded text-white outline-none focus:border-brand-500 text-xs"
+                    >
+                      <option value="">-- Select Available Room --</option>
+                      {rebookRoomsList.map(r => (
+                        <option key={r.id} value={r.id}>
+                          Room {r.room_number} - {r.name} (₦{Number(r.base_price_ngn).toLocaleString()}/night)
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Pricing / Balance Carryover Summary */}
+                {rebookCheckIn && rebookCheckOut && rebookRoomId && (
+                  (() => {
+                    const selectedRoom = rebookRoomsList.find(r => r.id === rebookRoomId);
+                    if (!selectedRoom) return null;
+                    const nights = Math.max(1, differenceInDays(new Date(rebookCheckOut), new Date(rebookCheckIn)));
+                    const newPrice = Number(selectedRoom.base_price_ngn) * nights;
+                    const originalPaid = Number(activeNoShowModal.amount_paid_ngn || 0);
+                    const balOwed = Math.max(0, newPrice - originalPaid);
+
+                    return (
+                      <div className="bg-dark-900 border border-dark-750 p-4 rounded-xl space-y-2 text-xs">
+                        <div className="flex justify-between items-center text-gray-400">
+                          <span>New Stay Period:</span>
+                          <span className="text-white font-semibold">{nights} Night(s)</span>
+                        </div>
+                        <div className="flex justify-between items-center text-gray-400">
+                          <span>New Stay Total:</span>
+                          <span className="text-white font-mono font-bold">₦{newPrice.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-gray-400">
+                          <span>Original Prepayment:</span>
+                          <span className="text-green-400 font-mono font-bold">₦{originalPaid.toLocaleString()}</span>
+                        </div>
+                        <div className="border-t border-dark-700 pt-2 flex justify-between items-center text-sm">
+                          <span className="text-amber-400 font-extrabold">Balance to Pay at Checkout:</span>
+                          <span className={`font-mono font-black ${balOwed > 0 ? 'text-red-400 font-extrabold' : 'text-green-500'}`}>
+                            ₦{balOwed.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
+
+                <button
+                  type="submit"
+                  disabled={rebookProcessing || loadingRebookRooms}
+                  className="w-full bg-brand-500 hover:bg-brand-400 text-dark-950 font-bold py-3 text-xs transition-all rounded shadow-md mt-2 flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+                >
+                  Confirm Guest Rebooking (₦0 payment today)
+                </button>
+              </form>
             </div>
           </div>
         </div>
