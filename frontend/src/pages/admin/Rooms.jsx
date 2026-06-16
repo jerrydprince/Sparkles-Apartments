@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, X, BedDouble, Key, Settings, Image as ImageIcon, CheckCircle, AlertTriangle, MapPin, Search, Package, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useRealtimeSync } from '../../lib/useRealtimeSync';
 import toast from 'react-hot-toast';
 import { clearCache } from '../../utils/cache';
 import { useAuth } from '../../context/AuthContext';
@@ -53,6 +54,11 @@ const AdminRooms = () => {
   useEffect(() => {
     fetchData(false); // non-blocking SWR background load on tab switch
   }, [activeTab]);
+
+  // Real-time synchronization for rooms table changes
+  useRealtimeSync(['rooms'], () => {
+    fetchData(true);
+  });
 
   const fetchData = async (force = true) => {
     // Only show blocking loader on very first mount or when explicitly forced (after mutations)

@@ -5,6 +5,7 @@ import { Users, Clock, Activity, Shield, CheckCircle, XCircle, Search, Edit2, Us
 import toast from 'react-hot-toast';
 import { format, differenceInDays } from 'date-fns';
 import { useAuth, validateStrongPassword } from '../../context/AuthContext';
+import { useRealtimeSync } from '../../lib/useRealtimeSync';
 
 // Secondary Auth client for silent signup
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -44,6 +45,23 @@ const calculateTotalDeductions = (baseSalary, deductionsList) => {
     return sum + val;
   }, 0);
 };
+
+const WEEKDAYS = [
+  { value: 0, label: 'Sunday' },
+  { value: 1, label: 'Monday' },
+  { value: 2, label: 'Tuesday' },
+  { value: 3, label: 'Wednesday' },
+  { value: 4, label: 'Thursday' },
+  { value: 5, label: 'Friday' },
+  { value: 6, label: 'Saturday' }
+];
+
+const SHIFT_PRESETS = [
+  { name: 'Morning Shift', start: '08:00', end: '17:00' },
+  { name: 'Evening Shift', start: '17:00', end: '23:00' },
+  { name: 'Night Shift', start: '23:00', end: '08:00' },
+  { name: 'Flexible Shift', start: '00:00', end: '00:00' }
+];
 
 const ROLES = [
   { id: 'super_admin', label: 'Super Admin', color: 'bg-red-500/10 text-red-500' },
@@ -515,7 +533,14 @@ const AdminStaffManagement = () => {
     deduction_type: 'amount', has_salary_exception: false,
     salary_exception_reason: '', exempt_from_attendance_deduction: false,
     bank_name: '', account_number: '', account_name: '',
-    allowances_list: []
+    allowances_list: [],
+    shift_name: 'Morning Shift',
+    shift_start_time: '08:00',
+    shift_end_time: '17:00',
+    expected_work_days: [1, 2, 3, 4, 5, 6],
+    expected_work_days_count: 6,
+    attendance_deduction_type: 'daily_rate',
+    attendance_deduction_rate: 0
   });
   const [showAddPassword, setShowAddPassword] = useState(false);
   const [showEditPassword, setShowEditPassword] = useState(false);
@@ -596,6 +621,43 @@ const AdminStaffManagement = () => {
     return `${hours}:${mins}:${secs}`;
   };
 
+  const handleWeekdayChange = (dayValue, isChecked, isEdit = false) => {
+    const form = isEdit ? editingStaffForm : newStaffForm;
+    const setForm = isEdit ? setEditingStaffForm : setNewStaffForm;
+    let currentDays = [...(form.expected_work_days || [])];
+    if (isChecked) {
+      if (!currentDays.includes(dayValue)) {
+        currentDays.push(dayValue);
+      }
+    } else {
+      currentDays = currentDays.filter(d => d !== dayValue);
+    }
+    currentDays.sort((a, b) => a - b);
+    setForm(prev => ({
+      ...prev,
+      expected_work_days: currentDays,
+      expected_work_days_count: currentDays.length
+    }));
+  };
+
+  const handleShiftPresetChange = (presetName, isEdit = false) => {
+    const setForm = isEdit ? setEditingStaffForm : setNewStaffForm;
+    const preset = SHIFT_PRESETS.find(p => p.name === presetName);
+    if (preset) {
+      setForm(prev => ({
+        ...prev,
+        shift_name: preset.name,
+        shift_start_time: preset.start,
+        shift_end_time: preset.end
+      }));
+    } else {
+      setForm(prev => ({
+        ...prev,
+        shift_name: presetName
+      }));
+    }
+  };
+
   useEffect(() => {
     // 1. Check Platform WebAuthn Support
     if (window.PublicKeyCredential) {
@@ -663,6 +725,11 @@ const AdminStaffManagement = () => {
   useEffect(() => {
     fetchData();
   }, [activeTab]);
+
+  // Real-time synchronization for profiles, staff_attendance, and leave_applications
+  useRealtimeSync(['profiles', 'staff_attendance', 'leave_applications'], () => {
+    fetchData();
+  });
 
   useEffect(() => {
     const handleSync = () => {
@@ -1199,7 +1266,14 @@ const AdminStaffManagement = () => {
         exempt_from_attendance_deduction: !!editingStaffForm.exempt_from_attendance_deduction,
         bank_name: editingStaffForm.bank_name || null,
         account_number: editingStaffForm.account_number || null,
-        account_name: editingStaffForm.account_name || null
+        account_name: editingStaffForm.account_name || null,
+        shift_name: editingStaffForm.shift_name || 'Morning Shift',
+        shift_start_time: editingStaffForm.shift_start_time || '08:00',
+        shift_end_time: editingStaffForm.shift_end_time || '17:00',
+        expected_work_days: editingStaffForm.expected_work_days || [1, 2, 3, 4, 5, 6],
+        expected_work_days_count: editingStaffForm.expected_work_days_count !== undefined && editingStaffForm.expected_work_days_count !== null ? parseInt(editingStaffForm.expected_work_days_count) : 6,
+        attendance_deduction_type: editingStaffForm.attendance_deduction_type || 'daily_rate',
+        attendance_deduction_rate: parseFloat(editingStaffForm.attendance_deduction_rate) || 0
       }).eq('id', editingStaffForm.id);
 
       if (profileError) throw profileError;
@@ -1289,7 +1363,14 @@ const AdminStaffManagement = () => {
             exempt_from_attendance_deduction: !!newStaffForm.exempt_from_attendance_deduction,
             bank_name: newStaffForm.bank_name || null,
             account_number: newStaffForm.account_number || null,
-            account_name: newStaffForm.account_name || null
+            account_name: newStaffForm.account_name || null,
+            shift_name: newStaffForm.shift_name || 'Morning Shift',
+            shift_start_time: newStaffForm.shift_start_time || '08:00',
+            shift_end_time: newStaffForm.shift_end_time || '17:00',
+            expected_work_days: newStaffForm.expected_work_days || [1, 2, 3, 4, 5, 6],
+            expected_work_days_count: newStaffForm.expected_work_days_count !== undefined && newStaffForm.expected_work_days_count !== null ? parseInt(newStaffForm.expected_work_days_count) : 6,
+            attendance_deduction_type: newStaffForm.attendance_deduction_type || 'daily_rate',
+            attendance_deduction_rate: parseFloat(newStaffForm.attendance_deduction_rate) || 0
           });
 
           if (profileError) throw profileError;
@@ -1329,7 +1410,14 @@ const AdminStaffManagement = () => {
             pos_outlets: [], biometric_key: '', base_salary: '', allowances: '', deductions: '',
             deduction_type: 'amount', has_salary_exception: false,
             salary_exception_reason: '', exempt_from_attendance_deduction: false,
-            bank_name: '', account_number: '', account_name: ''
+            bank_name: '', account_number: '', account_name: '',
+            shift_name: 'Morning Shift',
+            shift_start_time: '08:00',
+            shift_end_time: '17:00',
+            expected_work_days: [1, 2, 3, 4, 5, 6],
+            expected_work_days_count: 6,
+            attendance_deduction_type: 'daily_rate',
+            attendance_deduction_rate: 0
           });
           fetchData();
           return;
@@ -1373,7 +1461,14 @@ const AdminStaffManagement = () => {
         exempt_from_attendance_deduction: !!newStaffForm.exempt_from_attendance_deduction,
         bank_name: newStaffForm.bank_name || null,
         account_number: newStaffForm.account_number || null,
-        account_name: newStaffForm.account_name || null
+        account_name: newStaffForm.account_name || null,
+        shift_name: newStaffForm.shift_name || 'Morning Shift',
+        shift_start_time: newStaffForm.shift_start_time || '08:00',
+        shift_end_time: newStaffForm.shift_end_time || '17:00',
+        expected_work_days: newStaffForm.expected_work_days || [1, 2, 3, 4, 5, 6],
+        expected_work_days_count: newStaffForm.expected_work_days_count !== undefined && newStaffForm.expected_work_days_count !== null ? parseInt(newStaffForm.expected_work_days_count) : 6,
+        attendance_deduction_type: newStaffForm.attendance_deduction_type || 'daily_rate',
+        attendance_deduction_rate: parseFloat(newStaffForm.attendance_deduction_rate) || 0
       });
 
       if (profileError) throw profileError;
@@ -1403,7 +1498,14 @@ const AdminStaffManagement = () => {
         pos_outlets: [], biometric_key: '', base_salary: '', allowances: '', deductions: '',
         deduction_type: 'amount', has_salary_exception: false,
         salary_exception_reason: '', exempt_from_attendance_deduction: false,
-        bank_name: '', account_number: '', account_name: ''
+        bank_name: '', account_number: '', account_name: '',
+        shift_name: 'Morning Shift',
+        shift_start_time: '08:00',
+        shift_end_time: '17:00',
+        expected_work_days: [1, 2, 3, 4, 5, 6],
+        expected_work_days_count: 6,
+        attendance_deduction_type: 'daily_rate',
+        attendance_deduction_rate: 0
       });
       fetchData();
     } catch (e) {
@@ -2627,7 +2729,14 @@ const AdminStaffManagement = () => {
                               deductions_list: s.deductions_list || [],
                               has_salary_exception: !!s.has_salary_exception,
                               salary_exception_reason: s.salary_exception_reason || '',
-                              exempt_from_attendance_deduction: !!s.exempt_from_attendance_deduction
+                              exempt_from_attendance_deduction: !!s.exempt_from_attendance_deduction,
+                              shift_name: s.shift_name || 'Morning Shift',
+                              shift_start_time: s.shift_start_time || '08:00',
+                              shift_end_time: s.shift_end_time || '17:00',
+                              expected_work_days: s.expected_work_days || [1, 2, 3, 4, 5, 6],
+                              expected_work_days_count: s.expected_work_days_count !== undefined && s.expected_work_days_count !== null ? s.expected_work_days_count : 6,
+                              attendance_deduction_type: s.attendance_deduction_type || 'daily_rate',
+                              attendance_deduction_rate: s.attendance_deduction_rate !== undefined && s.attendance_deduction_rate !== null ? s.attendance_deduction_rate : 0
                             }); 
                           }} className="text-gray-400 hover:text-brand-500 transition-colors">
                             <Edit2 size={16}/>
@@ -4048,6 +4157,105 @@ const AdminStaffManagement = () => {
                 </div>
               </div>
 
+              {/* Work Shifts & Attendance Deductions Section */}
+              <div className="bg-dark-950/40 border border-dark-800/80 p-5 rounded-2xl shadow-[inset_0_1px_2px_rgba(0,0,0,0.2)] space-y-4 hover:border-dark-700/50 transition-colors">
+                <h3 className="text-[11px] font-black uppercase tracking-widest text-brand-400/80 flex items-center gap-2 border-b border-dark-750 pb-2 mb-2">
+                  📅 Work Shifts & Attendance Deductions
+                </h3>
+                
+                {/* Shift Preset and Timing */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Shift Name / Template</label>
+                    <select 
+                      value={newStaffForm.shift_name || 'Morning Shift'}
+                      onChange={e => handleShiftPresetChange(e.target.value, false)}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm cursor-pointer bg-dark-900"
+                    >
+                      <option value="Morning Shift">Morning Shift (08:00 - 17:00)</option>
+                      <option value="Evening Shift">Evening Shift (17:00 - 23:00)</option>
+                      <option value="Night Shift">Night Shift (23:00 - 08:00)</option>
+                      <option value="Flexible Shift">Flexible Shift (00:00 - 00:00)</option>
+                      <option value="Custom">Custom Shift (Define Below)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Start Time</label>
+                    <input 
+                      type="text" 
+                      value={newStaffForm.shift_start_time || '08:00'}
+                      onChange={e => setNewStaffForm({ ...newStaffForm, shift_start_time: e.target.value })}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white placeholder-gray-655 outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm sm:text-base font-mono"
+                      placeholder="HH:MM"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">End Time</label>
+                    <input 
+                      type="text" 
+                      value={newStaffForm.shift_end_time || '17:00'}
+                      onChange={e => setNewStaffForm({ ...newStaffForm, shift_end_time: e.target.value })}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white placeholder-gray-655 outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm sm:text-base font-mono"
+                      placeholder="HH:MM"
+                    />
+                  </div>
+                </div>
+
+                {/* Expected Workdays Checkboxes */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">
+                    Expected Work Days ({newStaffForm.expected_work_days_count || 0} days expected)
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+                    {WEEKDAYS.map(day => {
+                      const isChecked = (newStaffForm.expected_work_days || []).includes(day.value);
+                      return (
+                        <label key={day.value} className={`flex items-center gap-2.5 bg-dark-900 border p-2.5 rounded-xl cursor-pointer select-none transition-all duration-200 ${isChecked ? 'border-brand-500/50 bg-brand-500/5 text-white' : 'border-dark-750 text-gray-400'}`}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={e => handleWeekdayChange(day.value, e.target.checked, false)}
+                            className="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-dark-950 border-dark-700 cursor-pointer"
+                          />
+                          <span className="text-xs font-bold">{day.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Attendance Deduction Config */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-dark-750 pt-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Attendance Deduction Type</label>
+                    <select 
+                      value={newStaffForm.attendance_deduction_type || 'daily_rate'}
+                      onChange={e => setNewStaffForm({ ...newStaffForm, attendance_deduction_type: e.target.value })}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm cursor-pointer bg-dark-900"
+                    >
+                      <option value="daily_rate">Pro-rata Daily Rate (Base Salary / Expected Days)</option>
+                      <option value="fixed">Fixed Penalty Amount per Absent Day</option>
+                      <option value="percentage">Percentage Penalty of Base Salary per Absent Day</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">
+                      {newStaffForm.attendance_deduction_type === 'percentage' ? 'Penalty Percentage (%)' : 'Penalty Amount (₦)'}
+                    </label>
+                    <input 
+                      disabled={newStaffForm.attendance_deduction_type === 'daily_rate'}
+                      type="number" 
+                      min="0" 
+                      step="0.01" 
+                      value={newStaffForm.attendance_deduction_rate || 0}
+                      onChange={e => setNewStaffForm({ ...newStaffForm, attendance_deduction_rate: parseFloat(e.target.value) || 0 })}
+                      className={`w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white outline-none transition-all duration-300 text-sm font-mono ${newStaffForm.attendance_deduction_type === 'daily_rate' ? 'opacity-40 cursor-not-allowed bg-dark-900/20' : 'focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30'}`}
+                      placeholder={newStaffForm.attendance_deduction_type === 'daily_rate' ? 'Auto calculated' : 'e.g. 5000'}
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="flex gap-4 pt-4 border-t border-dark-750 shrink-0">
                 <button type="button" onClick={() => setShowAddStaff(false)} className="flex-1 bg-dark-800 hover:bg-dark-700 border border-dark-750 text-gray-300 hover:text-white py-3.5 rounded-xl font-bold transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] text-sm sm:text-base">Cancel</button>
                 <button type="submit" disabled={loadingAuth} className="flex-1 bg-gradient-to-r from-brand-500 to-indigo-600 hover:from-brand-450 hover:to-indigo-500 text-white py-3.5 rounded-xl font-bold tracking-wider hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 shadow-lg hover:shadow-brand-500/10 cursor-pointer disabled:opacity-50 text-sm sm:text-base">
@@ -4220,6 +4428,105 @@ const AdminStaffManagement = () => {
                       </label>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Work Shifts & Attendance Deductions Section */}
+              <div className="bg-dark-950/40 border border-dark-800/80 p-5 rounded-2xl shadow-[inset_0_1px_2px_rgba(0,0,0,0.2)] space-y-4 hover:border-dark-700/50 transition-colors">
+                <h3 className="text-[11px] font-black uppercase tracking-widest text-brand-400/80 flex items-center gap-2 border-b border-dark-750 pb-2 mb-2">
+                  📅 Work Shifts & Attendance Deductions
+                </h3>
+                
+                {/* Shift Preset and Timing */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Shift Name / Template</label>
+                    <select 
+                      value={editingStaffForm.shift_name || 'Morning Shift'}
+                      onChange={e => handleShiftPresetChange(e.target.value, true)}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm cursor-pointer bg-dark-900"
+                    >
+                      <option value="Morning Shift">Morning Shift (08:00 - 17:00)</option>
+                      <option value="Evening Shift">Evening Shift (17:00 - 23:00)</option>
+                      <option value="Night Shift">Night Shift (23:00 - 08:00)</option>
+                      <option value="Flexible Shift">Flexible Shift (00:00 - 00:00)</option>
+                      <option value="Custom">Custom Shift (Define Below)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Start Time</label>
+                    <input 
+                      type="text" 
+                      value={editingStaffForm.shift_start_time || '08:00'}
+                      onChange={e => setEditingStaffForm({ ...editingStaffForm, shift_start_time: e.target.value })}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white placeholder-gray-655 outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm sm:text-base font-mono"
+                      placeholder="HH:MM"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">End Time</label>
+                    <input 
+                      type="text" 
+                      value={editingStaffForm.shift_end_time || '17:00'}
+                      onChange={e => setEditingStaffForm({ ...editingStaffForm, shift_end_time: e.target.value })}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white placeholder-gray-655 outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm sm:text-base font-mono"
+                      placeholder="HH:MM"
+                    />
+                  </div>
+                </div>
+
+                {/* Expected Workdays Checkboxes */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">
+                    Expected Work Days ({editingStaffForm.expected_work_days_count || 0} days expected)
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+                    {WEEKDAYS.map(day => {
+                      const isChecked = (editingStaffForm.expected_work_days || []).includes(day.value);
+                      return (
+                        <label key={day.value} className={`flex items-center gap-2.5 bg-dark-900 border p-2.5 rounded-xl cursor-pointer select-none transition-all duration-200 ${isChecked ? 'border-brand-500/50 bg-brand-500/5 text-white' : 'border-dark-750 text-gray-400'}`}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={e => handleWeekdayChange(day.value, e.target.checked, true)}
+                            className="w-4 h-4 rounded text-brand-500 focus:ring-brand-500 bg-dark-950 border-dark-700 cursor-pointer"
+                          />
+                          <span className="text-xs font-bold">{day.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Attendance Deduction Config */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-dark-750 pt-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Attendance Deduction Type</label>
+                    <select 
+                      value={editingStaffForm.attendance_deduction_type || 'daily_rate'}
+                      onChange={e => setEditingStaffForm({ ...editingStaffForm, attendance_deduction_type: e.target.value })}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm cursor-pointer bg-dark-900"
+                    >
+                      <option value="daily_rate">Pro-rata Daily Rate (Base Salary / Expected Days)</option>
+                      <option value="fixed">Fixed Penalty Amount per Absent Day</option>
+                      <option value="percentage">Percentage Penalty of Base Salary per Absent Day</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">
+                      {editingStaffForm.attendance_deduction_type === 'percentage' ? 'Penalty Percentage (%)' : 'Penalty Amount (₦)'}
+                    </label>
+                    <input 
+                      disabled={editingStaffForm.attendance_deduction_type === 'daily_rate'}
+                      type="number" 
+                      min="0" 
+                      step="0.01" 
+                      value={editingStaffForm.attendance_deduction_rate || 0}
+                      onChange={e => setEditingStaffForm({ ...editingStaffForm, attendance_deduction_rate: parseFloat(e.target.value) || 0 })}
+                      className={`w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white outline-none transition-all duration-300 text-sm font-mono ${editingStaffForm.attendance_deduction_type === 'daily_rate' ? 'opacity-40 cursor-not-allowed bg-dark-900/20' : 'focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30'}`}
+                      placeholder={editingStaffForm.attendance_deduction_type === 'daily_rate' ? 'Auto calculated' : 'e.g. 5000'}
+                    />
+                  </div>
                 </div>
               </div>
 

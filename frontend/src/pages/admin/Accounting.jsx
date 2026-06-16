@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useRealtimeSync } from '../../lib/useRealtimeSync';
 import { useAuth } from '../../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -161,6 +162,13 @@ const AdminAccounting = () => {
     fetchClosedGroupAccounts();
     fetchDepartmentalClosures();
   }, []);
+
+  // Real-time synchronization for general accounting updates
+  useRealtimeSync(['salary_structures', 'staff_attendance', 'leave_applications', 'payments', 'invoices', 'expenses'], () => {
+    fetchFinancialData();
+    fetchDailyClosures();
+    fetchDebtorsData();
+  });
 
   useEffect(() => {
     if (activeTab === 'debtors') {
@@ -595,14 +603,17 @@ const AdminAccounting = () => {
 
       if (leaveError) throw leaveError;
 
-      // 3. Compute expected working days (all days excluding Sundays)
+      // 3. Compute expected working days (based on employee expected_work_days configuration)
       const startDate = new Date(start);
       const endDate = new Date(end);
       let expectedDays = 0;
       let workingDates = [];
+      const configuredWorkDays = Array.isArray(staffMember.expected_work_days) && staffMember.expected_work_days.length > 0
+        ? staffMember.expected_work_days
+        : [1, 2, 3, 4, 5, 6]; // Fallback to Mon-Sat
 
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-        if (d.getDay() !== 0) { // 0 is Sunday
+        if (configuredWorkDays.includes(d.getDay())) {
           expectedDays++;
           workingDates.push(new Date(d));
         }
@@ -671,11 +682,22 @@ const AdminAccounting = () => {
 
       // Calculate absenteeism deduction if NOT exempt
       let attendancePenalty = 0;
-      const dailyRate = baseVal / expectedDays;
+      let dailyPenaltyRate = 0;
+      const proRataDailyRate = baseVal / expectedDays;
+      const deductionType = staffMember.attendance_deduction_type || 'daily_rate';
+      const deductionRate = parseFloat(staffMember.attendance_deduction_rate) || 0;
+
+      if (deductionType === 'fixed') {
+        dailyPenaltyRate = deductionRate;
+      } else if (deductionType === 'percentage') {
+        dailyPenaltyRate = baseVal * (deductionRate / 100);
+      } else {
+        dailyPenaltyRate = proRataDailyRate;
+      }
 
       if (!staffMember.exempt_from_attendance_deduction) {
         const penalizedDays = daysAbsent + daysLeaveUnpaid;
-        attendancePenalty = penalizedDays * dailyRate;
+        attendancePenalty = penalizedDays * dailyPenaltyRate;
       }
 
       const totalDeductions = standardDeduction + attendancePenalty;
@@ -694,7 +716,7 @@ const AdminAccounting = () => {
       const auditNote = `Attendance Audit: Out of ${expectedDays} expected shifts in pay period, staff clocked ${daysPresent} present. Exemptions: ${daysLeavePaid} Paid Leaves approved, ${daysLeaveUnpaid} Unpaid Leaves approved. Unexcused Absences: ${daysAbsent}. ` +
         (staffMember.exempt_from_attendance_deduction 
           ? `[Attendance Penalty Exempted due to Special Privileges Override]` 
-          : `Absenteeism Deduction: -₦${attendancePenalty.toLocaleString('en-US', { minimumFractionDigits: 2 })} (₦${dailyRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}/day).`);
+          : `Absenteeism Deduction: -₦${attendancePenalty.toLocaleString('en-US', { minimumFractionDigits: 2 })} (₦${dailyPenaltyRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}/day).`);
 
       setAttendanceAuditNotes(auditNote);
 

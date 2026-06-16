@@ -7,7 +7,7 @@ import { format, differenceInSeconds } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const TopbarAttendanceClock = () => {
-  const { user, profile } = useAuth();
+  const { user, profile, logout } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeShift, setActiveShift] = useState(null);
@@ -180,6 +180,9 @@ const TopbarAttendanceClock = () => {
 
       // Dispatch global sync event
       window.dispatchEvent(new Event('attendance-updated'));
+      
+      // Terminate login session on clock out
+      await logout();
     } catch (e) {
       toast.error(`Clock Out failed: ${e.message}`, { id: toastId });
     } finally {

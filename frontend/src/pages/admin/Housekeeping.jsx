@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useRealtimeSync } from '../../lib/useRealtimeSync';
 import toast from 'react-hot-toast';
 import { Sparkles, Wrench, CheckCircle, Clock, AlertTriangle, Plus, X, ListChecks, Calendar as CalendarIcon, User, LayoutGrid, List, Archive } from 'lucide-react';
 import { format, differenceInHours } from 'date-fns';
@@ -45,24 +46,12 @@ const AdminHousekeeping = () => {
 
   useEffect(() => {
     fetchData();
-
-    const channel = supabase
-      .channel(`housekeeping-realtime-${Math.random().toString(36).substring(2, 9)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'housekeeping_tasks' }, () => {
-        fetchData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'maintenance_tickets' }, () => {
-        fetchData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
-        fetchData();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [activeTab]);
+
+  // Real-time synchronization for housekeeping tasks, maintenance tickets, and room changes
+  useRealtimeSync(['housekeeping_tasks', 'maintenance_tickets', 'rooms'], () => {
+    fetchData();
+  });
 
   const fetchData = async () => {
     setLoading(true);

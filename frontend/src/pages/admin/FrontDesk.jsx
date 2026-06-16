@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useRealtimeSync } from '../../lib/useRealtimeSync';
 import toast from 'react-hot-toast';
 import { LogIn, LogOut, Key, UserCheck, Calendar as CalendarIcon, Search, Plus, X, ShieldCheck, PenTool, Users, FileText, ArrowRightLeft, LayoutGrid, Wrench, Sparkles, CheckCircle, AlertTriangle, Clock, Check, Phone, ChevronLeft, ChevronRight, Filter, Package, Archive, Wallet, CalendarDays, SearchCheck, ShoppingBag, Coins, CreditCard, ArrowUpRight } from 'lucide-react';
 import StoreRequisitionModal from '../../components/admin/StoreRequisitionModal';
@@ -613,31 +614,16 @@ const AdminFrontDesk = () => {
     }
   };
 
-  // Real-time Postgres changes channel subscription
-  useEffect(() => {
-    const channel = supabase
-      .channel(`front-desk-realtime-${Math.random().toString(36).substring(2, 9)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
-        fetchFrontDeskData(false);
-        if (activeTab === 'calendar') fetchCalendarData();
-        if (activeTab === 'visitors') fetchVisitors();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
-        fetchFrontDeskData(false);
-        if (activeTab === 'calendar') fetchCalendarData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'housekeeping_tasks' }, () => {
-        fetchFrontDeskData(false);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'booking_services' }, () => {
-        fetchFrontDeskData(false);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [activeTab, calendarStartDate, calendarEndDate]);
+  // Real-time Postgres changes channel subscription using custom sync hook
+  useRealtimeSync(['bookings', 'rooms', 'housekeeping_tasks', 'booking_services'], (table) => {
+    fetchFrontDeskData(false);
+    if (table === 'bookings') {
+      if (activeTab === 'calendar') fetchCalendarData();
+      if (activeTab === 'visitors') fetchVisitors();
+    } else if (table === 'rooms') {
+      if (activeTab === 'calendar') fetchCalendarData();
+    }
+  });
 
   useEffect(() => {
     if (activeTab === 'visitors') {

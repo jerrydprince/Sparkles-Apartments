@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useRealtimeSync } from '../../lib/useRealtimeSync';
 import toast from 'react-hot-toast';
 import { FileText, CreditCard, Download, Search, CheckCircle, RefreshCcw, DollarSign, Wallet, ArrowRightLeft, Printer, Eye, X } from 'lucide-react';
 import { format } from 'date-fns';
@@ -38,27 +39,12 @@ const AdminBilling = () => {
   useEffect(() => {
     fetchInvoices();
     fetchContactSettings();
-
-    const channel = supabase
-      .channel(`billing-realtime-${Math.random().toString(36).substring(2, 9)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, () => {
-        fetchInvoices();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
-        fetchInvoices();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'booking_services' }, () => {
-        fetchInvoices();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, () => {
-        fetchInvoices();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, []);
+
+  // Real-time synchronization for invoices, bookings, booking_services, and payments
+  useRealtimeSync(['invoices', 'bookings', 'booking_services', 'payments'], () => {
+    fetchInvoices();
+  });
 
   const fetchContactSettings = async () => {
     try {

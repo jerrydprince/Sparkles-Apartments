@@ -267,6 +267,32 @@ export const AuthProvider = ({ children }) => {
     };
   }, [user]);
 
+  // Real-time synchronization for profile and permissions updates
+  useEffect(() => {
+    if (!user?.id) return;
+    const profileChannel = supabase.channel(`profile-sync-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` },
+        (payload) => {
+          console.log('[AuthContext] Real-time profile update detected:', payload);
+          fetchProfile(user);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'role_permissions' },
+        (payload) => {
+          console.log('[AuthContext] Real-time permissions update detected:', payload);
+          fetchProfile(user);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(profileChannel);
+    };
+  }, [user?.id]);
 
   const fetchProfile = async (authUser) => {
     try {
