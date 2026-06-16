@@ -1117,6 +1117,52 @@ const AdminAccounting = () => {
     }
   };
 
+  const handleReopenDepartment = async (deptKey) => {
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    
+    // Check if it's actually closed
+    const isClosed = departmentalClosures.some(c => c.department === deptKey && c.business_date === todayStr);
+    if (!isClosed) {
+      return toast.error("This department is not closed for today!");
+    }
+    
+    if (!window.confirm(`Are you sure you want to RE-OPEN the ${deptKey.replace('_', ' ').toUpperCase()} ledger for today? This will clear the closure record and allow new transactions to be posted.`)) {
+      return;
+    }
+    
+    const updatedClosures = departmentalClosures.filter(c => !(c.department === deptKey && c.business_date === todayStr));
+    const updatedReports = departmentalCloseReports.filter(r => !(r.department === deptKey && r.business_date === todayStr));
+    
+    setDepartmentalClosures(updatedClosures);
+    setDepartmentalCloseReports(updatedReports);
+    localStorage.setItem('departmental_closures', JSON.stringify(updatedClosures));
+    localStorage.setItem('departmental_close_reports', JSON.stringify(updatedReports));
+    
+    try {
+      await supabase.from('system_settings').upsert({
+        setting_key: 'departmental_closures',
+        setting_value: updatedClosures
+      }, { onConflict: 'setting_key' });
+      
+      await supabase.from('system_settings').upsert({
+        setting_key: 'departmental_close_reports',
+        setting_value: updatedReports
+      }, { onConflict: 'setting_key' });
+      
+      await supabase.from('system_logs').insert({
+        user_id: profile?.id,
+        log_type: 'activity',
+        action: `Re-opened departmental ledger for ${deptKey.toUpperCase()} on date ${todayStr}`,
+        module: 'Accounting'
+      });
+      
+      toast.success(`${deptKey.replace('_', ' ').toUpperCase()} Ledger Re-opened Successfully!`);
+    } catch (err) {
+      console.warn("Failed to persist departmental re-opening:", err);
+      toast.success(`${deptKey.replace('_', ' ').toUpperCase()} Ledger Re-opened (LocalStorage Only).`);
+    }
+  };
+
   const handlePrintGroupStatement = (group, bookingsList) => {
     const tableRows = bookingsList.map(b => {
       const total = Number(b.total_room_price_ngn || 0) + Number(b.total_extras_price_ngn || 0);
@@ -3922,9 +3968,18 @@ const AdminAccounting = () => {
                     
                     <div className="mt-4 pt-3 border-t border-dark-700/50">
                       {closure ? (
-                        <div className="text-[9px] text-gray-450 leading-relaxed">
-                          <div className="font-semibold truncate">By: {closure.staff_name}</div>
-                          <div className="font-mono text-gray-500 mt-0.5">{format(new Date(closure.closed_at), 'HH:mm')}</div>
+                        <div className="flex flex-col gap-2">
+                          <div className="text-[9px] text-gray-450 leading-relaxed">
+                            <div className="font-semibold truncate">By: {closure.staff_name}</div>
+                            <div className="font-mono text-gray-500 mt-0.5">{format(new Date(closure.closed_at), 'HH:mm')}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleReopenDepartment(dept.key)}
+                            className="w-full bg-red-500/10 hover:bg-red-650 hover:text-white border border-red-500/20 text-red-400 text-[9px] font-bold uppercase py-1 px-2 rounded transition-all active:scale-95 cursor-pointer mt-1"
+                          >
+                            Reopen Ledger
+                          </button>
                         </div>
                       ) : (
                         <button
