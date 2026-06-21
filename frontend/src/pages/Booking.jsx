@@ -1592,7 +1592,7 @@ const BookingEngine = () => {
         .from('hall_bookings')
         .select('id, start_time, end_time')
         .eq('hall_id', selectedHall.id)
-        .eq('status', 'confirmed');
+        .in('status', ['pending', 'confirmed', 'checked_in']);
 
       if (confErr) throw confErr;
 

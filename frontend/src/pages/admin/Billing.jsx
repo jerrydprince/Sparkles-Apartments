@@ -118,6 +118,9 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
   const [pendingServicePayments, setPendingServicePayments] = useState([]);
   const [pendingCheckoutPayments, setPendingCheckoutPayments] = useState([]);
   const [specialistPayouts, setSpecialistPayouts] = useState([]);
+  const [specialistPayoutTab, setSpecialistPayoutTab] = useState('pending'); // 'pending' | 'history'
+  const [isPayoutReceiptModalOpen, setIsPayoutReceiptModalOpen] = useState(false);
+  const [activePayoutReceipt, setActivePayoutReceipt] = useState(null);
   const [reminderPayouts, setReminderPayouts] = useState([]);
   const [nigerianBanks, setNigerianBanks] = useState([]);
   const [hallPayouts, setHallPayouts] = useState([]);
@@ -381,8 +384,9 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
             account_name
           )
         `)
-        .eq('payment_status', 'approved')
-        .not('professional_id', 'is', null);
+        .in('payment_status', ['approved', 'paid'])
+        .not('professional_id', 'is', null)
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
       setSpecialistPayouts(data || []);
@@ -392,7 +396,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
       const localProfs = JSON.parse(localStorage.getItem('pms_maintenance_professionals') || '[]');
       
       const approvedSpecialistPayments = localPayments
-        .filter(p => p.payment_status === 'approved' && p.professional_id)
+        .filter(p => ['approved', 'paid'].includes(p.payment_status) && p.professional_id)
         .map(p => {
           const prof = localProfs.find(pr => pr.id === p.professional_id);
           return {
@@ -1547,13 +1551,15 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
   const requestRefundOTP = async () => {
     if (!activeRefundModal) return;
     
-    if (!refundBankName || !refundAccountNumber || !refundAccountName) {
-      toast.error("Please enter guest bank details first.");
-      return;
-    }
-    if (refundAccountNumber.length < 8) {
-      toast.error("Please enter a valid bank account number.");
-      return;
+    if (paymentMethod === 'bank_transfer') {
+      if (!refundBankName || !refundAccountNumber || !refundAccountName) {
+        toast.error("Please enter guest bank details first.");
+        return;
+      }
+      if (refundAccountNumber.length < 8) {
+        toast.error("Please enter a valid bank account number.");
+        return;
+      }
     }
 
     const toastId = toast.loading("Resolving manager and dispatching authorization OTP...");
@@ -2366,11 +2372,29 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
       {activeTab === 'payouts' && hasAccess('Accounting') && (
         <div className="space-y-6 animate-in fade-in duration-300">
           <div className="bg-dark-800 border border-dark-700 p-6 rounded-lg shadow-sm space-y-4">
-            <h2 className="text-lg font-bold text-brand-500 flex items-center gap-2">
-              <Wrench className="text-brand-500" /> Specialist Maintenance Payouts — Awaiting Accounts Confirmation ({specialistPayouts.length})
+            <h2 className="text-lg font-bold text-brand-500 flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2">
+                <Wrench className="text-brand-500" /> Specialist Maintenance Payouts
+              </span>
+              <div className="flex bg-dark-900 border border-dark-700 rounded p-1">
+                <button
+                  type="button"
+                  onClick={() => setSpecialistPayoutTab('pending')}
+                  className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${specialistPayoutTab === 'pending' ? 'bg-dark-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                >
+                  Pending Confirmation
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSpecialistPayoutTab('history')}
+                  className={`px-3 py-1.5 text-xs font-bold rounded transition-colors ${specialistPayoutTab === 'history' ? 'bg-dark-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                >
+                  Payout History
+                </button>
+              </div>
             </h2>
             <p className="text-gray-400 text-xs">
-              These disbursements were approved from the Maintenance module. Confirm payout here to mark as paid, update the general ledger expense entry, and email a receipt to the specialist.
+              {specialistPayoutTab === 'pending' ? 'These disbursements were approved from the Maintenance module. Confirm payout here to mark as paid.' : 'History of all completed specialist disbursements and receipts.'}
             </p>
             
             <div className="overflow-x-auto border border-dark-700 rounded bg-dark-900/50">
@@ -2385,14 +2409,14 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dark-700/50">
-                  {paginatedPayouts.length === 0 ? (
+                  {paginatedPayouts.filter(p => specialistPayoutTab === 'pending' ? p.payment_status === 'approved' : p.payment_status === 'paid').length === 0 ? (
                     <tr>
                       <td colSpan="5" className="py-8 px-4 text-center text-gray-500 italic text-xs">
-                        No approved disbursements awaiting confirmation.
+                        {specialistPayoutTab === 'pending' ? 'No approved disbursements awaiting confirmation.' : 'No payout history found.'}
                       </td>
                     </tr>
                   ) : (
-                    paginatedPayouts.map(pay => {
+                    paginatedPayouts.filter(p => specialistPayoutTab === 'pending' ? p.payment_status === 'approved' : p.payment_status === 'paid').map(pay => {
                       const profName = pay.professional?.name || 'Unknown Specialist';
                       const trade = pay.professional?.trade_specialty || 'General';
                       const bankName = pay.professional?.bank_name || 'N/A';
@@ -2431,13 +2455,25 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                             </p>
                           </td>
                           <td className="py-3.5 px-4 text-right">
-                            <button
-                              disabled={isFrontOfficeClosed}
-                              onClick={() => handleProcessSpecialistPayout(pay)}
-                              className="bg-brand-500 hover:bg-brand-400 text-dark-900 font-bold text-xs py-2 px-4 rounded-lg shadow-md transition-all inline-flex items-center gap-1 hover:scale-102 active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                            >
-                              <ArrowRightLeft size={13} /> Confirm Payout
-                            </button>
+                            {specialistPayoutTab === 'pending' ? (
+                              <button
+                                disabled={isFrontOfficeClosed}
+                                onClick={() => handleProcessSpecialistPayout(pay)}
+                                className="bg-brand-500 hover:bg-brand-400 text-dark-900 font-bold text-xs py-2 px-4 rounded-lg shadow-md transition-all inline-flex items-center gap-1 hover:scale-102 active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                              >
+                                <ArrowRightLeft size={13} /> Confirm Payout
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setActivePayoutReceipt(pay);
+                                  setIsPayoutReceiptModalOpen(true);
+                                }}
+                                className="bg-dark-700 hover:bg-dark-600 text-brand-400 font-bold text-xs py-2 px-4 rounded-lg shadow-md transition-all inline-flex items-center gap-1 hover:scale-102 active:scale-98"
+                              >
+                                <FileText size={13} /> View Receipt
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );
@@ -2448,7 +2484,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
             </div>
             <PaginationControl
               currentPage={currentPagePayouts}
-              totalItems={specialistPayouts.length}
+              totalItems={specialistPayouts.filter(p => specialistPayoutTab === 'pending' ? p.payment_status === 'approved' : p.payment_status === 'paid').length}
               pageSize={pageSize}
               onPageChange={setCurrentPagePayouts}
             />
@@ -3247,6 +3283,62 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
             <div className="mt-16 text-center text-xs text-gray-400 print:text-gray-500 border-t border-dark-700 print:border-gray-200 pt-4">
               <p>Thank you for choosing Sparkles Apartments.</p>
               <p>Payment is due by the specified due date. Late payments may incur additional fees.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: Payout Receipt Modal --- */}
+      {isPayoutReceiptModalOpen && activePayoutReceipt && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-800 border border-dark-700 p-8 w-full max-w-lg shadow-2xl relative rounded-xl animate-in zoom-in-95">
+            <button onClick={() => setIsPayoutReceiptModalOpen(false)} className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors">
+              <X size={24} />
+            </button>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="h-12 w-12 rounded-full bg-brand-500/10 flex items-center justify-center">
+                <FileText className="text-brand-500" size={24} />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white">Payout Receipt</h2>
+                <p className="text-sm text-gray-400">Ref: {activePayoutReceipt.transaction_reference || 'N/A'}</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-dark-900/50 p-4 rounded-lg border border-dark-700 space-y-3">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-400">Date Paid</span>
+                  <span className="text-white font-medium">{activePayoutReceipt.paid_at ? format(new Date(activePayoutReceipt.paid_at), 'MMM dd, yyyy HH:mm') : 'N/A'}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-400">Specialist</span>
+                  <span className="text-white font-bold">{activePayoutReceipt.professional?.name || 'Unknown'}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-400">Bank Details</span>
+                  <span className="text-white text-right">
+                    {activePayoutReceipt.professional?.bank_name} - <span className="font-mono">{activePayoutReceipt.professional?.account_number}</span>
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-400">Amount</span>
+                  <span className="text-brand-400 font-bold font-mono text-lg">₦{Number(activePayoutReceipt.amount_ngn).toLocaleString()}</span>
+                </div>
+                <div className="pt-3 mt-3 border-t border-dark-700">
+                  <span className="text-gray-400 text-xs block mb-1">Notes / Description</span>
+                  <p className="text-gray-300 text-sm italic">{activePayoutReceipt.notes || 'None'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-8">
+              <button
+                onClick={() => window.print()}
+                className="bg-dark-700 hover:bg-dark-600 text-white font-bold text-sm py-2.5 px-6 rounded-lg transition-colors flex items-center gap-2"
+              >
+                <Printer size={16} /> Print Receipt
+              </button>
             </div>
           </div>
         </div>

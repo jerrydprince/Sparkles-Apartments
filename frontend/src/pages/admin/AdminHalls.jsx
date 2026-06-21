@@ -55,6 +55,44 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
     fetchData();
   }, []);
 
+  // Auto No-Show polling: runs every 5 minutes, marks bookings as no_show if 1 hour past END time with no check-in
+  useEffect(() => {
+    const checkNoShows = async () => {
+      try {
+        const now = new Date();
+        // Fetch all pending/confirmed bookings
+        const { data: pending } = await supabase
+          .from('hall_bookings')
+          .select('id, end_time, status')
+          .in('status', ['pending', 'confirmed']);
+
+        if (!pending || pending.length === 0) return;
+
+        const noShowIds = pending
+          .filter(b => {
+            const endTime = new Date(b.end_time);
+            const oneHourAfterEnd = new Date(endTime.getTime() + 60 * 60 * 1000);
+            return now > oneHourAfterEnd;
+          })
+          .map(b => b.id);
+
+        if (noShowIds.length > 0) {
+          await supabase
+            .from('hall_bookings')
+            .update({ status: 'no_show' })
+            .in('id', noShowIds);
+          fetchData();
+        }
+      } catch (err) {
+        console.warn('No-show auto-check failed:', err);
+      }
+    };
+
+    checkNoShows(); // run immediately on mount
+    const interval = setInterval(checkNoShows, 5 * 60 * 1000); // then every 5 minutes
+    return () => clearInterval(interval);
+  }, []);
+
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -135,7 +173,7 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
         .from('hall_bookings')
         .select('id, start_time, end_time')
         .eq('hall_id', bookingForm.hall_id)
-        .eq('status', 'confirmed');
+        .in('status', ['pending', 'confirmed', 'checked_in']);
 
       if (confErr) throw confErr;
 
@@ -277,12 +315,14 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
 
       if (error) throw error;
 
-      // If cancelled, delete/update kitchen tasks as well
-      if (newStatus === 'cancelled') {
+      // If cancelled or no_show, update kitchen tasks as well
+      if (newStatus === 'cancelled' || newStatus === 'no_show') {
         await supabase.from('hall_booking_meals').update({ status: 'cancelled' }).eq('hall_booking_id', id);
-        // Clean ledger and invoices
-        await supabase.from('invoices').delete().eq('hall_booking_id', id);
-        await supabase.from('payments').delete().eq('hall_booking_id', id);
+        // Only delete ledger entries for full cancellations, not no-shows
+        if (newStatus === 'cancelled') {
+          await supabase.from('invoices').delete().eq('hall_booking_id', id);
+          await supabase.from('payments').delete().eq('hall_booking_id', id);
+        }
       }
 
       toast.success(`Booking status updated to ${newStatus}!`, { id: toastId });
@@ -397,19 +437,29 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
                           b.status === 'confirmed' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' :
                           b.status === 'checked_in' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
                           b.status === 'checked_out' ? 'bg-gray-500/10 text-gray-500 border-gray-500/20' :
-                          'bg-red-500/10 text-red-500 border-red-500/20'
+                          b.status === 'cancelled' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                          b.status === 'no_show' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
+                          'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
                         }`}>
-                          {b.status.replace('_', ' ')}
+                          {b.status.replace(/_/g, ' ')}
                         </span>
                       </td>
                       <td className="p-4 text-right space-x-2">
-                        {b.status === 'confirmed' && (
+                        {(b.status === 'pending' || b.status === 'confirmed') && (
                           <>
+                            {b.status === 'confirmed' && (
+                              <button 
+                                onClick={() => handleUpdateBookingStatus(b.id, 'checked_in')}
+                                className="text-xs bg-green-500/10 hover:bg-green-500/20 text-green-500 border border-green-500/30 px-2 py-1.5 rounded-lg font-bold cursor-pointer"
+                              >
+                                Check In
+                              </button>
+                            )}
                             <button 
-                              onClick={() => handleUpdateBookingStatus(b.id, 'checked_in')}
-                              className="text-xs bg-green-500/10 hover:bg-green-500/20 text-green-500 border border-green-500/30 px-2 py-1.5 rounded-lg font-bold cursor-pointer"
+                              onClick={() => handleUpdateBookingStatus(b.id, 'no_show')}
+                              className="text-xs bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 px-2 py-1.5 rounded-lg font-bold cursor-pointer"
                             >
-                              Check In
+                              No Show
                             </button>
                             <button 
                               onClick={() => handleUpdateBookingStatus(b.id, 'cancelled')}
