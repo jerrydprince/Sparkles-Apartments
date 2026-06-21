@@ -11,15 +11,44 @@ const ResetPassword = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [hasSession, setHasSession] = useState(true);
   const [sessionChecking, setSessionChecking] = useState(true);
+  const [resetToken, setResetToken] = useState(null);
+  const [resetEmail, setResetEmail] = useState('');
   
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check if the user is authenticated (Supabase automatically signs in via recovery link)
     const checkSession = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      const email = params.get('email');
+      const code = params.get('code');
+      
+      if (token && email) {
+        setResetToken(token);
+        setResetEmail(email);
+        setHasSession(true);
+        setSessionChecking(false);
+        return;
+      }
+      
+      if (code) {
+        try {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) throw error;
+        } catch (e) {
+          console.error("Code exchange failed:", e);
+          toast.error("Could not verify password reset link: " + e.message);
+          setHasSession(false);
+          setSessionChecking(false);
+          return;
+        }
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         setHasSession(false);
+      } else {
+        setHasSession(true);
       }
       setSessionChecking(false);
     };
@@ -36,20 +65,46 @@ const ResetPassword = () => {
     const toastId = toast.loading('Updating your password...');
 
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: password
-      });
+      if (resetToken && resetEmail) {
+        // Custom backend password reset flow
+        const API_BASE = import.meta.env.VITE_API_URL || '/api';
+        const response = await fetch(`${API_BASE}/auth/reset-password`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            email: resetEmail,
+            token: resetToken,
+            password: password
+          })
+        });
 
-      if (error) throw error;
+        const resData = await response.json();
+        if (!response.ok) {
+          throw new Error(resData.error || 'Failed to reset password');
+        }
 
-      toast.success('Password updated successfully! Please sign in.', { id: toastId });
-      
-      // Clear the temporary recovery session by logging them out
-      await supabase.auth.signOut();
-      
-      setTimeout(() => {
-        navigate('/login');
-      }, 1500);
+        toast.success('Password updated successfully! Please sign in.', { id: toastId });
+        
+        setTimeout(() => {
+          navigate('/login');
+        }, 1500);
+      } else {
+        // Standard Supabase auth reset flow
+        const { error } = await supabase.auth.updateUser({
+          password: password
+        });
+
+        if (error) throw error;
+
+        toast.success('Password updated successfully! Please sign in.', { id: toastId });
+        await supabase.auth.signOut();
+        
+        setTimeout(() => {
+          navigate('/login');
+        }, 1500);
+      }
     } catch (err) {
       console.error(err);
       toast.error(err.message || 'Failed to reset password', { id: toastId });

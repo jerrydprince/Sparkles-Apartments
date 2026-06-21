@@ -6,7 +6,8 @@ DECLARE
         'rooms', 'bookings', 'booking_services', 'housekeeping_tasks', 
         'maintenance_tickets', 'payments', 'invoices', 'salary_structures', 
         'staff_attendance', 'leave_applications', 'profiles', 'system_settings', 
-        'expenses', 'role_permissions'
+        'expenses', 'role_permissions', 'refund_settlements', 'maintenance_payments',
+        'halls', 'hall_bookings', 'hall_meal_options', 'hall_booking_meals'
     ];
 BEGIN
     -- Ensure publication exists

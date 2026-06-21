@@ -2,14 +2,113 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeSync } from '../../lib/useRealtimeSync';
 import toast from 'react-hot-toast';
-import { FileText, CreditCard, Download, Search, CheckCircle, RefreshCcw, DollarSign, Wallet, ArrowRightLeft, Printer, Eye, X } from 'lucide-react';
+import { FileText, CreditCard, Download, Search, CheckCircle, RefreshCcw, DollarSign, Wallet, ArrowRightLeft, Printer, Eye, X, AlertTriangle, Wrench } from 'lucide-react';
 import { format } from 'date-fns';
 import { useAuth } from '../../context/AuthContext';
 import Accounting from './Accounting';
-import { triggerAutomationRules } from '../../lib/emailService';
+import { triggerAutomationRules, sendResendEmail, sendSMSNotification } from '../../lib/emailService';
+import { usePaystackPayment } from 'react-paystack';
+const PaginationControl = ({ currentPage, totalItems, pageSize, onPageChange }) => {
+  const totalPages = Math.ceil(totalItems / pageSize);
+  if (totalPages <= 1) return null;
 
-const AdminBilling = () => {
+  return (
+    <div className="flex items-center justify-between border-t border-dark-700 bg-dark-900/30 px-4 py-3 sm:px-6 mt-4 rounded-b-lg">
+      <div className="flex flex-1 justify-between sm:hidden">
+        <button
+          type="button"
+          disabled={currentPage === 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          className="relative inline-flex items-center rounded-md border border-dark-750 bg-dark-800 px-4 py-2 text-xs font-bold text-gray-300 hover:bg-dark-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          disabled={currentPage === totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+          className="relative ml-3 inline-flex items-center rounded-md border border-dark-750 bg-dark-800 px-4 py-2 text-xs font-bold text-gray-300 hover:bg-dark-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
+      </div>
+      <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs text-gray-400">
+            Showing <span className="font-semibold text-white">{((currentPage - 1) * pageSize) + 1}</span> to{' '}
+            <span className="font-semibold text-white">
+              {Math.min(currentPage * pageSize, totalItems)}
+            </span>{' '}
+            of <span className="font-semibold text-white">{totalItems}</span> results
+          </p>
+        </div>
+        <div>
+          <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+            <button
+              type="button"
+              disabled={currentPage === 1}
+              onClick={() => onPageChange(currentPage - 1)}
+              className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-dark-750 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <span className="sr-only">Previous</span>
+              &larr;
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                type="button"
+                key={page}
+                onClick={() => onPageChange(page)}
+                className={`relative inline-flex items-center px-3 py-2 text-xs font-bold ring-1 ring-inset ring-dark-750 cursor-pointer ${
+                  page === currentPage
+                    ? 'z-10 bg-brand-500 text-dark-950 focus:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 font-extrabold'
+                    : 'text-gray-300 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              type="button"
+              disabled={currentPage === totalPages}
+              onClick={() => onPageChange(currentPage + 1)}
+              className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-dark-750 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <span className="sr-only">Next</span>
+              &rarr;
+            </button>
+          </nav>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AdminBilling = ({ isFrontOfficeClosed }) => {
   const { hasAccess } = useAuth();
+  
+  const [paystackConfig, setPaystackConfig] = useState({
+    reference: '',
+    email: '',
+    amount: 0,
+    publicKey: ''
+  });
+  const initializePaystack = usePaystackPayment(paystackConfig);
+
+  useEffect(() => {
+    if (paystackConfig && paystackConfig.amount > 0 && paystackConfig.publicKey) {
+      initializePaystack(
+        (reference) => {
+          handlePaystackSuccess(reference, paystackConfig.amount / 100);
+          setPaystackConfig({ reference: '', email: '', amount: 0, publicKey: '' });
+        },
+        () => {
+          toast.error("Paystack payment cancelled.");
+          setPaystackConfig({ reference: '', email: '', amount: 0, publicKey: '' });
+        }
+      );
+    }
+  }, [paystackConfig]);
+
   const [activeTab, setActiveTab] = useState('invoices'); // invoices or accounting
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,6 +117,7 @@ const AdminBilling = () => {
   const [sortBy, setSortBy] = useState('created_at_desc');
   const [pendingServicePayments, setPendingServicePayments] = useState([]);
   const [pendingCheckoutPayments, setPendingCheckoutPayments] = useState([]);
+  const [specialistPayouts, setSpecialistPayouts] = useState([]);
   const [fetchError, setFetchError] = useState(null);
   const [printType, setPrintType] = useState('a4'); // a4 or thermal
   const [contactInfo, setContactInfo] = useState({
@@ -36,22 +136,72 @@ const AdminBilling = () => {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('paystack');
   const [isProcessing, setIsProcessing] = useState(false);
+
+  const [paystackPublicKey, setPaystackPublicKey] = useState('');
+
+  // Refund Bank & OTP States
+  const [refundBankName, setRefundBankName] = useState('');
+  const [refundAccountNumber, setRefundAccountNumber] = useState('');
+  const [refundAccountName, setRefundAccountName] = useState('');
+  
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpInput, setOtpInput] = useState('');
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [managerPhoneDisplay, setManagerPhoneDisplay] = useState('');
+
+  // Refund Settlements states
+  const [refundSettlements, setRefundSettlements] = useState([]);
+  const [settlementsLoading, setSettlementsLoading] = useState(false);
+  const [settlementFilter, setSettlementFilter] = useState('all'); // 'all', 'daily', 'weekly', 'monthly'
+
+  // Pagination states
+  const [currentPageInvoices, setCurrentPageInvoices] = useState(1);
+  const [currentPagePayouts, setCurrentPagePayouts] = useState(1);
+  const [currentPageService, setCurrentPageService] = useState(1);
+  const [currentPageCheckout, setCurrentPageCheckout] = useState(1);
+  const [currentPageSettlements, setCurrentPageSettlements] = useState(1);
+  const pageSize = 10;
+
   useEffect(() => {
     fetchInvoices();
     fetchContactSettings();
+    fetchSpecialistPayouts();
+    fetchRefundSettlements();
   }, []);
 
-  // Real-time synchronization for invoices, bookings, booking_services, and payments
-  useRealtimeSync(['invoices', 'bookings', 'booking_services', 'payments'], () => {
-    fetchInvoices();
+  // Real-time synchronization for invoices, bookings, booking_services, payments, and refund_settlements
+  useRealtimeSync(['invoices', 'bookings', 'booking_services', 'payments', 'maintenance_payments', 'refund_settlements'], () => {
+    fetchInvoices(false);
+    fetchSpecialistPayouts();
+    fetchRefundSettlements();
   });
+
+  const fetchRefundSettlements = async () => {
+    setSettlementsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('refund_settlements')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setRefundSettlements(data || []);
+    } catch (err) {
+      console.warn("Failed to fetch refund settlements from database, checking local storage:", err);
+      const localSettlements = JSON.parse(localStorage.getItem('pms_refund_settlements') || '[]');
+      setRefundSettlements(localSettlements);
+    } finally {
+      setSettlementsLoading(false);
+    }
+  };
 
   const fetchContactSettings = async () => {
     try {
       const { data, error } = await supabase
         .from('system_settings')
         .select('setting_key, setting_value')
-        .in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo']);
+        .in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo', 'paystack_public']);
         
       if (!error && data) {
         const settingsMap = data.reduce((acc, curr) => {
@@ -65,14 +215,16 @@ const AdminBilling = () => {
           email: settingsMap.contact_email || prev.email,
           logo: settingsMap.contact_logo || prev.logo
         }));
+
+        setPaystackPublicKey(settingsMap.paystack_public || '');
       }
     } catch (e) {
       console.error("Failed to load contact settings:", e);
     }
   };
 
-  const fetchInvoices = async () => {
-    setLoading(true);
+  const fetchInvoices = async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
     try {
       const { data, error } = await supabase
         .from('invoices')
@@ -168,11 +320,251 @@ const AdminBilling = () => {
       setFetchError(error.message || JSON.stringify(error));
       toast.error('Failed to load billing data');
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
+    }
+  };
+
+  const fetchSpecialistPayouts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('maintenance_payments')
+        .select(`
+          *,
+          professional:professional_id (
+            id,
+            name,
+            phone,
+            email,
+            trade_specialty,
+            bank_name,
+            account_number,
+            account_name
+          )
+        `)
+        .eq('payment_status', 'pending')
+        .not('professional_id', 'is', null);
+
+      if (error) throw error;
+      setSpecialistPayouts(data || []);
+    } catch (err) {
+      console.warn("Failed to fetch specialist payouts from database, checking local storage:", err);
+      // Fallback from localStorage
+      const localPayments = JSON.parse(localStorage.getItem('pms_maintenance_payments') || '[]');
+      const localProfs = JSON.parse(localStorage.getItem('pms_maintenance_professionals') || '[]');
+      
+      const pendingSpecialistPayments = localPayments
+        .filter(p => p.payment_status === 'pending' && p.professional_id)
+        .map(p => {
+          const prof = localProfs.find(pr => pr.id === p.professional_id);
+          return {
+            ...p,
+            professional: prof || { name: 'Unknown Specialist', email: '', bank_name: '', account_number: '', account_name: '' }
+          };
+        });
+      setSpecialistPayouts(pendingSpecialistPayments);
+    }
+  };
+
+  const handleProcessSpecialistPayout = async (payout, payoutMethod = 'bank_transfer') => {
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
+    const toastId = toast.loading(`Processing payout of ₦${Number(payout.amount_ngn).toLocaleString()} to specialist...`);
+    try {
+      const txRef = `TX-PAYOUT-${Date.now().toString().slice(-4)}`;
+      const paidDate = new Date().toISOString();
+
+      // 1. Update the payout status to paid in maintenance_payments
+      const { error: payErr } = await supabase
+        .from('maintenance_payments')
+        .update({
+          payment_status: 'paid',
+          paid_at: paidDate,
+          payment_method: payoutMethod,
+          transaction_reference: txRef
+        })
+        .eq('id', payout.id);
+
+      if (payErr) throw payErr;
+
+      // 2. Direct ledger expense insertion is skipped since the DB trigger trigger_sync_maintenance_expense auto-generates the expense.
+
+
+      // 3. Send email receipt automatically to specialist's email!
+      let emailSent = false;
+      const specialistEmail = payout.professional?.email;
+      if (specialistEmail) {
+        try {
+          const receiptHtml = `
+            <div style="font-family: 'Outfit', sans-serif; padding: 40px; color: #1f2937; max-width: 600px; margin: auto; border: 1px solid #e5e7eb; border-top: 8px solid #DF6853; border-radius: 16px; background-color: #ffffff;">
+              <div style="text-align: center; border-bottom: 1px solid #f3f4f6; padding-bottom: 25px; margin-bottom: 25px;">
+                ${contactInfo.logo ? `<img src="${contactInfo.logo}" alt="Sparkles Apartments" style="max-height: 50px; object-fit: contain; margin-bottom: 8px; border-radius: 4px;" />` : ''}
+                <h2 style="color: #000000; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: 0.05em;">SPARKLES APARTMENTS</h2>
+                <span style="font-size: 11px; color: #DF6853; text-transform: uppercase; letter-spacing: 0.15em; font-weight: bold;">Premium Luxury Shortlets</span>
+              </div>
+              
+              <div style="margin-bottom: 30px;">
+                <h3 style="color: #111827; font-size: 18px; font-weight: 700; margin-top: 0; margin-bottom: 15px; border-left: 4px solid #DF6853; padding-left: 10px;">Payment Disbursement Receipt</h3>
+                <p style="font-size: 14px; line-height: 1.6; color: #4b5563; margin: 0;">
+                  Dear <strong>${payout.professional?.name || 'Partner'}</strong>,
+                </p>
+                <p style="font-size: 14px; line-height: 1.6; color: #4b5563; margin-top: 10px; margin-bottom: 0;">
+                  This is to confirm that a payout of <strong>₦${Number(payout.amount_ngn).toLocaleString(undefined, {minimumFractionDigits: 2})}</strong> has been successfully processed for the maintenance services carried out at Sparkles Apartments.
+                </p>
+              </div>
+
+              <div style="background-color: #f9fafb; border: 1px solid #f3f4f6; border-radius: 10px; padding: 20px; margin-bottom: 30px;">
+                <h4 style="color: #374151; font-size: 13px; font-weight: 700; margin-top: 0; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.05em;">Disbursement Transaction Details</h4>
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px; color: #4b5563;">
+                  <tr>
+                    <td style="padding: 6px 0; font-weight: bold; width: 45%;">Specialty:</td>
+                    <td style="padding: 6px 0; color: #111827;">${payout.professional?.trade_specialty || 'General Repair'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; font-weight: bold;">Disbursed Amount:</td>
+                    <td style="padding: 6px 0; color: #df6853; font-weight: bold; font-size: 15px;">₦${Number(payout.amount_ngn).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; font-weight: bold;">Payment Method:</td>
+                    <td style="padding: 6px 0; color: #111827; text-transform: capitalize;">${payoutMethod.replace('_', ' ')}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; font-weight: bold;">Tx Reference:</td>
+                    <td style="padding: 6px 0; color: #111827; font-family: monospace; font-weight: bold;">${txRef}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 0; font-weight: bold;">Payment Date:</td>
+                    <td style="padding: 6px 0; color: #111827;">${format(new Date(paidDate), 'MMM dd, yyyy, HH:mm')}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <div style="background-color: #fffbeb; border: 1px solid #fef3c7; border-radius: 10px; padding: 20px; margin-bottom: 30px;">
+                <h4 style="color: #b45309; font-size: 13px; font-weight: 700; margin-top: 0; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;">Specialist Settlement Bank Account</h4>
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px; color: #4b5563;">
+                  <tr>
+                    <td style="padding: 4px 0; font-weight: bold; width: 45%;">Bank Name:</td>
+                    <td style="padding: 4px 0; color: #111827; font-weight: 600;">${payout.professional?.bank_name || 'N/A'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 4px 0; font-weight: bold;">Account Number:</td>
+                    <td style="padding: 4px 0; color: #111827; font-family: monospace; font-size: 14px; font-weight: bold;">${payout.professional?.account_number || 'N/A'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 4px 0; font-weight: bold;">Account Name:</td>
+                    <td style="padding: 4px 0; color: #111827; font-weight: 600;">${payout.professional?.account_name || 'N/A'}</td>
+                  </tr>
+                </table>
+              </div>
+
+              ${payout.notes ? `
+              <div style="margin-bottom: 30px; font-size: 13px; color: #6b7280; line-height: 1.5; border-top: 1px solid #f3f4f6; padding-top: 15px;">
+                <strong>Service Notes:</strong><br/>
+                <em>${payout.notes}</em>
+              </div>
+              ` : ''}
+
+              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #f3f4f6; text-align: center; font-size: 12px; color: #9ca3af;">
+                <p style="margin: 0 0 5px 0;">This is an official automated disbursement confirmation from Sparkles Apartments.</p>
+                <p style="margin: 0;">${contactInfo.address}</p>
+                <p style="margin: 5px 0 0 0;">Phones: ${contactInfo.phone} | Email: ${contactInfo.email}</p>
+              </div>
+            </div>
+          `;
+
+          const emailRes = await sendResendEmail({
+            to: specialistEmail,
+            subject: `Payment Receipt: ₦${Number(payout.amount_ngn).toLocaleString()} - Sparkles Apartments`,
+            from: 'booking@sparklesapartments.ng',
+            html: receiptHtml
+          });
+          
+          if (emailRes?.success) emailSent = true;
+        } catch (emailErr) {
+          console.error("Failed to email specialist payout receipt:", emailErr);
+        }
+      }
+
+      toast.success(
+        emailSent 
+          ? `✓ Payout successful and email receipt sent to ${specialistEmail}!`
+          : `✓ Payout successful! (Email receipt dispatch simulated).`,
+        { id: toastId }
+      );
+      fetchSpecialistPayouts();
+      fetchInvoices();
+    } catch (err) {
+      console.warn("DB update failed, using local storage fallback for processing specialist payout:", err);
+      const localPayments = JSON.parse(localStorage.getItem('pms_maintenance_payments') || '[]');
+      const localProfs = JSON.parse(localStorage.getItem('pms_maintenance_professionals') || '[]');
+      const txRef = `TX-SANDBOX-${Date.now().toString().slice(-4)}`;
+      const paidDate = new Date().toISOString();
+
+      const updatedPayments = localPayments.map(p => {
+        if (p.id === payout.id) {
+          return {
+            ...p,
+            payment_status: 'paid',
+            paid_at: paidDate,
+            payment_method: payoutMethod,
+            transaction_reference: txRef
+          };
+        }
+        return p;
+      });
+      localStorage.setItem('pms_maintenance_payments', JSON.stringify(updatedPayments));
+
+      // Log into local expenses
+      try {
+        const expensePayload = {
+          id: `exp-maint-${Date.now()}`,
+          property_id: 'mock-hq',
+          amount: Number(payout.amount_ngn),
+          category: 'Maintenance',
+          description: `Disbursed maintenance fix payout to specialist. Ref: ${txRef}. Notes: ${payout.notes || 'None'}`,
+          expense_date: paidDate.split('T')[0],
+          paid_to: payout.professional?.name || 'Maintenance Specialist',
+          payment_method: payoutMethod,
+          status: 'paid',
+          created_at: paidDate
+        };
+        const currentLocal = JSON.parse(localStorage.getItem('luxe_expenses') || '[]');
+        localStorage.setItem('luxe_expenses', JSON.stringify([expensePayload, ...currentLocal]));
+      } catch (localErr) {
+        console.error("Local accounts synchronization error:", localErr);
+      }
+
+      let emailSent = false;
+      const specialistEmail = payout.professional?.email;
+      if (specialistEmail) {
+        try {
+          const emailRes = await sendResendEmail({
+            to: specialistEmail,
+            subject: `Payment Receipt: ₦${Number(payout.amount_ngn).toLocaleString()} - Sparkles Apartments`,
+            from: 'booking@sparklesapartments.ng',
+            html: `<p>Payment of ₦${Number(payout.amount_ngn).toLocaleString()} received successfully for maintenance!</p>`
+          });
+          if (emailRes?.success) emailSent = true;
+        } catch {}
+      }
+
+      toast.success(
+        emailSent 
+          ? `✓ Payout successful and email receipt sent to ${specialistEmail} (local sandbox)!`
+          : `✓ Payout processed successfully (local sandbox)!`,
+        { id: toastId }
+      );
+      fetchSpecialistPayouts();
+      fetchInvoices();
     }
   };
 
   const handleConfirmServicePayment = async (req, method = 'bank_transfer') => {
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
     const toastId = toast.loading('Confirming stay enhancement payment...');
     try {
       const isTaxable = req.services?.tax_inclusive !== false;
@@ -308,6 +700,10 @@ const AdminBilling = () => {
   };
 
   const handleConfirmPendingPayment = async (payment) => {
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
     const toastId = toast.loading('Confirming pending checkout payment...');
     try {
       // 1. Update the payment record status to 'completed'
@@ -359,6 +755,10 @@ const AdminBilling = () => {
   };
 
   const handleConfirmBookingPayment = async (bookingId) => {
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
     const toastId = toast.loading('Confirming payment with finance...');
     try {
       const { error } = await supabase
@@ -411,6 +811,10 @@ const AdminBilling = () => {
   };
 
   const handleCancelBookingPayment = async (invoiceId, bookingId) => {
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
     if (!window.confirm("Are you sure you want to cancel / decline this booking due to failed payment?")) return;
     
     const toastId = toast.loading('Cancelling booking and invoice...');
@@ -472,20 +876,120 @@ const AdminBilling = () => {
     }
   };
 
+  const handlePaystackSuccess = async (reference, amount) => {
+    setIsProcessing(true);
+    const toastId = toast.loading('Confirming transaction with Paystack...');
+    try {
+      const transRef = typeof reference === 'string' ? reference : (reference?.reference || reference?.transaction || `PAYSTACK-${Date.now()}`);
+      const newAmountPaid = Number(activePaymentModal.amount_paid) + amount;
+      const newStatus = newAmountPaid >= activePaymentModal.total_amount ? 'paid' : 'partial';
+
+      // 1. Record Payment
+      const { error: payErr } = await supabase.from('payments').insert([{
+        booking_id: activePaymentModal.booking_id,
+        invoice_id: activePaymentModal.id,
+        amount: amount,
+        method: 'paystack',
+        status: 'completed',
+        transaction_ref: transRef,
+        notes: `Payment processed via Paystack modal for invoice: ${activePaymentModal.invoice_number}`
+      }]);
+
+      if (payErr) throw payErr;
+
+      // 2. Update Invoice
+      await supabase.from('invoices').update({
+        amount_paid: newAmountPaid,
+        status: newStatus
+      }).eq('id', activePaymentModal.id);
+
+      // 3. Sync with Bookings
+      await supabase.from('bookings').update({
+        amount_paid_ngn: newAmountPaid,
+        payment_status: newStatus,
+        id_verified: true,
+        status: 'confirmed'
+      }).eq('id', activePaymentModal.booking_id);
+
+      // 3b. If invoice is fully paid, mark all booking services as paid
+      if (newStatus === 'paid') {
+        await supabase
+          .from('booking_services')
+          .update({ payment_status: 'paid' })
+          .eq('booking_id', activePaymentModal.booking_id);
+      }
+
+      toast.success(`Payment of ₦${amount.toLocaleString()} processed via Paystack!`, { id: toastId });
+
+      // Trigger alerts
+      try {
+        const { data: bData } = await supabase
+          .from('bookings')
+          .select('*, profiles(*), rooms(*)')
+          .eq('id', activePaymentModal.booking_id)
+          .single();
+        if (bData) {
+          triggerAutomationRules('payment_received', {
+            ...bData,
+            payment_amount: amount,
+            payment_method: 'paystack',
+            payment_ref: transRef
+          });
+          if (activePaymentModal.bookings?.status === 'pending') {
+            triggerAutomationRules('booking_confirmed', bData);
+          }
+          triggerAutomationRules('invoice_issued', bData);
+        }
+      } catch (autoErr) {
+        console.warn("Automation alerts processing failed in handlePaystackSuccess:", autoErr);
+      }
+
+      setActivePaymentModal(null);
+      setPaymentAmount('');
+      fetchInvoices();
+    } catch (err) {
+      console.error(err);
+      toast.error('Payment verification failed', { id: toastId });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleProcessPayment = async (e) => {
     e.preventDefault();
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
+
+    const amount = Number(paymentAmount);
+    if (amount <= 0 || amount > (activePaymentModal.total_amount - activePaymentModal.amount_paid)) {
+      toast.error("Invalid payment amount");
+      return;
+    }
+
+    if (paymentMethod === 'paystack') {
+      const pubKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || paystackPublicKey || '';
+      if (!pubKey) {
+        toast.error("Paystack public key is not configured.");
+        return;
+      }
+      const ref = `OFFLINE-PAYSTACK-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      setPaystackConfig({
+        reference: ref,
+        email: activePaymentModal.bookings?.guest_email || 'guest@example.com',
+        amount: Math.round(amount * 100), // in kobo
+        publicKey: pubKey,
+        currency: 'NGN'
+      });
+      return;
+    }
+
     setIsProcessing(true);
     
     // Simulate Gateway Delay
     setTimeout(async () => {
       try {
-        const amount = Number(paymentAmount);
-        if (amount <= 0 || amount > (activePaymentModal.total_amount - activePaymentModal.amount_paid)) {
-          toast.error("Invalid payment amount");
-          setIsProcessing(false);
-          return;
-        }
-
         let guestProfile = null;
         if (paymentMethod === 'ar') {
           const crmGuestId = activePaymentModal.bookings?.crm_guest_id;
@@ -623,8 +1127,198 @@ const AdminBilling = () => {
     }, 1500);
   };
 
+  const requestRefundOTP = async () => {
+    if (!activeRefundModal) return;
+    
+    if (!refundBankName || !refundAccountNumber || !refundAccountName) {
+      toast.error("Please enter guest bank details first.");
+      return;
+    }
+    if (refundAccountNumber.length < 8) {
+      toast.error("Please enter a valid bank account number.");
+      return;
+    }
+
+    const toastId = toast.loading("Resolving manager and dispatching authorization OTP...");
+    try {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      setOtpCode(code);
+      
+      let managerPhone = '08033214684'; // Default fallback
+      
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('phone')
+          .in('role', ['hotel_manager', 'super_admin', 'admin', 'manager'])
+          .not('phone', 'is', null)
+          .limit(1);
+
+        if (!error && data && data.length > 0) {
+          managerPhone = data[0].phone;
+        } else if (contactInfo?.phone) {
+          const firstPhone = contactInfo.phone.split(',')[0].trim();
+          if (firstPhone) managerPhone = firstPhone;
+        }
+      } catch (ex) {
+        console.warn("Error querying manager profiles", ex);
+      }
+
+      setManagerPhoneDisplay(managerPhone);
+
+      const smsMessage = `Sparkles Apartments: Security OTP code for Refund Auth is ${code}. Invoice Ref: ${activeRefundModal.invoice_number}, Amount: ₦${Number(paymentAmount).toLocaleString()}. Valid for 5 minutes.`;
+      
+      const res = await sendSMSNotification({
+        to: managerPhone,
+        message: smsMessage
+      });
+
+      if (res.success) {
+        setOtpSent(true);
+        toast.success(`Security Authorization OTP code sent to Manager's phone number (${managerPhone.slice(0, 4)}***${managerPhone.slice(-4)})`, { id: toastId, duration: 6000 });
+      } else {
+        throw new Error(res.error || "SMS delivery failed");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error(`Failed to send OTP: ${err.message || 'Error occurred'}. Please try again.`, { id: toastId });
+    }
+  };
+
+  const handleMarkAsSettled = async (settlementId) => {
+    const toastId = toast.loading("Marking refund as settled...");
+    try {
+      const settledTime = new Date().toISOString();
+      const { error } = await supabase
+        .from('refund_settlements')
+        .update({ status: 'settled', settled_at: settledTime })
+        .eq('id', settlementId);
+
+      if (error) throw error;
+      toast.success("Refund successfully marked as settled!", { id: toastId });
+      fetchRefundSettlements();
+    } catch (err) {
+      console.warn("DB update failed, updating local storage for settlement:", err);
+      const local = JSON.parse(localStorage.getItem('pms_refund_settlements') || '[]');
+      const updated = local.map(s => s.id === settlementId ? { ...s, status: 'settled', settled_at: new Date().toISOString() } : s);
+      localStorage.setItem('pms_refund_settlements', JSON.stringify(updated));
+      toast.success("Refund marked as settled (local storage)!", { id: toastId });
+      fetchRefundSettlements();
+    }
+  };
+
+  const getFilteredSettlements = () => {
+    const now = new Date();
+    return refundSettlements.filter(s => {
+      const date = new Date(s.created_at);
+      if (settlementFilter === 'daily') {
+        return date.toDateString() === now.toDateString();
+      }
+      if (settlementFilter === 'weekly') {
+        const diffTime = Math.abs(now - date);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays <= 7;
+      }
+      if (settlementFilter === 'monthly') {
+        return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+      }
+      return true; // 'all'
+    });
+  };
+
+  const handlePrintSettlements = () => {
+    const filtered = getFilteredSettlements();
+    const tableRows = filtered.map(s => `
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">${s.guest_name}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">${s.guest_email}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; font-weight: bold;">₦${Number(s.refund_amount).toLocaleString()}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; font-family: monospace;">${s.bank_name}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; font-family: monospace; font-weight: bold;">${s.account_number}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">${s.account_name}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; text-transform: uppercase; font-weight: bold; color: ${s.status === 'settled' ? '#047857' : '#b45309'}">${s.status}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; font-family: monospace;">${s.settled_at ? new Date(s.settled_at).toLocaleDateString() : 'N/A'}</td>
+      </tr>
+    `).join('');
+
+    const printWindow = window.open();
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Refund Settlements Bank Report - Sparkles Apartments</title>
+          <style>
+            @page { size: landscape; margin: 20mm; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; color: #111827; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+            th { border-bottom: 2px solid #e5e7eb; padding: 10px; text-align: left; background-color: #f9fafb; font-weight: bold; color: #374151; }
+            .header { margin-bottom: 30px; border-bottom: 2px solid #374151; padding-bottom: 15px; }
+            .header h1 { margin: 0; font-size: 22px; color: #111827; }
+            .meta { display: flex; justify-content: space-between; margin-top: 15px; font-size: 13px; }
+            .footer { margin-top: 40px; font-size: 11px; color: #6b7280; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 15px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            ${contactInfo.logo ? `<img src="${contactInfo.logo}" style="max-height: 50px; object-fit: contain; margin-bottom: 10px;" /><br/>` : ''}
+            <h1>REFUND SETTLEMENTS REPORT (BANK OUTWARD SHEET)</h1>
+            <div style="font-size: 13px; color: #6b7280; margin-top: 5px;">Filter Batch: ${settlementFilter.toUpperCase()}</div>
+          </div>
+          
+          <div class="meta">
+            <div>
+              <strong>Sparkles Apartments Premium Luxury Shortlets</strong><br />
+              Compiled Date: ${new Date().toLocaleString()}<br />
+              Total Records: ${filtered.length}
+            </div>
+            <div style="text-align: right;">
+              <strong>Total Refund Outward:</strong><br />
+              <span style="font-size: 20px; font-weight: 900; color: #b91c1c;">
+                ₦${filtered.reduce((sum, s) => sum + Number(s.refund_amount), 0).toLocaleString()}
+              </span>
+            </div>
+          </div>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>Guest Name</th>
+                <th>Guest Email</th>
+                <th>Refund Amount</th>
+                <th>Bank Name</th>
+                <th>Account Number</th>
+                <th>Account Name</th>
+                <th>Status</th>
+                <th>Settled Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows.length > 0 ? tableRows : '<tr><td colspan="8" style="text-align: center; padding: 20px;">No refund settlements found for this filter.</td></tr>'}
+            </tbody>
+          </table>
+          
+          <div class="footer">
+            Confidential Bank Disbursement Report. Authorized by Hotel Management.
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+    printWindow.close();
+  };
+
   const handleIssueRefund = async (e) => {
     e.preventDefault();
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
+
+    if (!otpSent || otpInput !== otpCode) {
+      toast.error("Invalid or missing One-Time Password authorization code.");
+      return;
+    }
+
     setIsProcessing(true);
     
     setTimeout(async () => {
@@ -685,7 +1379,7 @@ const AdminBilling = () => {
         const newAmountPaid = Number(activeRefundModal.amount_paid) - amount;
         const newStatus = newAmountPaid === 0 ? 'cancelled' : 'partial';
 
-        // 1. Record Refund
+        // 1. Record Refund in payments
         const { error: payErr } = await supabase.from('payments').insert([{
           booking_id: activeRefundModal.booking_id,
           invoice_id: activeRefundModal.id,
@@ -713,10 +1407,49 @@ const AdminBilling = () => {
           payment_status: newStatus
         }).eq('id', activeRefundModal.booking_id);
 
-        toast.success(`Refund of ₦${amount.toLocaleString()} issued successfully.`);
+        // 4. Log Refund Settlement capturing guest bank details
+        const settlementPayload = {
+          invoice_id: activeRefundModal.id,
+          booking_id: activeRefundModal.booking_id,
+          guest_name: activeRefundModal.bookings?.profiles 
+            ? `${activeRefundModal.bookings.profiles.first_name} ${activeRefundModal.bookings.profiles.last_name}` 
+            : activeRefundModal.bookings?.guest_name || 'Walk-in Guest',
+          guest_email: activeRefundModal.bookings?.guest_email || 'N/A',
+          refund_amount: amount,
+          bank_name: refundBankName,
+          account_number: refundAccountNumber,
+          account_name: refundAccountName,
+          status: 'pending'
+        };
+
+        const { error: setlErr } = await supabase.from('refund_settlements').insert([settlementPayload]);
+        if (setlErr) {
+          console.warn("Database settlement logging failed, using local storage backup:", setlErr);
+          const localSettlements = JSON.parse(localStorage.getItem('pms_refund_settlements') || '[]');
+          const newSettlement = {
+            ...settlementPayload,
+            id: `setl-${Date.now()}`,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+          localStorage.setItem('pms_refund_settlements', JSON.stringify([newSettlement, ...localSettlements]));
+        }
+
+        toast.success(`Refund of ₦${amount.toLocaleString()} issued and settlements logged successfully.`);
         setActiveRefundModal(null);
         setPaymentAmount('');
+        
+        // Reset states
+        setRefundBankName('');
+        setRefundAccountNumber('');
+        setRefundAccountName('');
+        setOtpSent(false);
+        setOtpCode('');
+        setOtpInput('');
+        setManagerPhoneDisplay('');
+
         fetchInvoices();
+        fetchRefundSettlements();
       } catch (err) {
         toast.error('Refund failed');
       } finally {
@@ -776,7 +1509,7 @@ const AdminBilling = () => {
     if (sortBy === 'balance_desc') {
       const balanceA = Number(a.total_amount || 0) - Number(a.amount_paid || 0);
       const balanceB = Number(b.total_amount || 0) - Number(b.amount_paid || 0);
-      return balanceB - balanceA;
+        return balanceB - balanceA;
     }
     if (sortBy === 'amount_desc') {
       return Number(b.total_amount || 0) - Number(a.total_amount || 0);
@@ -784,13 +1517,49 @@ const AdminBilling = () => {
     return 0;
   });
 
+  useEffect(() => {
+    setCurrentPageInvoices(1);
+  }, [searchTerm, sortBy]);
+
+  useEffect(() => {
+    setCurrentPageSettlements(1);
+  }, [settlementFilter]);
+
+  const startIndexInvoices = (currentPageInvoices - 1) * pageSize;
+  const paginatedInvoices = sortedInvoices.slice(startIndexInvoices, startIndexInvoices + pageSize);
+
+  const startIndexPayouts = (currentPagePayouts - 1) * pageSize;
+  const paginatedPayouts = specialistPayouts.slice(startIndexPayouts, startIndexPayouts + pageSize);
+
+  const startIndexService = (currentPageService - 1) * pageSize;
+  const paginatedService = pendingServicePayments.slice(startIndexService, startIndexService + pageSize);
+
+  const startIndexCheckout = (currentPageCheckout - 1) * pageSize;
+  const paginatedCheckout = pendingCheckoutPayments.slice(startIndexCheckout, startIndexCheckout + pageSize);
+
+  const filteredSettlements = getFilteredSettlements();
+  const startIndexSettlements = (currentPageSettlements - 1) * pageSize;
+  const paginatedSettlements = filteredSettlements.slice(startIndexSettlements, startIndexSettlements + pageSize);
+
   return (
     <div className="space-y-6 pb-20">
+      {isFrontOfficeClosed && (
+        <div className="bg-red-500/10 border-2 border-red-500/35 text-red-200 p-4 rounded-xl flex items-center gap-4 shadow-lg shadow-red-500/5 mb-6 animate-pulse">
+          <AlertTriangle size={24} className="text-red-500 animate-bounce flex-shrink-0" />
+          <div className="flex-1">
+            <h4 className="font-extrabold text-sm uppercase tracking-wider text-white">Front Office Operations Locked</h4>
+            <p className="text-xs text-red-300/95 mt-0.5 font-medium">
+              Daily ledger is closed. Stay enhancement confirmation, checkout payments, invoices settlement, and refund operations are locked.
+            </p>
+          </div>
+        </div>
+      )}
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-dark-800 p-6 rounded-lg border border-dark-700 shadow-sm">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-dark-800 border border-dark-700 p-6 rounded-lg gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <Wallet className="text-brand-500"/> Finance & Billing
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <CreditCard className="text-brand-500" />
+            Financial Folios & Billing Ledger
           </h1>
           <p className="text-gray-400 mt-1">Manage invoices, process multi-gateway payments, and issue refunds.</p>
         </div>
@@ -801,6 +1570,16 @@ const AdminBilling = () => {
         <button onClick={() => setActiveTab('invoices')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'invoices' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
           <FileText size={18} /> Invoices & Billings
         </button>
+        {hasAccess('Accounting') && (
+          <button onClick={() => setActiveTab('payouts')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'payouts' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
+            <ArrowRightLeft size={18} /> Specialist Payouts
+          </button>
+        )}
+        {hasAccess('Accounting') && (
+          <button onClick={() => setActiveTab('settlements')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'settlements' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
+            <RefreshCcw size={18} /> Refund Settlements
+          </button>
+        )}
         {hasAccess('Accounting') && (
           <button onClick={() => setActiveTab('accounting')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'accounting' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
             <Wallet size={18} /> Accounting & Ledgers
@@ -847,7 +1626,7 @@ const AdminBilling = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-dark-700/50">
-                {pendingServicePayments.map(req => {
+                {paginatedService.map(req => {
                   const guestName = req.bookings?.guest_name || 'Guest';
                   return (
                     <tr key={req.id} className="hover:bg-dark-700/30 transition-colors">
@@ -867,26 +1646,30 @@ const AdminBilling = () => {
                       </td>
                       <td className="py-3.5 px-4 text-right flex justify-end gap-2 items-center">
                         <button 
+                          disabled={isFrontOfficeClosed}
                           onClick={() => handleConfirmServicePayment(req, 'ar')}
-                          className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs py-1.5 px-3 rounded shadow transition-all"
+                          className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs py-1.5 px-3 rounded shadow transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           AR Deduction
                         </button>
                         <button 
+                          disabled={isFrontOfficeClosed}
                           onClick={() => handleConfirmServicePayment(req, 'bank_transfer')}
-                          className="bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs py-1.5 px-3 rounded shadow transition-all"
+                          className="bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs py-1.5 px-3 rounded shadow transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           Bank Transfer
                         </button>
                         <button 
+                          disabled={isFrontOfficeClosed}
                           onClick={() => handleConfirmServicePayment(req, 'pos')}
-                          className="bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs py-1.5 px-3 rounded shadow transition-all"
+                          className="bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs py-1.5 px-3 rounded shadow transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           POS
                         </button>
                         <button 
+                          disabled={isFrontOfficeClosed}
                           onClick={() => handleConfirmServicePayment(req, 'cash')}
-                          className="bg-green-500 hover:bg-green-600 text-dark-950 font-bold text-xs py-1.5 px-3 rounded shadow transition-all"
+                          className="bg-green-500 hover:bg-green-600 text-dark-950 font-bold text-xs py-1.5 px-3 rounded shadow transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           Cash
                         </button>
@@ -897,6 +1680,12 @@ const AdminBilling = () => {
               </tbody>
             </table>
           </div>
+          <PaginationControl
+            currentPage={currentPageService}
+            totalItems={pendingServicePayments.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPageService}
+          />
         </div>
       )}
 
@@ -922,7 +1711,7 @@ const AdminBilling = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-dark-700/50">
-                {pendingCheckoutPayments.map(p => {
+                {paginatedCheckout.map(p => {
                   const guestName = p.bookings?.guest_name || 'Guest';
                   const roomNumber = p.bookings?.rooms?.room_number || 'N/A';
                   return (
@@ -948,8 +1737,9 @@ const AdminBilling = () => {
                       </td>
                       <td className="py-3.5 px-4 text-right flex justify-end gap-2 items-center">
                         <button 
+                          disabled={isFrontOfficeClosed}
                           onClick={() => handleConfirmPendingPayment(p)}
-                          className="bg-brand-500 hover:bg-brand-600 text-dark-950 font-bold text-xs py-1.5 px-3 rounded shadow transition-all active:scale-98"
+                          className="bg-brand-500 hover:bg-brand-600 text-dark-950 font-bold text-xs py-1.5 px-3 rounded shadow transition-all active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           Confirm Payment
                         </button>
@@ -960,6 +1750,12 @@ const AdminBilling = () => {
               </tbody>
             </table>
           </div>
+          <PaginationControl
+            currentPage={currentPageCheckout}
+            totalItems={pendingCheckoutPayments.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPageCheckout}
+          />
         </div>
       )}
 
@@ -1018,7 +1814,7 @@ const AdminBilling = () => {
               {loading && <tr><td colSpan="8" className="p-8 text-center text-gray-500">Loading invoices...</td></tr>}
               {!loading && sortedInvoices.length === 0 && <tr><td colSpan="8" className="p-8 text-center text-gray-500">No invoices found.</td></tr>}
               
-              {sortedInvoices.map(inv => {
+              {paginatedInvoices.map(inv => {
                 const guestName = inv.bookings?.profiles ? `${inv.bookings.profiles.first_name} ${inv.bookings.profiles.last_name}` : inv.bookings?.guest_name || 'Walk-in Guest';
                 const balanceDue = Number(inv.total_amount) - Number(inv.amount_paid);
                 const discount = Number(inv.bookings?.discount_amount_ngn || 0);
@@ -1057,30 +1853,56 @@ const AdminBilling = () => {
                       </button>
                       {inv.bookings?.status === 'pending' && !inv.bookings?.id_verified && (
                         <button 
+                          disabled={isFrontOfficeClosed}
                           onClick={() => handleConfirmBookingPayment(inv.bookings.id)} 
-                          className="bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded font-bold text-xs transition-colors"
+                          className="bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded font-bold text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           Confirm Payment
                         </button>
                       )}
                       {inv.bookings?.status === 'pending' && !inv.bookings?.id_verified && (
                         <button 
+                          disabled={isFrontOfficeClosed}
                           onClick={() => handleCancelBookingPayment(inv.id, inv.bookings.id)} 
-                          className="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded font-bold text-xs transition-colors"
+                          className="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded font-bold text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           Decline / Cancel
                         </button>
                       )}
                       {balanceDue > 0 && inv.status !== 'cancelled' && (
-                        <button onClick={() => {setActivePaymentModal(inv); setPaymentAmount(balanceDue.toString())}} className="bg-brand-500 hover:bg-brand-400 text-dark-900 px-3 py-1.5 rounded font-bold text-xs transition-colors">
+                        <button 
+                          disabled={isFrontOfficeClosed}
+                          onClick={() => {
+                            if (isFrontOfficeClosed) return toast.error("Front Office operations are locked due to daily ledger closure.");
+                            setActivePaymentModal(inv); 
+                            setPaymentAmount(balanceDue.toString());
+                          }} 
+                          className="bg-brand-500 hover:bg-brand-400 text-dark-900 px-3 py-1.5 rounded font-bold text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
                           Pay
                         </button>
                       )}
-                      {Number(inv.amount_paid) > 0 && (
-                        <button onClick={() => {setActiveRefundModal(inv); setPaymentAmount(inv.amount_paid.toString())}} className="bg-dark-600 hover:bg-red-500/20 hover:text-red-400 text-gray-300 px-3 py-1.5 rounded font-bold text-xs transition-colors">
-                          Refund
-                        </button>
-                      )}
+                      <button 
+                        disabled={isFrontOfficeClosed || Number(inv.amount_paid) <= Number(inv.total_amount)}
+                        onClick={() => {
+                          if (isFrontOfficeClosed) return toast.error("Front Office operations are locked due to daily ledger closure.");
+                          setActiveRefundModal(inv); 
+                          setPaymentAmount((Number(inv.amount_paid) - Number(inv.total_amount)).toString());
+                          setRefundBankName('');
+                          setRefundAccountNumber('');
+                          setRefundAccountName('');
+                          setOtpSent(false);
+                          setOtpCode('');
+                          setOtpInput('');
+                        }} 
+                        className={`px-3 py-1.5 rounded font-bold text-xs transition-colors ${
+                          Number(inv.amount_paid) > Number(inv.total_amount) 
+                            ? "bg-dark-600 hover:bg-red-500/20 hover:text-red-400 text-gray-300 cursor-pointer" 
+                            : "bg-dark-700 text-gray-600 cursor-not-allowed opacity-40"
+                        }`}
+                      >
+                        Refund
+                      </button>
                     </td>
                   </tr>
                 );
@@ -1088,6 +1910,12 @@ const AdminBilling = () => {
             </tbody>
           </table>
         </div>
+        <PaginationControl
+          currentPage={currentPageInvoices}
+          totalItems={sortedInvoices.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPageInvoices}
+        />
       </div>
     </div>
   )}
@@ -1095,6 +1923,235 @@ const AdminBilling = () => {
       {activeTab === 'accounting' && hasAccess('Accounting') && (
         <div className="animate-in fade-in duration-300">
           <Accounting />
+        </div>
+      )}
+
+      {activeTab === 'payouts' && hasAccess('Accounting') && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <div className="bg-dark-800 border border-dark-700 p-6 rounded-lg shadow-sm space-y-4">
+            <h2 className="text-lg font-bold text-brand-500 flex items-center gap-2">
+              <Wrench className="text-brand-500" /> Specialist Maintenance Payouts & Disbursements ({specialistPayouts.length})
+            </h2>
+            <p className="text-gray-400 text-xs">
+              Process payouts directly to specialists for carried out maintenance services. Once paid, the general ledger will be automatically updated with a maintenance expense entry and a receipt will be emailed to the specialist.
+            </p>
+            
+            <div className="overflow-x-auto border border-dark-700 rounded bg-dark-900/50">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-dark-700 bg-dark-900 text-gray-500 text-xs uppercase tracking-wider">
+                    <th className="py-3 px-4">Specialist / Trade</th>
+                    <th className="py-3 px-4">Disbursement Target Bank Details</th>
+                    <th className="py-3 px-4">Amount</th>
+                    <th className="py-3 px-4 font-normal">Requisition Details / Notes</th>
+                    <th className="py-3 px-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-700/50">
+                  {paginatedPayouts.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="py-8 px-4 text-center text-gray-500 italic text-xs">
+                        No pending specialist payout requests at this time.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedPayouts.map(pay => {
+                      const profName = pay.professional?.name || 'Unknown Specialist';
+                      const trade = pay.professional?.trade_specialty || 'General';
+                      const bankName = pay.professional?.bank_name || 'N/A';
+                      const acctNum = pay.professional?.account_number || 'N/A';
+                      const acctName = pay.professional?.account_name || 'N/A';
+                      
+                      return (
+                        <tr key={pay.id} className="hover:bg-dark-700/30 transition-colors">
+                          <td className="py-3.5 px-4">
+                            <p className="font-bold text-white">{profName}</p>
+                            <span className="inline-block bg-brand-500/10 text-brand-400 text-[9px] font-black uppercase px-2 py-0.5 rounded-full mt-1">
+                              {trade}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 font-sans text-xs">
+                            <div className="bg-dark-900/70 p-2.5 rounded-lg border border-dark-750 max-w-xs space-y-1">
+                              <div className="flex justify-between text-gray-400">
+                                <span>Bank:</span>
+                                <strong className="text-white">{bankName}</strong>
+                              </div>
+                              <div className="flex justify-between text-gray-400">
+                                <span>Acct #:</span>
+                                <strong className="text-brand-500 font-mono font-bold select-all">{acctNum}</strong>
+                              </div>
+                              <div className="text-[10px] text-gray-500 mt-0.5 truncate italic" title={acctName}>
+                                {acctName}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 font-mono font-bold text-white text-base">
+                            ₦{Number(pay.amount_ngn).toLocaleString()}
+                          </td>
+                          <td className="py-3.5 px-4 text-xs text-gray-400 max-w-sm">
+                            <p className="line-clamp-2" title={pay.notes}>
+                              {pay.notes || 'Disbursement requested for maintenance ticket.'}
+                            </p>
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <button
+                              disabled={isFrontOfficeClosed}
+                              onClick={() => handleProcessSpecialistPayout(pay)}
+                              className="bg-brand-500 hover:bg-brand-400 text-dark-900 font-bold text-xs py-2 px-4 rounded-lg shadow-md transition-all inline-flex items-center gap-1 hover:scale-102 active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                            >
+                              <ArrowRightLeft size={13} /> Confirm Payout
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <PaginationControl
+              currentPage={currentPagePayouts}
+              totalItems={specialistPayouts.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPagePayouts}
+            />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'settlements' && hasAccess('Accounting') && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <div className="bg-dark-800 border border-dark-700 p-6 rounded-lg shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-brand-500 flex items-center gap-2">
+                  <RefreshCcw className="text-brand-500" /> Guest Refund Settlements & Bank Outwards ({getFilteredSettlements().length})
+                </h2>
+                <p className="text-gray-400 text-xs">
+                  Generate daily, weekly, or monthly reports for outward bank settlements, print reports, and mark refunds as paid.
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handlePrintSettlements}
+                  className="bg-brand-500 hover:bg-brand-600 text-dark-950 font-bold text-xs py-2 px-4 rounded shadow-md transition-all inline-flex items-center gap-2 hover:scale-102 active:scale-98"
+                >
+                  <Printer size={14} /> Print Bank Report
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 p-3 bg-dark-900 border border-dark-700 rounded-lg">
+              <span className="text-xs text-gray-400 font-medium">Batch Filter:</span>
+              <div className="flex gap-2">
+                {['all', 'daily', 'weekly', 'monthly'].map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setSettlementFilter(filter)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all uppercase ${
+                      settlementFilter === filter
+                        ? 'bg-brand-500 text-dark-950'
+                        : 'bg-dark-850 text-gray-400 hover:text-white hover:bg-dark-750'
+                    }`}
+                  >
+                    {filter}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto border border-dark-700 rounded bg-dark-900/50">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-dark-700 bg-dark-900 text-gray-500 text-xs uppercase tracking-wider">
+                    <th className="py-3 px-4">Guest Info</th>
+                    <th className="py-3 px-4">Refund Amount</th>
+                    <th className="py-3 px-4">Settlement Bank Details</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-700/50">
+                  {settlementsLoading ? (
+                    <tr>
+                      <td colSpan="5" className="py-8 px-4 text-center text-gray-500">
+                        Loading settlements...
+                      </td>
+                    </tr>
+                  ) : paginatedSettlements.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="py-8 px-4 text-center text-gray-500 italic text-xs">
+                        No settlements found for this filter batch.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedSettlements.map((setl) => {
+                      return (
+                        <tr key={setl.id} className="hover:bg-dark-700/30 transition-colors">
+                          <td className="py-3.5 px-4">
+                            <p className="font-bold text-white">{setl.guest_name}</p>
+                            <span className="text-xs text-gray-400 font-mono">{setl.guest_email}</span>
+                          </td>
+                          <td className="py-3.5 px-4 font-mono font-bold text-red-400 text-base">
+                            ₦{Number(setl.refund_amount).toLocaleString()}
+                          </td>
+                          <td className="py-3.5 px-4 font-sans text-xs">
+                            <div className="bg-dark-900/70 p-2.5 rounded-lg border border-dark-750 max-w-xs space-y-1">
+                              <div className="flex justify-between text-gray-400">
+                                <span>Bank:</span>
+                                <strong className="text-white">{setl.bank_name}</strong>
+                              </div>
+                              <div className="flex justify-between text-gray-400">
+                                <span>Acct #:</span>
+                                <strong className="text-brand-500 font-mono font-bold select-all">{setl.account_number}</strong>
+                              </div>
+                              <div className="text-[10px] text-gray-500 mt-0.5 truncate italic" title={setl.account_name}>
+                                {setl.account_name}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span
+                              className={`px-2.5 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider border ${
+                                setl.status === 'settled'
+                                  ? 'bg-green-500/10 text-green-500 border border-green-500/20'
+                                  : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                              }`}
+                            >
+                              {setl.status}
+                            </span>
+                            {setl.settled_at && (
+                              <p className="text-[10px] text-gray-500 font-mono mt-1">
+                                Settled: {new Date(setl.settled_at).toLocaleDateString()}
+                              </p>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            {setl.status !== 'settled' && (
+                              <button
+                                disabled={isFrontOfficeClosed}
+                                onClick={() => handleMarkAsSettled(setl.id)}
+                                className="bg-green-600 hover:bg-green-500 text-white font-bold text-xs py-2 px-4 rounded-lg shadow-md transition-all inline-flex items-center gap-1 hover:scale-102 active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                              >
+                                <CheckCircle size={13} /> Mark as Settled
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            
+            <PaginationControl
+              currentPage={currentPageSettlements}
+              totalItems={filteredSettlements.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPageSettlements}
+            />
+          </div>
         </div>
       )}
 
@@ -1173,24 +2230,108 @@ const AdminBilling = () => {
                   disabled={isProcessing}
                   required 
                   type="number" 
-                  max={activeRefundModal.amount_paid} 
+                  max={Number(activeRefundModal.amount_paid) - Number(activeRefundModal.total_amount)} 
                   min="1" 
                   value={paymentAmount} 
                   onChange={e => setPaymentAmount(e.target.value)} 
                   className="w-full bg-dark-900 border border-dark-700 rounded p-3 text-white outline-none focus:border-red-500 transition-colors" 
                 />
                 <p className="text-xs text-gray-500 mt-1 flex justify-between">
-                  <span>Max Refundable: ₦{Number(activeRefundModal.amount_paid).toLocaleString()}</span>
-                  <span className="text-red-500 cursor-pointer hover:underline" onClick={() => setPaymentAmount(activeRefundModal.amount_paid.toString())}>Refund Full Amount</span>
+                  <span>Max Refundable: ₦{Number(activeRefundModal.amount_paid - activeRefundModal.total_amount).toLocaleString()}</span>
+                  <span className="text-red-500 cursor-pointer hover:underline" onClick={() => setPaymentAmount((Number(activeRefundModal.amount_paid) - Number(activeRefundModal.total_amount)).toString())}>Refund Full Amount</span>
                 </p>
+              </div>
+
+              {/* Guest Bank Details */}
+              <div className="bg-dark-900/60 p-4 border border-dark-700/60 rounded-xl space-y-3">
+                <span className="text-xs uppercase font-bold text-red-400 tracking-wider">Guest Settlement Bank Details</span>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Bank Name *</label>
+                  <input
+                    required
+                    disabled={isProcessing}
+                    type="text"
+                    placeholder="e.g. GTBank"
+                    value={refundBankName}
+                    onChange={e => setRefundBankName(e.target.value)}
+                    className="w-full bg-dark-800 border border-dark-700 rounded p-2 text-white text-xs outline-none focus:border-red-500"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Account Number *</label>
+                    <input
+                      required
+                      disabled={isProcessing}
+                      type="text"
+                      maxLength={10}
+                      placeholder="10-digit number"
+                      value={refundAccountNumber}
+                      onChange={e => setRefundAccountNumber(e.target.value.replace(/\D/g, ''))}
+                      className="w-full bg-dark-800 border border-dark-700 rounded p-2 text-white text-xs outline-none focus:border-red-500 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-400 mb-1">Account Name *</label>
+                    <input
+                      required
+                      disabled={isProcessing}
+                      type="text"
+                      placeholder="Account Holder"
+                      value={refundAccountName}
+                      onChange={e => setRefundAccountName(e.target.value)}
+                      className="w-full bg-dark-800 border border-dark-700 rounded p-2 text-white text-xs outline-none focus:border-red-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* OTP Security Verification */}
+              <div className="bg-red-500/5 border border-red-500/15 p-4 rounded-xl space-y-3">
+                <span className="text-xs uppercase font-bold text-red-500 tracking-wider">Manager Authorization Code</span>
+                
+                {!otpSent ? (
+                  <button
+                    type="button"
+                    disabled={isProcessing || !refundBankName || !refundAccountNumber || !refundAccountName}
+                    onClick={requestRefundOTP}
+                    className="w-full bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-600/30 py-2.5 rounded text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Request Manager Security OTP
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-[10px] text-gray-400">
+                      Enter the 6-digit OTP code sent to Manager's phone number ({managerPhoneDisplay.slice(0, 4)}***{managerPhoneDisplay.slice(-4)}):
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        required
+                        type="text"
+                        maxLength={6}
+                        placeholder="Enter 6-digit code"
+                        value={otpInput}
+                        onChange={e => setOtpInput(e.target.value.replace(/\D/g, ''))}
+                        className="flex-1 bg-dark-900 border border-dark-700 rounded p-2 text-white text-center text-sm font-bold font-mono outline-none focus:border-red-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={requestRefundOTP}
+                        className="bg-dark-750 hover:bg-dark-700 border border-dark-700 px-3 py-2 rounded text-xs font-bold text-gray-300 transition-all"
+                      >
+                        Resend
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded text-xs mt-2">
                 Warning: Once a refund is recorded, it will deduct from the total amount paid on this invoice and the booking.
               </div>
 
-              <button type="submit" disabled={isProcessing || !paymentAmount} className={`w-full py-3 mt-4 rounded font-bold transition-all flex items-center justify-center gap-2 ${isProcessing || !paymentAmount ? 'bg-dark-700 text-gray-500 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600 text-white shadow-[0_0_15px_rgba(239,68,68,0.3)]'}`}>
-                {isProcessing ? <><RefreshCcw size={18} className="animate-spin" /> Processing Refund...</> : `Refund ₦${Number(paymentAmount).toLocaleString()}`}
+              <button type="submit" disabled={isProcessing || !paymentAmount || !otpSent || otpInput.length < 6} className={`w-full py-3 mt-4 rounded font-bold transition-all flex items-center justify-center gap-2 ${isProcessing || !paymentAmount || !otpSent || otpInput.length < 6 ? 'bg-dark-700 text-gray-500 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600 text-white shadow-[0_0_15px_rgba(239,68,68,0.3)]'}`}>
+                {isProcessing ? <><RefreshCcw size={18} className="animate-spin" /> Processing Refund...</> : `Authorize & Confirm Refund (₦${Number(paymentAmount).toLocaleString()})`}
               </button>
             </form>
           </div>

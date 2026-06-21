@@ -16,17 +16,25 @@ const ForgotPassword = () => {
     const toastId = toast.loading('Sending recovery email...');
 
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-        redirectTo: `${window.location.origin}/reset-password`,
+      const API_BASE = import.meta.env.VITE_API_URL || '/api';
+      const response = await fetch(`${API_BASE}/auth/forgot-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email: email.trim().toLowerCase() })
       });
 
-      if (error) throw error;
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || 'Failed to send recovery email');
+      }
 
       toast.success('Recovery link sent successfully!', { id: toastId });
       setSubmitted(true);
     } catch (err) {
       console.error(err);
-      toast.error(err.message || 'Failed to send recovery email', { id: toastId });
+      toast.error(err.message || 'Failed to send recovery email. Ensure cPanel SMTP settings are configured.', { id: toastId });
     } finally {
       setLoading(false);
     }

@@ -57,6 +57,7 @@ const AdminReminders = lazy(() => import('./pages/admin/Reminders'));
 const AdminInternalMessages = lazy(() => import('./pages/admin/InternalMessages'));
 const AdminMonthlyReports = lazy(() => import('./pages/admin/MonthlyReports'));
 const AdminRestaurantKitchen = lazy(() => import('./pages/admin/RestaurantKitchen'));
+const AdminServicesPortal = lazy(() => import('./pages/admin/ServicesPortal'));
 
 // Guest Pages (Lazy Loaded)
 const GuestDashboard = lazy(() => import('./pages/guest/Dashboard'));
@@ -142,6 +143,7 @@ function App() {
               <Route path="messages" element={<AdminInternalMessages />} />
               <Route path="monthly-reports" element={<AdminMonthlyReports />} />
               <Route path="restaurant" element={<AdminRestaurantKitchen />} />
+              <Route path="services-portal" element={<AdminServicesPortal />} />
             </Route>
 
             {/* Guest Routes */}

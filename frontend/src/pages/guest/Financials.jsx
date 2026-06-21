@@ -131,7 +131,7 @@ const GuestFinancials = () => {
         const { data: guestBookings } = await supabase
           .from('bookings')
           .select('id')
-          .eq('guest_email', email);
+          .or(`guest_id.eq.${user?.id},guest_email.ilike.${email}`);
 
         const bookingIds = guestBookings ? guestBookings.map(b => b.id) : [];
 
@@ -148,7 +148,7 @@ const GuestFinancials = () => {
             orFilters.push(`notes.ilike.%${guestFullName}%`);
           }
           if (bookingIds.length > 0) {
-            orFilters.push(`booking_id.in.(${bookingIds.map(id => `"${id}"`).join(',')})`);
+            orFilters.push(`booking_id.in.(${bookingIds.join(',')})`);
           }
           paymentsQuery = paymentsQuery.or(orFilters.join(','));
           

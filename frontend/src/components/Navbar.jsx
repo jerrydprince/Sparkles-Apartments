@@ -11,7 +11,7 @@ const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const [contactLogo, setContactLogo] = useState('');
   const location = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, hasAccess } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -87,7 +87,7 @@ const Navbar = () => {
           {user ? (
             <div className="flex items-center space-x-4 ml-4">
               <Link 
-                to={user.role === 'guest' ? '/guest' : getDefaultAdminRoute(user.role)} 
+                to={user.role === 'guest' ? '/guest' : getDefaultAdminRoute(user.role, hasAccess)} 
                 className={`text-sm tracking-wide uppercase font-medium transition-colors duration-300 ${showSolid ? 'text-gray-600 hover:text-brand-500 dark:text-gray-300 dark:hover:text-brand-500' : 'text-[#ffffff]/80 hover:text-[#ffffff]'}`}
               >
                 Portal

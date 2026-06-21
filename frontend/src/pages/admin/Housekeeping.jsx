@@ -50,11 +50,11 @@ const AdminHousekeeping = () => {
 
   // Real-time synchronization for housekeeping tasks, maintenance tickets, and room changes
   useRealtimeSync(['housekeeping_tasks', 'maintenance_tickets', 'rooms'], () => {
-    fetchData();
+    fetchData(false);
   });
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
     try {
       // Pre-declare queries as concurrent parallel promises
       const roomsPromise = supabase.from('rooms').select('id, room_number, name').order('room_number');
@@ -91,7 +91,7 @@ const AdminHousekeeping = () => {
       console.error(error);
       toast.error('Failed to fetch housekeeping data: ' + error.message);
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   };
 

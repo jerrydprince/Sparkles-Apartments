@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Filter, MoreVertical, Edit, Trash2, CheckCircle, XCircle, Plus, X, Eye, Calendar, Package, Printer, ArrowRightLeft } from 'lucide-react';
+import { Search, Filter, MoreVertical, Edit, Trash2, CheckCircle, XCircle, Plus, X, Eye, Calendar, Package, Printer, ArrowRightLeft, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { format, addDays, differenceInDays } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -7,7 +7,7 @@ import ManualBookingModal from '../../components/admin/ManualBookingModal';
 import RoomTransferModal from '../../components/admin/RoomTransferModal';
 import { triggerAutomationRules } from '../../lib/emailService';
 
-const AdminReservations = ({ onUpdate }) => {
+const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
   const [reservations, setReservations] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -339,6 +339,10 @@ const AdminReservations = ({ onUpdate }) => {
   };
 
   const handleCancelBooking = async (bookingOrId) => {
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
     const id = typeof bookingOrId === 'object' ? bookingOrId.id : bookingOrId;
     if (!window.confirm("Are you sure you want to cancel this booking?")) return;
     
@@ -377,13 +381,29 @@ const AdminReservations = ({ onUpdate }) => {
     if (onUpdate) onUpdate();
   };
 
+  const handleTransferClick = (booking) => {
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
+    setTransferBooking(booking);
+  };
+
   const openEditModal = (booking) => {
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
     setCurrentBooking(booking);
     setEditBookingForm({ status: booking.status });
     setIsEditModalOpen(true);
   };
 
   const openCreateModal = () => {
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
     setIsCreateModalOpen(true);
   };
 
@@ -645,9 +665,26 @@ const AdminReservations = ({ onUpdate }) => {
 
   return (
     <div>
+      {isFrontOfficeClosed && (
+        <div className="bg-red-500/10 border-2 border-red-500/35 text-red-200 p-4 rounded-xl flex items-center gap-4 shadow-lg shadow-red-500/5 mb-6 animate-pulse">
+          <AlertTriangle size={24} className="text-red-500 animate-bounce flex-shrink-0" />
+          <div className="flex-1">
+            <h4 className="font-extrabold text-sm uppercase tracking-wider text-white">Front Office Operations Locked</h4>
+            <p className="text-xs text-red-300/95 mt-0.5 font-medium">
+              Daily ledger is closed. Creating bookings, transferring rooms, cancellations, and status edits are locked.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-2xl font-semibold">Reservation Management</h1>
-        <button onClick={openCreateModal} className="btn-primary py-2 px-4 text-sm flex items-center gap-2"><Plus size={18}/> Create Manual Booking</button>
+        <button 
+          disabled={isFrontOfficeClosed}
+          onClick={openCreateModal} 
+          className="btn-primary py-2 px-4 text-sm flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Plus size={18}/> Create Manual Booking
+        </button>
       </div>
 
       <div className="bg-dark-800 border border-dark-700 p-6 mb-6">
@@ -796,19 +833,40 @@ const AdminReservations = ({ onUpdate }) => {
                       <button onClick={() => openViewModal(res)} className="hover:text-white transition-colors" title="View Details"><Eye size={18}/></button>
                       
                       {!['checked_out', 'cancelled', 'no_show'].includes(res.status) ? (
-                        <button onClick={() => setTransferBooking(res)} className="hover:text-amber-500 transition-colors" title="Transfer Room"><ArrowRightLeft size={18}/></button>
+                        <button 
+                          disabled={isFrontOfficeClosed}
+                          onClick={() => handleTransferClick(res)} 
+                          className="hover:text-amber-500 disabled:hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" 
+                          title={isFrontOfficeClosed ? "Locked (Ledger Closed)" : "Transfer Room"}
+                        >
+                          <ArrowRightLeft size={18}/>
+                        </button>
                       ) : (
                         <button disabled className="text-gray-600 cursor-not-allowed" title="Transfer disabled (Stay finalized)"><ArrowRightLeft size={18}/></button>
                       )}
 
                       {!['checked_out', 'cancelled', 'no_show'].includes(res.status) ? (
-                        <button onClick={() => openEditModal(res)} className="hover:text-blue-500 transition-colors" title="Edit Status"><Edit size={18}/></button>
+                        <button 
+                          disabled={isFrontOfficeClosed}
+                          onClick={() => openEditModal(res)} 
+                          className="hover:text-blue-500 disabled:hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" 
+                          title={isFrontOfficeClosed ? "Locked (Ledger Closed)" : "Edit Status"}
+                        >
+                          <Edit size={18}/>
+                        </button>
                       ) : (
                         <button disabled className="text-gray-600 cursor-not-allowed" title="Editing disabled (Stay finalized)"><Edit size={18}/></button>
                       )}
 
                       {['pending', 'confirmed'].includes(res.status) ? (
-                        <button onClick={() => handleCancelBooking(res)} className="hover:text-red-500 transition-colors" title="Cancel Booking"><XCircle size={18}/></button>
+                        <button 
+                          disabled={isFrontOfficeClosed}
+                          onClick={() => handleCancelBooking(res)} 
+                          className="hover:text-red-500 disabled:hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" 
+                          title={isFrontOfficeClosed ? "Locked (Ledger Closed)" : "Cancel Booking"}
+                        >
+                          <XCircle size={18}/>
+                        </button>
                       ) : (
                         <button disabled className="text-gray-600 cursor-not-allowed" title="Cancellation disabled (Finalized stay)"><XCircle size={18}/></button>
                       )}
@@ -927,7 +985,18 @@ const AdminReservations = ({ onUpdate }) => {
                 </div>
                 <div className="text-right mr-8 flex flex-col items-end gap-2">
                   <button onClick={() => window.print()} className="text-gray-400 hover:text-white flex items-center gap-1 text-xs border border-dark-700 px-2 py-1 rounded transition-colors"><Printer size={14}/> Print Receipt</button>
-                  <button onClick={() => { setTransferBooking(viewBooking); setViewBooking(null); }} className="text-amber-500 hover:text-amber-400 flex items-center gap-1 text-xs border border-amber-500/50 px-2 py-1 rounded transition-colors"><ArrowRightLeft size={14}/> Transfer Room</button>
+                  {!['checked_out', 'cancelled', 'no_show'].includes(viewBooking.status) && (
+                    <button 
+                      disabled={isFrontOfficeClosed}
+                      onClick={() => { 
+                        handleTransferClick(viewBooking); 
+                        setViewBooking(null); 
+                      }} 
+                      className="text-amber-500 hover:text-amber-400 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 text-xs border border-amber-500/50 px-2 py-1 rounded transition-colors"
+                    >
+                      <ArrowRightLeft size={14}/> Transfer Room
+                    </button>
+                  )}
                   {viewBooking.status === 'confirmed' && viewBooking.payment_status !== 'paid' ? (
                     <span className="px-3 py-1 bg-red-500/25 border border-red-500/30 text-red-400 rounded font-bold uppercase text-xs animate-pulse">Confirmed (Inactive)</span>
                   ) : (

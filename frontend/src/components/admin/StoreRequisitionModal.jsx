@@ -39,6 +39,10 @@ const StoreRequisitionModal = ({ isOpen, onClose, department = 'housekeeping', o
     return user?.name || user?.email || 'Staff';
   }, [user, profile]);
 
+  const isAdminOrManager = useMemo(() => {
+    return ['super_admin', 'hotel_owner', 'hotel_manager', 'admin', 'finance_manager', 'accountant'].includes(profile?.role);
+  }, [profile?.role]);
+
   const DEPARTMENTS = [
     { value: 'front office', label: 'Front Office / Reception' },
     { value: 'accounts', label: 'Finance & Accounts' },
@@ -214,13 +218,19 @@ const StoreRequisitionModal = ({ isOpen, onClose, department = 'housekeeping', o
               </div>
               <div>
                 <label className="block text-[10px] text-gray-500 font-bold mb-1 uppercase tracking-wider">Billing Department</label>
-                <select
-                  value={form.department}
-                  onChange={e => setForm({ ...form, department: e.target.value })}
-                  className="w-full bg-dark-800 border border-dark-700 rounded-xl p-2.5 text-white focus:border-brand-500 outline-none font-semibold text-xs"
-                >
-                  {DEPARTMENTS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-                </select>
+                {isAdminOrManager ? (
+                  <select
+                    value={form.department}
+                    onChange={e => setForm({ ...form, department: e.target.value })}
+                    className="w-full bg-dark-800 border border-dark-700 rounded-xl p-2.5 text-white focus:border-brand-500 outline-none font-semibold text-xs cursor-pointer"
+                  >
+                    {DEPARTMENTS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  </select>
+                ) : (
+                  <div className="w-full bg-dark-900 border border-dark-850 rounded-xl p-2.5 text-brand-400 font-extrabold text-xs select-none">
+                    {DEPARTMENTS.find(d => d.value === form.department)?.label || form.department?.toUpperCase()}
+                  </div>
+                )}
               </div>
             </div>
 

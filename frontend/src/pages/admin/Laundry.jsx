@@ -9,6 +9,80 @@ import {
   Trash2, ShieldCheck, Phone, Mail, ArrowRight, ClipboardList, AlertTriangle
 } from 'lucide-react';
 import { format } from 'date-fns';
+const PaginationControl = ({ currentPage, totalItems, pageSize, onPageChange }) => {
+  const totalPages = Math.ceil(totalItems / pageSize);
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className="flex items-center justify-between border-t border-dark-700 bg-dark-900/30 px-4 py-3 sm:px-6 mt-0 rounded-b-lg">
+      <div className="flex flex-1 justify-between sm:hidden">
+        <button
+          type="button"
+          disabled={currentPage === 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          className="relative inline-flex items-center rounded-md border border-dark-750 bg-dark-800 px-4 py-2 text-xs font-bold text-gray-300 hover:bg-dark-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          disabled={currentPage === totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+          className="relative ml-3 inline-flex items-center rounded-md border border-dark-750 bg-dark-800 px-4 py-2 text-xs font-bold text-gray-300 hover:bg-dark-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
+      </div>
+      <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs text-gray-400">
+            Showing <span className="font-semibold text-white">{((currentPage - 1) * pageSize) + 1}</span> to{' '}
+            <span className="font-semibold text-white">
+              {Math.min(currentPage * pageSize, totalItems)}
+            </span>{' '}
+            of <span className="font-semibold text-white">{totalItems}</span> results
+          </p>
+        </div>
+        <div>
+          <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+            <button
+              type="button"
+              disabled={currentPage === 1}
+              onClick={() => onPageChange(currentPage - 1)}
+              className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-dark-750 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <span className="sr-only">Previous</span>
+              &larr;
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                type="button"
+                key={page}
+                onClick={() => onPageChange(page)}
+                className={`relative inline-flex items-center px-3 py-2 text-xs font-bold ring-1 ring-inset ring-dark-750 cursor-pointer ${
+                  page === currentPage
+                    ? 'z-10 bg-brand-500 text-dark-950 focus:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 font-extrabold'
+                    : 'text-gray-300 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              type="button"
+              disabled={currentPage === totalPages}
+              onClick={() => onPageChange(currentPage + 1)}
+              className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-dark-750 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <span className="sr-only">Next</span>
+              &rarr;
+            </button>
+          </nav>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const PRICING_METHODS = ['stripe', 'paystack', 'bank_transfer', 'pos', 'cash'];
 
@@ -26,6 +100,27 @@ const AdminLaundry = () => {
   // Search states
   const [inhouseSearch, setInhouseSearch] = useState('');
   const [walkinSearch, setWalkinSearch] = useState('');
+
+  // Pagination states
+  const [currentPageInhouse, setCurrentPageInhouse] = useState(1);
+  const [currentPageWalkin, setCurrentPageWalkin] = useState(1);
+  const [currentPageHistory, setCurrentPageHistory] = useState(1);
+  const pageSize = 10;
+
+  // Reset pagination when search terms or active tabs change
+  useEffect(() => {
+    setCurrentPageInhouse(1);
+  }, [inhouseSearch]);
+
+  useEffect(() => {
+    setCurrentPageWalkin(1);
+  }, [walkinSearch]);
+
+  useEffect(() => {
+    setCurrentPageInhouse(1);
+    setCurrentPageWalkin(1);
+    setCurrentPageHistory(1);
+  }, [activeTab]);
 
   // Post Charge Modal State (for Inhouse Laundry)
   const [activeProcessingOrder, setActiveProcessingOrder] = useState(null);
@@ -113,7 +208,7 @@ const AdminLaundry = () => {
       // Filter in-house charges
       const inhouseTxns = (bs || []).filter(item => {
         const dStr = format(new Date(item.updated_at || item.created_at), 'yyyy-MM-dd');
-        return dStr === todayStr && item.services?.category === 'Laundry';
+        return dStr === todayStr && (item.services?.category?.toLowerCase() === 'laundry' || item.services?.name?.toLowerCase()?.includes('laundry'));
       }).map(i => ({
         time: format(new Date(i.updated_at), 'HH:mm'),
         ref: i.bookings?.booking_reference || 'IN-HOUSE',
@@ -250,8 +345,8 @@ const AdminLaundry = () => {
             category
           )
         `)
-        .eq('services.category', 'Laundry')
-        .in('status', ['pending', 'scheduled', 'in_progress'])
+        .or('category.eq.Laundry,name.ilike.%laundry%', { foreignTable: 'services' })
+        .in('status', ['confirmed', 'scheduled', 'in_progress'])
         .order('created_at', { ascending: false });
 
       if (reqErr) throw reqErr;
@@ -276,7 +371,7 @@ const AdminLaundry = () => {
             category
           )
         `)
-        .eq('services.category', 'Laundry')
+        .or('category.eq.Laundry,name.ilike.%laundry%', { foreignTable: 'services' })
         .eq('status', 'completed')
         .order('updated_at', { ascending: false })
         .limit(50);
@@ -546,6 +641,21 @@ const AdminLaundry = () => {
     });
   }, [walkinPayments, walkinSearch]);
 
+  const paginatedInhouse = useMemo(() => {
+    const start = (currentPageInhouse - 1) * pageSize;
+    return filteredInhouse.slice(start, start + pageSize);
+  }, [filteredInhouse, currentPageInhouse, pageSize]);
+
+  const paginatedWalkins = useMemo(() => {
+    const start = (currentPageWalkin - 1) * pageSize;
+    return filteredWalkins.slice(start, start + pageSize);
+  }, [filteredWalkins, currentPageWalkin, pageSize]);
+
+  const paginatedHistory = useMemo(() => {
+    const start = (currentPageHistory - 1) * pageSize;
+    return inhouseHistory.slice(start, start + pageSize);
+  }, [inhouseHistory, currentPageHistory, pageSize]);
+
   // Earnings calculations
   const totalEarnings = useMemo(() => {
     const walkinPaid = walkinPayments
@@ -743,7 +853,7 @@ const AdminLaundry = () => {
                           <td colSpan="6" className="p-12 text-center text-gray-500 italic">No active laundry requests found matching query.</td>
                         </tr>
                       ) : (
-                        filteredInhouse.map(order => {
+                        paginatedInhouse.map(order => {
                           const guestName = order.bookings?.profiles 
                             ? `${order.bookings.profiles.first_name} ${order.bookings.profiles.last_name}`
                             : (order.bookings?.guest_name || 'N/A');
@@ -820,6 +930,12 @@ const AdminLaundry = () => {
                     </tbody>
                   </table>
                 </div>
+                <PaginationControl
+                  currentPage={currentPageInhouse}
+                  totalItems={filteredInhouse.length}
+                  pageSize={pageSize}
+                  onPageChange={setCurrentPageInhouse}
+                />
               </div>
             </div>
           )}
@@ -857,7 +973,7 @@ const AdminLaundry = () => {
                           <td colSpan="6" className="p-12 text-center text-gray-500 italic">No walk-in laundry tickets recorded.</td>
                         </tr>
                       ) : (
-                        filteredWalkins.map(sale => {
+                        paginatedWalkins.map(sale => {
                           // Parse customer details from notes: Notes contains: Customer: Emeka | Phone: +234 | Items: ...
                           const custMatch = sale.notes?.match(/Customer:\s*([^|]+)/);
                           const phoneMatch = sale.notes?.match(/Phone:\s*([^|]+)/);
@@ -910,6 +1026,12 @@ const AdminLaundry = () => {
                     </tbody>
                   </table>
                 </div>
+                <PaginationControl
+                  currentPage={currentPageWalkin}
+                  totalItems={filteredWalkins.length}
+                  pageSize={pageSize}
+                  onPageChange={setCurrentPageWalkin}
+                />
               </div>
             </div>
           )}
@@ -936,7 +1058,7 @@ const AdminLaundry = () => {
                           <td colSpan="6" className="p-12 text-center text-gray-500 italic">No completed inhouse laundry logs.</td>
                         </tr>
                       ) : (
-                        inhouseHistory.map(order => {
+                        paginatedHistory.map(order => {
                           const guestName = order.bookings?.profiles 
                             ? `${order.bookings.profiles.first_name} ${order.bookings.profiles.last_name}`
                             : (order.bookings?.guest_name || 'N/A');
@@ -962,6 +1084,12 @@ const AdminLaundry = () => {
                     </tbody>
                   </table>
                 </div>
+                <PaginationControl
+                  currentPage={currentPageHistory}
+                  totalItems={inhouseHistory.length}
+                  pageSize={pageSize}
+                  onPageChange={setCurrentPageHistory}
+                />
               </div>
             </div>
           )}

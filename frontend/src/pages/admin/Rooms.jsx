@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, X, BedDouble, Key, Settings, Image as ImageIcon, CheckCircle, AlertTriangle, MapPin, Search, Package, RefreshCw } from 'lucide-react';
+import { Plus, Edit, Trash2, X, BedDouble, Key, Settings, Image as ImageIcon, CheckCircle, AlertTriangle, MapPin, Search, Package, RefreshCw, Building2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeSync } from '../../lib/useRealtimeSync';
 import toast from 'react-hot-toast';
@@ -13,8 +13,25 @@ const AdminRooms = () => {
   const { hasAccess } = useAuth();
   const [activeTab, setActiveTab] = useState('inventory');
   const [rooms, setRooms] = useState([]);
+  const [halls, setHalls] = useState([]);
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Modals for Halls
+  const [isHallModalOpen, setIsHallModalOpen] = useState(false);
+  const [editingHall, setEditingHall] = useState(null);
+  const [hallForm, setHallForm] = useState({
+    name: '',
+    capacity: 50,
+    size_sqm: 100,
+    base_price_ngn: 150000,
+    hourly_price_ngn: 20000,
+    description: '',
+    amenities: '',
+    image_url: '',
+    is_active: true
+  });
   
   const [categories, setCategories] = useState([]);
   const [featuresList, setFeaturesList] = useState([]);
@@ -55,8 +72,8 @@ const AdminRooms = () => {
     fetchData(false); // non-blocking SWR background load on tab switch
   }, [activeTab]);
 
-  // Real-time synchronization for rooms table changes
-  useRealtimeSync(['rooms'], () => {
+  // Real-time synchronization for rooms and halls table changes
+  useRealtimeSync(['rooms', 'halls'], () => {
     fetchData(true);
   });
 
@@ -73,6 +90,10 @@ const AdminRooms = () => {
         ? supabase.from('rooms').select('id, room_number, name, type, property_id, capacity, size_sqm, base_price_ngn, status, properties(name)').order('room_number', { ascending: true })
         : Promise.resolve({ data: null });
 
+      const hallsPromise = (activeTab === 'halls' || force)
+        ? supabase.from('halls').select('*').order('name')
+        : Promise.resolve({ data: null });
+
       const propertiesPromise = (properties.length === 0 || force)
         ? supabase.from('properties').select('*').order('name')
         : Promise.resolve({ data: null });
@@ -82,8 +103,9 @@ const AdminRooms = () => {
         : Promise.resolve({ data: null });
 
       // 2. Fetch in parallel to prevent sequential database query waterfall (latency is cut by up to 66%)
-      const [roomsRes, propertiesRes, cmsRes] = await Promise.all([
+      const [roomsRes, hallsRes, propertiesRes, cmsRes] = await Promise.all([
         roomsPromise,
+        hallsPromise,
         propertiesPromise,
         cmsPromise
       ]);
@@ -91,6 +113,10 @@ const AdminRooms = () => {
       // 3. Batch process responses safely
       if (roomsRes && roomsRes.data) {
         setRooms(roomsRes.data);
+      }
+
+      if (hallsRes && hallsRes.data) {
+        setHalls(hallsRes.data);
       }
       
       if (propertiesRes && propertiesRes.data) {
@@ -650,13 +676,65 @@ const AdminRooms = () => {
     }
   };
 
+  // --- Hall CRUD Operations ---
+  const handleSaveHall = async (e) => {
+    e.preventDefault();
+    if (!hallForm.name.trim()) return toast.error("Please enter a name for the hall.");
+    
+    setIsSaving(true);
+    const toastId = toast.loading("Saving hall profile...");
+    try {
+      const payload = {
+        name: hallForm.name.trim(),
+        capacity: Number(hallForm.capacity),
+        size_sqm: Number(hallForm.size_sqm),
+        base_price_ngn: Number(hallForm.base_price_ngn),
+        hourly_price_ngn: Number(hallForm.hourly_price_ngn),
+        description: hallForm.description.trim(),
+        amenities: hallForm.amenities.split(',').map(a => a.trim()).filter(Boolean),
+        image_url: hallForm.image_url.trim() || null,
+        is_active: hallForm.is_active
+      };
+
+      let error;
+      if (editingHall) {
+        ({ error } = await supabase.from('halls').update(payload).eq('id', editingHall.id));
+      } else {
+        ({ error } = await supabase.from('halls').insert([payload]));
+      }
+
+      if (error) throw error;
+      toast.success(editingHall ? "Hall updated!" : "New Hall registered!", { id: toastId });
+      setIsHallModalOpen(false);
+      setEditingHall(null);
+      fetchData(true);
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message, { id: toastId });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteHall = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this hall? This action cannot be undone.")) return;
+    try {
+      const { error } = await supabase.from('halls').delete().eq('id', id);
+      if (error) throw error;
+      toast.success("Hall deleted successfully.");
+      fetchData(true);
+    } catch (err) {
+      toast.error("Cannot delete hall. It may have existing bookings.");
+    }
+  };
+
   // ================= RENDER =================
   return (
     <div className="space-y-6 pb-20 text-white">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-white">Property & Room Management</h1>
-          <p className="text-gray-400 mt-1">Manage physical properties, room types, inventory, and capacities.</p>
+          <h1 className="text-2xl font-bold text-white">Rooms, Halls & Inventory Management</h1>
+          <p className="text-gray-400 mt-1">Manage physical properties, room types, event halls, inventory, and capacities.</p>
         </div>
         <div className="flex gap-3">
           <button onClick={() => setIsWalkinModalOpen(true)} className="bg-green-600 hover:bg-green-500 text-white py-2 px-4 rounded-md font-medium flex items-center gap-2 transition-colors">
@@ -667,10 +745,11 @@ const AdminRooms = () => {
 
       {/* TABS */}
       <div className="flex border-b border-dark-700 bg-dark-800 p-1 rounded-t-lg">
-        <button onClick={() => setActiveTab('inventory')} className={`flex-1 py-3 font-medium rounded text-center transition-colors ${activeTab === 'inventory' ? 'bg-dark-700 text-gold-500 shadow-sm' : 'text-gray-400 hover:text-white hover:bg-dark-700/50'}`}>Room Inventory & Units</button>
-        <button onClick={() => setActiveTab('categories')} className={`flex-1 py-3 font-medium rounded text-center transition-colors ${activeTab === 'categories' ? 'bg-dark-700 text-gold-500 shadow-sm' : 'text-gray-400 hover:text-white hover:bg-dark-700/50'}`}>Room Categories & Features</button>
+        <button onClick={() => setActiveTab('inventory')} className={`flex-1 py-3 font-medium rounded text-center transition-colors ${activeTab === 'inventory' ? 'bg-dark-700 text-gold-500 shadow-sm' : 'text-gray-400 hover:text-white hover:bg-dark-700/50'}`}>Room Units</button>
+        <button onClick={() => setActiveTab('halls')} className={`flex-1 py-3 font-medium rounded text-center transition-colors ${activeTab === 'halls' ? 'bg-dark-700 text-gold-500 shadow-sm' : 'text-gray-400 hover:text-white hover:bg-dark-700/50'}`}>Event Halls Inventory</button>
+        <button onClick={() => setActiveTab('categories')} className={`flex-1 py-3 font-medium rounded text-center transition-colors ${activeTab === 'categories' ? 'bg-dark-700 text-gold-500 shadow-sm' : 'text-gray-400 hover:text-white hover:bg-dark-700/50'}`}>Categories & Features</button>
         {hasAccess('Guest Services') && (
-          <button onClick={() => setActiveTab('services')} className={`flex-1 py-3 font-medium rounded text-center transition-colors ${activeTab === 'services' ? 'bg-dark-700 text-gold-500 shadow-sm' : 'text-gray-400 hover:text-white hover:bg-dark-700/50'}`}>Guest Add-ons Services</button>
+          <button onClick={() => setActiveTab('services')} className={`flex-1 py-3 font-medium rounded text-center transition-colors ${activeTab === 'services' ? 'bg-dark-700 text-gold-500 shadow-sm' : 'text-gray-400 hover:text-white hover:bg-dark-700/50'}`}>Guest Add-ons</button>
         )}
       </div>
 
@@ -764,6 +843,118 @@ const AdminRooms = () => {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: HALLS INVENTORY */}
+            {activeTab === 'halls' && (
+              <div className="space-y-6 animate-in fade-in duration-300">
+                <div className="flex justify-between items-center mb-6">
+                  <div className="flex gap-4">
+                    <div className="bg-dark-900 border border-dark-700 px-4 py-2 rounded flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-green-500"></span>
+                      <span className="text-sm font-medium">{halls.filter(h => h.is_active).length} Active Halls</span>
+                    </div>
+                    <div className="bg-dark-900 border border-dark-700 px-4 py-2 rounded flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-red-500"></span>
+                      <span className="text-sm font-medium">{halls.filter(h => !h.is_active).length} Under Maintenance</span>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setEditingHall(null);
+                      setHallForm({
+                        name: '', capacity: 50, size_sqm: 100,
+                        base_price_ngn: 150000, hourly_price_ngn: 20000,
+                        description: '', amenities: '', image_url: '', is_active: true
+                      });
+                      setIsHallModalOpen(true);
+                    }}
+                    className="bg-brand-600 hover:bg-brand-500 text-white py-2.5 px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer border-0"
+                  >
+                    <Plus size={16} /> Add Event Hall
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
+                  {halls.length === 0 && (
+                    <div className="col-span-2 py-12 text-center text-gray-500">No event halls registered yet.</div>
+                  )}
+                  {halls.map(hall => (
+                    <div key={hall.id} className="bg-dark-900/40 border border-dark-750 p-5 rounded-2xl flex flex-col justify-between hover:border-brand-500/30 transition-all duration-300">
+                      <div>
+                        <div className="flex justify-between items-start">
+                          <h4 className="text-lg font-bold text-white flex items-center gap-2">
+                            <Building2 size={18} className="text-gold-500" />
+                            {hall.name}
+                          </h4>
+                          <span className={`text-xs px-2 py-0.5 rounded border ${hall.is_active ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}>
+                            {hall.is_active ? 'Active' : 'Maintenance'}
+                          </span>
+                        </div>
+                        <p className="text-gray-400 text-xs mt-2 line-clamp-2 leading-relaxed">{hall.description || 'No description provided.'}</p>
+                        
+                        <div className="grid grid-cols-3 gap-3 my-4">
+                          <div className="bg-dark-950/40 p-2.5 rounded-xl border border-dark-850 text-center">
+                            <span className="text-gray-550 text-[10px] uppercase font-bold tracking-wider">Capacity</span>
+                            <p className="text-white font-bold text-sm mt-0.5">{hall.capacity} guests</p>
+                          </div>
+                          <div className="bg-dark-950/40 p-2.5 rounded-xl border border-dark-850 text-center">
+                            <span className="text-gray-550 text-[10px] uppercase font-bold tracking-wider">Size</span>
+                            <p className="text-white font-bold text-sm mt-0.5">{hall.size_sqm} sqm</p>
+                          </div>
+                          <div className="bg-dark-950/40 p-2.5 rounded-xl border border-dark-850 text-center">
+                            <span className="text-gray-550 text-[10px] uppercase font-bold tracking-wider">Hourly Price</span>
+                            <p className="text-gold-500 font-bold text-sm mt-0.5">₦{Number(hall.hourly_price_ngn).toLocaleString()}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5 mb-4">
+                          {hall.amenities?.map((a, idx) => (
+                            <span key={idx} className="bg-dark-950 text-gray-400 border border-dark-800 px-2 py-1 text-[11px] font-semibold rounded-lg">{a}</span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between items-center border-t border-dark-800/40 pt-4 mt-2">
+                        <div className="text-xs">
+                          <span className="text-gray-500 uppercase tracking-widest text-[9px] font-bold block">Daily Rate</span>
+                          <span className="text-gold-500 font-black text-lg">₦{Number(hall.base_price_ngn).toLocaleString()}/day</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              setEditingHall(hall);
+                              setHallForm({
+                                name: hall.name,
+                                capacity: hall.capacity,
+                                size_sqm: hall.size_sqm || 100,
+                                base_price_ngn: hall.base_price_ngn,
+                                hourly_price_ngn: hall.hourly_price_ngn,
+                                description: hall.description || '',
+                                amenities: hall.amenities?.join(', ') || '',
+                                image_url: hall.image_url || '',
+                                is_active: hall.is_active
+                              });
+                              setIsHallModalOpen(true);
+                            }}
+                            className="bg-dark-700 hover:bg-dark-650 p-2 rounded-xl text-gold-500 transition-colors border border-dark-600 cursor-pointer"
+                          >
+                            <Edit size={16} />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => handleDeleteHall(hall.id)}
+                            className="bg-dark-700 hover:bg-red-500/20 p-2 rounded-xl text-red-500 transition-colors border border-dark-600 hover:border-red-500/20 cursor-pointer"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -1028,7 +1219,7 @@ const AdminRooms = () => {
                 </div>
                 <div className="col-span-2 md:col-span-1">
                   <label className="block text-sm text-gray-400 mb-1">Price/Night (Base)</label>
-                  <input type="number" required value={newRoom.base_price_ngn} onChange={e => setNewRoom({...newRoom, base_price_ngn: parseInt(e.target.value)})} className="w-full bg-dark-900 border border-dark-700 p-2 text-white outline-none focus:border-gold-500" />
+                  <input type="number" step="any" required value={newRoom.base_price_ngn} onChange={e => setNewRoom({...newRoom, base_price_ngn: parseFloat(e.target.value) || 0})} className="w-full bg-dark-900 border border-dark-700 p-2 text-white outline-none focus:border-gold-500" />
                 </div>
                 <div className="col-span-2 md:col-span-1">
                   <label className="block text-sm text-gray-400 mb-1">Bed Configuration</label>
@@ -1142,6 +1333,141 @@ const AdminRooms = () => {
       )}
 
       {/* Property Modal has been removed */}
+
+      {/* --- MODAL: CREATE/EDIT EVENT HALL --- */}
+      {isHallModalOpen && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-dark-800 border border-dark-700 w-full max-w-xl rounded-2xl shadow-2xl my-8 overflow-hidden">
+            <div className="bg-dark-900 p-5 border-b border-dark-700 flex justify-between items-center">
+              <h3 className="text-md font-bold text-white">{editingHall ? 'Edit Event Hall Profile' : 'Register New Event Hall'}</h3>
+              <button onClick={() => { setIsHallModalOpen(false); setEditingHall(null); }} className="text-gray-400 hover:text-white"><X size={20}/></button>
+            </div>
+
+            <form onSubmit={handleSaveHall} className="p-6 space-y-4 text-left">
+              <div>
+                <label className="block text-xs text-gray-400 font-bold mb-1">Hall Name *</label>
+                <input 
+                  type="text" 
+                  required
+                  value={hallForm.name}
+                  onChange={e => setHallForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-xl text-white outline-none focus:border-brand-500"
+                  placeholder="e.g. Conference Room A"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-400 font-bold mb-1">Max Capacity (Pax) *</label>
+                  <input 
+                    type="number" 
+                    required
+                    min="1"
+                    value={hallForm.capacity}
+                    onChange={e => setHallForm(prev => ({ ...prev, capacity: e.target.value }))}
+                    className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-xl text-white outline-none focus:border-brand-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 font-bold mb-1">Size (Sqm)</label>
+                  <input 
+                    type="number" 
+                    min="1"
+                    value={hallForm.size_sqm}
+                    onChange={e => setHallForm(prev => ({ ...prev, size_sqm: e.target.value }))}
+                    className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-xl text-white outline-none focus:border-brand-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-400 font-bold mb-1">Daily Base Rate (₦) *</label>
+                  <input 
+                    type="number" 
+                    required
+                    min="0"
+                    value={hallForm.base_price_ngn}
+                    onChange={e => setHallForm(prev => ({ ...prev, base_price_ngn: e.target.value }))}
+                    className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-xl text-white outline-none focus:border-brand-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 font-bold mb-1">Hourly Base Rate (₦) *</label>
+                  <input 
+                    type="number" 
+                    required
+                    min="0"
+                    value={hallForm.hourly_price_ngn}
+                    onChange={e => setHallForm(prev => ({ ...prev, hourly_price_ngn: e.target.value }))}
+                    className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-xl text-white outline-none focus:border-brand-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-400 font-bold mb-1">Description</label>
+                <textarea 
+                  value={hallForm.description}
+                  onChange={e => setHallForm(prev => ({ ...prev, description: e.target.value }))}
+                  className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-xl text-white outline-none focus:border-brand-500 h-20"
+                  placeholder="Describe the hall, location inside premises, layout configs..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-400 font-bold mb-1">Amenities (Comma separated)</label>
+                <input 
+                  type="text" 
+                  value={hallForm.amenities}
+                  onChange={e => setHallForm(prev => ({ ...prev, amenities: e.target.value }))}
+                  className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-xl text-white outline-none focus:border-brand-500"
+                  placeholder="Projector, PA System, Smart Screen, Coffee Station"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-400 font-bold mb-1">Image URL</label>
+                <input 
+                  type="text" 
+                  value={hallForm.image_url}
+                  onChange={e => setHallForm(prev => ({ ...prev, image_url: e.target.value }))}
+                  className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-xl text-white outline-none focus:border-brand-500"
+                  placeholder="https://images.unsplash.com/..."
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <input 
+                  type="checkbox" 
+                  id="hallActive"
+                  checked={hallForm.is_active}
+                  onChange={e => setHallForm(prev => ({ ...prev, is_active: e.target.checked }))}
+                  className="rounded bg-dark-900 border-dark-700 text-brand-500 focus:ring-0 focus:ring-offset-0"
+                />
+                <label htmlFor="hallActive" className="text-xs text-gray-400 font-bold cursor-pointer">Hall is Active & Bookable</label>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-dark-700 mt-2">
+                <button 
+                  type="button" 
+                  onClick={() => { setIsHallModalOpen(false); setEditingHall(null); }}
+                  className="px-4 py-2 border border-dark-700 text-gray-400 hover:text-white rounded-lg text-xs font-bold"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSaving}
+                  className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-bold active:scale-95 transition-all"
+                >
+                  {isSaving ? 'Saving...' : 'Save Profile'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Walk-in Modal */}
       {isWalkinModalOpen && (

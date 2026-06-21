@@ -114,7 +114,7 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
       setIsCustomAmountPaid(false);
     } else if (newBooking.paymentStatus === 'partial') {
       if (!isCustomAmountPaid) {
-        setAmountPaid(Math.round(newBooking.totalAmount / 2));
+        setAmountPaid(Number((newBooking.totalAmount / 2).toFixed(2)));
       }
     }
   }, [newBooking.totalAmount, newBooking.paymentStatus, isCustomAmountPaid]);
@@ -1238,7 +1238,7 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
                 </div>
                 <div className="col-span-2 border-t border-dark-700/50 pt-3">
                   <label className="block text-sm font-medium text-brand-400 mb-1">Final Amount (₦)</label>
-                  <input required type="number" min="0" value={newBooking.totalAmount} onChange={e => setNewBooking({...newBooking, totalAmount: parseInt(e.target.value) || 0})} className="w-full bg-dark-800 border border-brand-500 rounded p-2.5 text-white outline-none focus:border-brand-500 transition-colors font-bold text-lg" />
+                  <input required type="number" step="any" min="0" value={newBooking.totalAmount} onChange={e => setNewBooking({...newBooking, totalAmount: parseFloat(e.target.value) || 0})} className="w-full bg-dark-800 border border-brand-500 rounded p-2.5 text-white outline-none focus:border-brand-500 transition-colors font-bold text-lg" />
                   <p className="text-xs text-gray-500 mt-1">
                     Calculated as Room Cost (₦{roomCostWithVat.toLocaleString()} including 7.5% VAT)
                     {selectedServices.length > 0 && ` + Services (₦${servicesCostWithVat.toLocaleString()} including 7.5% VAT)`}

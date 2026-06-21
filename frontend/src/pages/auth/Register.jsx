@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import { Eye, EyeOff } from 'lucide-react';
+import { sendWelcomeEmail } from '../../lib/emailService';
 
 const Register = () => {
   const [firstName, setFirstName] = useState('');
@@ -26,11 +27,27 @@ const Register = () => {
 
     try {
       await register({ email, password, firstName, lastName });
+      
+      // Dispatch welcome email in the background
+      try {
+        await sendWelcomeEmail({ email, firstName, lastName });
+      } catch (welcomeErr) {
+        console.warn("Failed to dispatch welcome email", welcomeErr);
+      }
+
       toast.success('Account created successfully!', { id: toastId });
       navigate('/guest'); // Default redirect to guest dashboard
     } catch (error) {
       console.error(error);
-      toast.error(error.message || 'Failed to create account', { id: toastId });
+      const errMsg = error.message || '';
+      if (errMsg.toLowerCase().includes('already registered') || errMsg.toLowerCase().includes('already exist') || errMsg.toLowerCase().includes('already in use')) {
+        toast.error('User already exists. Redirecting to login...', { id: toastId });
+        setTimeout(() => {
+          navigate('/login');
+        }, 2000);
+      } else {
+        toast.error(error.message || 'Failed to create account', { id: toastId });
+      }
     } finally {
       setLoading(false);
     }

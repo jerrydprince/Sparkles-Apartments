@@ -96,8 +96,13 @@
   body * {
     visibility: hidden;
   }
-  .print-container, .print-container * {
+  .print-container, .print-container *,
+  .print-receipt, .print-receipt * {
     visibility: visible !important;
+  }
+
+  body *:not(:has(.print-container)):not(:has(.print-receipt)):not(.print-container):not(.print-container *):not(.print-receipt):not(.print-receipt *) {
+    display: none !important;
   }
   
   .print-container {

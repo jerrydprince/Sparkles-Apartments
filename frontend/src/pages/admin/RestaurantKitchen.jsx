@@ -73,8 +73,70 @@ const RestaurantKitchen = () => {
     return departmentalClosures.some(c => c.department === 'restaurant' && c.business_date === todayStr);
   }, [departmentalClosures, todayStr]);
 
-  useRealtimeSync(['booking_services', 'system_settings'], (table) => {
+  const [cateringMeals, setCateringMeals] = useState([]);
+  const [cateringLoading, setCateringLoading] = useState(false);
+  const [cateringTab, setCateringTab] = useState('pending');
+
+  const fetchCateringMeals = async () => {
+    setCateringLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('hall_booking_meals')
+        .select(`
+          *,
+          hall_bookings (
+            id,
+            booking_reference,
+            guest_name,
+            organization_name,
+            halls (name)
+          ),
+          hall_meal_options (
+            id,
+            name,
+            course_type,
+            combination_items
+          )
+        `)
+        .order('serving_date', { ascending: true })
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setCateringMeals(data || []);
+    } catch (err) {
+      console.error('Error fetching catering meals:', err);
+      toast.error('Failed to load catering meals');
+    } finally {
+      setCateringLoading(false);
+    }
+  };
+
+  const handleUpdateCateringStatus = async (mealId, newStatus) => {
+    if (isRestaurantClosed) {
+      return toast.error("Restaurant operations are locked due to daily ledger closure.");
+    }
+    const toastId = toast.loading(`Updating catering status to ${newStatus}...`);
+    try {
+      const { error } = await supabase
+        .from('hall_booking_meals')
+        .update({ status: newStatus })
+        .eq('id', mealId);
+
+      if (error) throw error;
+      toast.success(`Catering status updated to ${newStatus}`, { id: toastId });
+      fetchCateringMeals();
+    } catch (err) {
+      console.error("Failed to update catering status:", err);
+      toast.error("Failed to update status: " + err.message, { id: toastId });
+    }
+  };
+
+  useRealtimeSync(['booking_services', 'system_settings', 'hall_bookings', 'hall_booking_meals', 'hall_meal_options'], (table) => {
     fetchOrders();
+    fetchCateringMeals();
+    if (table === 'hall_meal_options') {
+      fetchMealOptions();
+    }
     if (table === 'system_settings') {
       fetchClosures();
     }
@@ -95,6 +157,19 @@ const RestaurantKitchen = () => {
   const [isSavingMenu, setIsSavingMenu] = useState(false);
   const [activeMenuSegment, setActiveMenuSegment] = useState('All');
 
+  // Hall Meal Packages state (Catering Packages)
+  const [mealOptions, setMealOptions] = useState([]);
+  const [isMealModalOpen, setIsMealModalOpen] = useState(false);
+  const [editingMeal, setEditingMeal] = useState(null);
+  const [mealForm, setMealForm] = useState({
+    name: '',
+    course_type: 'Breakfast Tea',
+    combination_items: '',
+    price_per_participant_ngn: 5000,
+    is_active: true
+  });
+  const [isSavingMeal, setIsSavingMeal] = useState(false);
+
   if (!canAccessRestaurantDesk && !canAccessKitchenDesk && !canAccessOrderHistory) {
     return (
       <div className="min-h-[80vh] flex flex-col items-center justify-center p-6 text-center">
@@ -114,13 +189,83 @@ const RestaurantKitchen = () => {
   useEffect(() => {
     fetchOrders();
     fetchClosures();
+    fetchCateringMeals();
   }, []);
 
   useEffect(() => {
     if (viewMode === 'menu') {
       fetchMenu();
+    } else if (viewMode === 'catering_meals') {
+      fetchMealOptions();
     }
   }, [viewMode]);
+
+  const fetchMealOptions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('hall_meal_options')
+        .select('*')
+        .order('name');
+      if (error) throw error;
+      setMealOptions(data || []);
+    } catch (err) {
+      console.error("Failed to fetch meal options:", err);
+      toast.error("Failed to load catering options.");
+    }
+  };
+
+  const handleSaveMeal = async (e) => {
+    e.preventDefault();
+    if (isRestaurantClosed) {
+      return toast.error("Restaurant operations are locked due to daily ledger closure.");
+    }
+    if (!mealForm.name.trim()) return toast.error("Please enter a name for the meal option.");
+    
+    setIsSavingMeal(true);
+    const toastId = toast.loading("Saving meal package...");
+    try {
+      const payload = {
+        name: mealForm.name.trim(),
+        course_type: mealForm.course_type,
+        combination_items: mealForm.combination_items.split(',').map(c => c.trim()).filter(Boolean),
+        price_per_participant_ngn: Number(mealForm.price_per_participant_ngn),
+        is_active: mealForm.is_active
+      };
+
+      let error;
+      if (editingMeal) {
+        ({ error } = await supabase.from('hall_meal_options').update(payload).eq('id', editingMeal.id));
+      } else {
+        ({ error } = await supabase.from('hall_meal_options').insert([payload]));
+      }
+
+      if (error) throw error;
+      toast.success(editingMeal ? "Meal option updated!" : "New Meal Option created!", { id: toastId });
+      setIsMealModalOpen(false);
+      setEditingMeal(null);
+      fetchMealOptions();
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message, { id: toastId });
+    } finally {
+      setIsSavingMeal(false);
+    }
+  };
+
+  const handleDeleteMeal = async (id) => {
+    if (isRestaurantClosed) {
+      return toast.error("Restaurant operations are locked.");
+    }
+    if (!window.confirm("Are you sure you want to delete this meal option?")) return;
+    try {
+      const { error } = await supabase.from('hall_meal_options').delete().eq('id', id);
+      if (error) throw error;
+      toast.success("Meal option deleted.");
+      fetchMealOptions();
+    } catch (err) {
+      toast.error("Failed to delete meal option.");
+    }
+  };
 
   const fetchMenu = async () => {
     setMenuLoading(true);
@@ -770,7 +915,7 @@ const RestaurantKitchen = () => {
            mealName.toLowerCase().includes(query);
   });
 
-  const pendingOrders = filteredOrders.filter(o => o.status === 'pending');
+  const pendingOrders = filteredOrders.filter(o => o.status === 'confirmed');
   const prepOrders = filteredOrders.filter(o => o.status === 'scheduled');
   const readyOrders = filteredOrders.filter(o => o.status === 'in_progress');
   const completedOrders = filteredOrders.filter(o => o.status === 'completed');
@@ -859,6 +1004,15 @@ const RestaurantKitchen = () => {
               <span>Kitchen Desk</span>
             </button>
           )}
+          {(canAccessRestaurantDesk || canAccessKitchenDesk || user?.role === 'super_admin') && (
+            <button 
+              onClick={() => setViewMode('catering')}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 ${viewMode === 'catering' ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white shadow-md' : 'text-gray-400 hover:text-white'}`}
+            >
+              <ChefHat size={14} />
+              <span>Hall Catering</span>
+            </button>
+          )}
           {canAccessOrderHistory && (
             <button 
               onClick={() => setViewMode('history')}
@@ -877,9 +1031,111 @@ const RestaurantKitchen = () => {
               <span>Menu Management</span>
             </button>
           )}
+          {canAccessRestaurantDesk && (
+            <button 
+              onClick={() => setViewMode('catering_meals')}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 ${viewMode === 'catering_meals' ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white shadow-md' : 'text-gray-400 hover:text-white'}`}
+            >
+              <Coffee size={14} />
+              <span>Hall Meal Packages</span>
+            </button>
+          )}
         </div>
       </div>
       </div>
+
+      {/* Main operational sections */}
+      {viewMode === 'catering_meals' && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-xl font-bold text-white text-left">Separate Catering Menu for Halls</h3>
+              <p className="text-gray-400 text-xs mt-1 text-left">Define and manage specific meal courses and packages charged per participant for hall events.</p>
+            </div>
+            <button 
+              onClick={() => {
+                setEditingMeal(null);
+                setMealForm({
+                  name: '', course_type: 'Breakfast Tea', combination_items: '',
+                  price_per_participant_ngn: 5000, is_active: true
+                });
+                setIsMealModalOpen(true);
+              }}
+              disabled={isRestaurantClosed}
+              className="bg-brand-600 hover:bg-brand-500 font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition-all text-white border-0 cursor-pointer disabled:opacity-50"
+            >
+              <Plus size={16} /> Add Catering Package
+            </button>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-dark-700/50">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-dark-900 text-gray-400 uppercase tracking-wider text-xs border-b border-dark-700">
+                <tr>
+                  <th className="p-4">Package Name</th>
+                  <th className="p-4">Course Segment</th>
+                  <th className="p-4">Combination Items</th>
+                  <th className="p-4">Price Per pax / Day</th>
+                  <th className="p-4">Status</th>
+                  <th className="p-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-dark-700">
+                {mealOptions.length === 0 && (
+                  <tr>
+                    <td colSpan="6" className="p-8 text-center text-gray-500">No catering packages defined yet.</td>
+                  </tr>
+                )}
+                {mealOptions.map(meal => (
+                  <tr key={meal.id} className="hover:bg-dark-700/35 transition-colors">
+                    <td className="p-4 font-bold text-white flex items-center gap-2">
+                      <Utensils size={16} className="text-amber-500" /> {meal.name}
+                    </td>
+                    <td className="p-4 font-semibold text-brand-400">{meal.course_type}</td>
+                    <td className="p-4">
+                      <div className="flex flex-wrap gap-1">
+                        {meal.combination_items?.map((item, idx) => (
+                          <span key={idx} className="bg-dark-900 border border-dark-750 px-2 py-0.5 text-xs text-gray-300 rounded-lg">{item}</span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="p-4 font-bold text-gold-500 font-mono">₦{Number(meal.price_per_participant_ngn).toLocaleString()}</td>
+                    <td className="p-4">
+                      <span className={`px-2 py-0.5 rounded text-xs border ${meal.is_active ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}>
+                        {meal.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="p-4 text-right space-x-2">
+                      <button 
+                        onClick={() => {
+                          setEditingMeal(meal);
+                          setMealForm({
+                            name: meal.name,
+                            course_type: meal.course_type,
+                            combination_items: meal.combination_items?.join(', ') || '',
+                            price_per_participant_ngn: meal.price_per_participant_ngn,
+                            is_active: meal.is_active
+                          });
+                          setIsMealModalOpen(true);
+                        }}
+                        className="text-gold-500 hover:text-gold-400 font-bold text-xs cursor-pointer bg-transparent border-0"
+                      >
+                        Edit
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteMeal(meal.id)}
+                        className="text-red-500 hover:text-red-400 font-bold text-xs cursor-pointer bg-transparent border-0"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Main operational sections */}
       {viewMode === 'restaurant' && (
@@ -1392,6 +1648,160 @@ const RestaurantKitchen = () => {
             })}
           </div>
         )}
+        </div>
+      )}
+
+      {viewMode === 'catering' && (
+        <div className="glass-panel border border-dark-700/60 p-6 rounded-3xl shadow-xl space-y-4 animate-fade-in">
+          <div className="flex justify-between items-center border-b border-dark-700/60 pb-4">
+            <div>
+              <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
+                <ChefHat className="text-gold-500" />
+                Hall Rental Catering & Group Feeding Calendar
+              </h2>
+              <p className="text-gray-500 text-xs mt-1">Manage serving schedules, preparations, and routing statuses for events and hall rental meals.</p>
+            </div>
+          </div>
+
+          {/* Status Sub-Tabs */}
+          <div className="flex bg-dark-900/50 p-1 rounded-xl border border-dark-800/80 max-w-md">
+            {['pending', 'preparing', 'ready', 'served'].map((status) => {
+              const count = cateringMeals.filter(m => m.status === status).length;
+              return (
+                <button
+                  key={status}
+                  onClick={() => setCateringTab(status)}
+                  className={`flex-1 py-2 text-center text-xs font-bold rounded-lg capitalize transition-all ${
+                    cateringTab === status 
+                      ? 'bg-gold-500 text-dark-950 shadow-md' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {status} ({count})
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Catering Meals List */}
+          {cateringLoading ? (
+            <div className="text-center py-20 text-gray-500 font-bold">Loading catering schedule...</div>
+          ) : (
+            (() => {
+              const filtered = cateringMeals.filter(m => m.status === cateringTab);
+              if (filtered.length === 0) {
+                return (
+                  <div className="text-center py-20 text-gray-550 border border-dashed border-dark-700 rounded-2xl bg-dark-900/30">
+                    <Utensils size={40} className="mx-auto text-gray-600 mb-3 animate-pulse" />
+                    <p className="font-bold text-sm text-gray-400">No {cateringTab} catering orders found.</p>
+                    <p className="text-xs text-gray-600 mt-1">Catering orders will appear here day-by-day based on active hall bookings.</p>
+                  </div>
+                );
+              }
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filtered.map((meal) => {
+                    const hallBookingObj = meal.hall_bookings || {};
+                    const hallObj = hallBookingObj.halls || {};
+                    const optionObj = meal.hall_meal_options || {};
+                    
+                    return (
+                      <div key={meal.id} className="bg-dark-900/40 border border-dark-750 p-5 rounded-2xl flex flex-col justify-between hover:border-gray-500 transition-all duration-300 relative text-left">
+                        <div>
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <span className="text-[10px] bg-gold-500/10 text-gold-500 px-2 py-0.5 rounded border border-gold-500/20 font-bold uppercase tracking-wider">
+                                {meal.course_type}
+                              </span>
+                              <h4 className="text-white font-bold text-base mt-1.5">{optionObj.name || meal.course_type}</h4>
+                            </div>
+                            <span className="text-xs text-gray-400 font-mono font-bold bg-dark-800 px-2 py-1 border border-dark-700 rounded">
+                              {format(new Date(meal.serving_date), 'MMM dd, yyyy')}
+                            </span>
+                          </div>
+
+                          <div className="border-t border-dark-800 my-3 pt-3 space-y-2 text-xs text-gray-400">
+                            <div className="flex justify-between">
+                              <span>Venue / Hall:</span>
+                              <span className="text-white font-semibold">{hallObj.name || 'Event Hall'}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Booking Ref:</span>
+                              <span className="text-brand-400 font-mono font-bold">{hallBookingObj.booking_reference}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Guest Name:</span>
+                              <span className="text-white font-semibold">{hallBookingObj.guest_name}</span>
+                            </div>
+                            {hallBookingObj.organization_name && (
+                              <div className="flex justify-between">
+                                <span>Organization:</span>
+                                <span className="text-gold-400 font-semibold">{hallBookingObj.organization_name}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between">
+                              <span>Serving Pax:</span>
+                              <span className="text-white font-black text-sm flex items-center gap-1">
+                                <Users size={12} className="text-gold-500" />
+                                {meal.number_of_participants} participants
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="bg-dark-950/40 p-3 rounded-xl border border-dark-850 mt-4">
+                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1.5">Combination Items</p>
+                            <div className="flex flex-wrap gap-1">
+                              {optionObj.combination_items?.map((item, idx) => (
+                                <span key={idx} className="text-xs bg-dark-800 text-gray-300 px-2.5 py-0.5 rounded-md border border-dark-700 font-medium">
+                                  {item}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-5 pt-3 border-t border-dark-800 flex gap-2">
+                          {meal.status === 'pending' && (
+                            <button
+                              onClick={() => handleUpdateCateringStatus(meal.id, 'preparing')}
+                              className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-dark-950 text-xs font-black rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer border-0"
+                            >
+                              <ChefHat size={14} />
+                              <span>Start Preparing</span>
+                            </button>
+                          )}
+                          {meal.status === 'preparing' && (
+                            <button
+                              onClick={() => handleUpdateCateringStatus(meal.id, 'ready')}
+                              className="w-full py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-black rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer border-0"
+                            >
+                              <Check size={14} />
+                              <span>Mark Ready</span>
+                            </button>
+                          )}
+                          {meal.status === 'ready' && (
+                            <button
+                              onClick={() => handleUpdateCateringStatus(meal.id, 'served')}
+                              className="w-full py-2 bg-green-500 hover:bg-green-600 text-dark-950 text-xs font-black rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer border-0"
+                            >
+                              <CheckCircle size={14} />
+                              <span>Mark Served</span>
+                            </button>
+                          )}
+                          {meal.status === 'served' && (
+                            <div className="w-full py-2 bg-dark-800 text-gray-500 text-xs font-bold rounded-xl border border-dark-750 flex items-center justify-center gap-1.5">
+                              <CheckCircle size={14} className="text-green-500" />
+                              <span>Served & Completed</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()
+          )}
         </div>
       )}
 
@@ -1934,6 +2344,101 @@ const RestaurantKitchen = () => {
                 Confirm Close of Day
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: CREATE/EDIT MEAL OPTION --- */}
+      {isMealModalOpen && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-dark-800 border border-dark-700 w-full max-w-xl rounded-2xl shadow-2xl my-8 overflow-hidden text-left">
+            <div className="bg-dark-900 p-5 border-b border-dark-700 flex justify-between items-center">
+              <h3 className="text-md font-bold text-white">{editingMeal ? 'Edit Catering Package' : 'Create New Catering Package'}</h3>
+              <button onClick={() => { setIsMealModalOpen(false); setEditingMeal(null); }} className="text-gray-400 hover:text-white"><X size={20}/></button>
+            </div>
+
+            <form onSubmit={handleSaveMeal} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs text-gray-400 font-bold mb-1">Package Name *</label>
+                <input 
+                  type="text" 
+                  required
+                  value={mealForm.name}
+                  onChange={e => setMealForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-xl text-white outline-none focus:border-brand-500"
+                  placeholder="e.g. Standard Breakfast Tea"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-400 font-bold mb-1">Course Segment *</label>
+                <select 
+                  value={mealForm.course_type}
+                  onChange={e => setMealForm(prev => ({ ...prev, course_type: e.target.value }))}
+                  className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-xl text-white outline-none focus:border-brand-500 cursor-pointer"
+                >
+                  <option value="Breakfast Tea" className="bg-dark-900">Breakfast Tea</option>
+                  <option value="Breakfast" className="bg-dark-900">Breakfast</option>
+                  <option value="Lunch" className="bg-dark-900">Lunch</option>
+                  <option value="Dinner" className="bg-dark-900">Dinner</option>
+                  <option value="Dessert" className="bg-dark-900">Dessert</option>
+                  <option value="Drinks" className="bg-dark-900">Drinks</option>
+                  <option value="Appetizers" className="bg-dark-900">Appetizers</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-400 font-bold mb-1">Combination Items (Comma separated) *</label>
+                <input 
+                  type="text" 
+                  required
+                  value={mealForm.combination_items}
+                  onChange={e => setMealForm(prev => ({ ...prev, combination_items: e.target.value }))}
+                  className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-xl text-white outline-none focus:border-brand-500"
+                  placeholder="e.g. Tea, Snacks, Fruits"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-400 font-bold mb-1">Price Per Participant (₦) *</label>
+                <input 
+                  type="number" 
+                  required
+                  min="0"
+                  value={mealForm.price_per_participant_ngn}
+                  onChange={e => setMealForm(prev => ({ ...prev, price_per_participant_ngn: e.target.value }))}
+                  className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-xl text-white outline-none focus:border-brand-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <input 
+                  type="checkbox" 
+                  id="mealActive"
+                  checked={mealForm.is_active}
+                  onChange={e => setMealForm(prev => ({ ...prev, is_active: e.target.checked }))}
+                  className="rounded bg-dark-900 border-dark-700 text-brand-500 focus:ring-0 focus:ring-offset-0"
+                />
+                <label htmlFor="mealActive" className="text-xs text-gray-400 font-bold cursor-pointer">Package is Active & Orderable</label>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-dark-700 mt-2">
+                <button 
+                  type="button" 
+                  onClick={() => { setIsMealModalOpen(false); setEditingMeal(null); }}
+                  className="px-4 py-2 border border-dark-700 text-gray-400 hover:text-white rounded-lg text-xs font-bold"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSavingMeal}
+                  className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-xs font-bold active:scale-95 transition-all"
+                >
+                  {isSavingMeal ? 'Saving...' : 'Save Package'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

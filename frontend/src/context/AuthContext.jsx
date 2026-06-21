@@ -44,6 +44,12 @@ export const AuthProvider = ({ children }) => {
       if (localTheme) {
         const isSlateDark = localTheme === 'theme-slate-dark';
         document.documentElement.className = isSlateDark ? `dark ${localTheme}` : localTheme;
+        if (localTheme === 'theme-custom') {
+          const localHue = localStorage.getItem('theme_hue') || '24';
+          document.documentElement.style.setProperty('--brand-400', `hsl(${localHue}, 80%, 65%)`);
+          document.documentElement.style.setProperty('--brand-500', `hsl(${localHue}, 70%, 50%)`);
+          document.documentElement.style.setProperty('--brand-600', `hsl(${localHue}, 70%, 40%)`);
+        }
       }
       
       // 2. Async check from system_settings
@@ -59,6 +65,26 @@ export const AuthProvider = ({ children }) => {
           const isSlateDark = dbTheme === 'theme-slate-dark';
           document.documentElement.className = isSlateDark ? `dark ${dbTheme}` : dbTheme;
           localStorage.setItem('system_theme', dbTheme);
+          
+          if (dbTheme === 'theme-custom') {
+            const { data: hueData } = await supabase
+              .from('system_settings')
+              .select('setting_value')
+              .eq('setting_key', 'theme_hue')
+              .maybeSingle();
+              
+            if (hueData?.setting_value) {
+              const dbHue = hueData.setting_value;
+              localStorage.setItem('theme_hue', dbHue);
+              document.documentElement.style.setProperty('--brand-400', `hsl(${dbHue}, 80%, 65%)`);
+              document.documentElement.style.setProperty('--brand-500', `hsl(${dbHue}, 70%, 50%)`);
+              document.documentElement.style.setProperty('--brand-600', `hsl(${dbHue}, 70%, 40%)`);
+            }
+          } else {
+            document.documentElement.style.removeProperty('--brand-400');
+            document.documentElement.style.removeProperty('--brand-500');
+            document.documentElement.style.removeProperty('--brand-600');
+          }
         }
       } catch (err) {
         console.warn("Failed to fetch system theme on startup:", err);
@@ -313,6 +339,16 @@ export const AuthProvider = ({ children }) => {
         console.warn("Profile fetch error caught:", err);
       }
       
+      if (profileData && (profileData.is_active === false || profileData.status === 'suspended' || profileData.status === 'sacked')) {
+        toast.error(`Access Denied: Your account is inactive or has been suspended/withdrawn from service.`);
+        await supabase.auth.signOut();
+        setUser(null);
+        setProfile(null);
+        setPermissions([]);
+        setLoading(false);
+        return;
+      }
+      
       const mergedUser = {
         ...authUser,
         ...(profileData || {}),
@@ -324,7 +360,12 @@ export const AuthProvider = ({ children }) => {
 
       if (profileData && profileData.role !== 'super_admin') {
         try {
-          const { data: perms } = await supabase.from('role_permissions').select('*').eq('role', profileData.role);
+          const roleVal = profileData.role;
+          const normalizedRole = roleVal ? roleVal.toLowerCase().trim().replace(/[-\s]+/g, '_') : '';
+          const { data: perms } = await supabase
+            .from('role_permissions')
+            .select('*')
+            .in('role', [roleVal, normalizedRole].filter(Boolean));
           if (perms) setPermissions(perms);
         } catch (permErr) {
           console.warn("Permissions fetch error caught:", permErr);
@@ -346,15 +387,22 @@ export const AuthProvider = ({ children }) => {
   };
 
   const getRolePermissionDefault = (roleId, permissionName) => {
+    roleId = roleId ? roleId.toLowerCase().trim().replace(/[-\s]+/g, '_') : '';
     // Global override bypass roles
     if (['super_admin', 'hotel_owner', 'hotel_manager', 'admin', 'manager'].includes(roleId)) return true;
     
     switch (permissionName) {
       case 'Dashboard':
+      case 'Dashboard - View Room Grid Matrix':
+      case 'Dashboard - View Operations Statistics':
       case 'CRM & Guests':
+      case 'CRM & Guests - Manage Profiles':
+      case 'CRM & Guests - View Guest History':
         return ['front_desk_lead', 'receptionist_manager', 'receptionist', 'finance_manager', 'accountant', 'customer_support', 'laundry_manager', 'laundry_staff'].includes(roleId);
       
       case 'Reservations':
+      case 'Reservations - Manage Bookings':
+      case 'Reservations - Handle Room Assignments':
         return ['front_desk_lead', 'receptionist_manager', 'receptionist', 'finance_manager', 'accountant', 'customer_support'].includes(roleId);
       
       case 'Front Desk':
@@ -379,7 +427,19 @@ export const AuthProvider = ({ children }) => {
       case 'POS - Manage Menu Items & Custom Pricing':
         return ['receptionist_manager', 'kitchen_manager', 'bar_manager', 'restaurant_manager'].includes(roleId);
       
+      case 'Restaurant & Kitchen':
+      case 'Restaurant Desk':
+        return ['restaurant_manager', 'restaurant_staff', 'front_desk_lead', 'receptionist_manager', 'pos_operator'].includes(roleId);
+      
+      case 'Kitchen Desk':
+        return ['head_chef', 'kitchen_manager', 'kitchen_staff'].includes(roleId);
+      
+      case 'Order History':
+        return ['restaurant_manager', 'restaurant_staff', 'head_chef', 'kitchen_manager', 'kitchen_staff', 'pos_operator', 'front_desk_lead', 'receptionist_manager'].includes(roleId);
+      
       case 'Guest Services':
+      case 'Guest Services - Request Amenities':
+      case 'Guest Services - Verify Active Orders':
         return ['front_desk_lead', 'receptionist_manager', 'receptionist', 'finance_manager', 'accountant'].includes(roleId);
       
       case 'Laundry':
@@ -415,6 +475,8 @@ export const AuthProvider = ({ children }) => {
       
       case 'Finance & Billing':
       case 'Accounting':
+      case 'Accounting - Settle Ledger':
+      case 'Accounting - View General Ledger Logs':
       case 'Finance - Manage General Ledgers & Payroll':
         return ['finance_manager', 'accountant'].includes(roleId);
       
@@ -426,8 +488,6 @@ export const AuthProvider = ({ children }) => {
         return ['front_desk_lead', 'receptionist_manager', 'finance_manager', 'laundry_manager', 'housekeeping_manager', 'maintenance_manager', 'kitchen_manager', 'bar_manager', 'restaurant_manager'].includes(roleId);
 
       case 'Duty Logs':
-        return ['front_desk_lead', 'receptionist_manager', 'receptionist', 'laundry_manager', 'housekeeping_manager', 'maintenance_manager', 'finance_manager', 'accountant'].includes(roleId);
-      
       case 'Duty Logs - Submit Shift Handover':
         return ['front_desk_lead', 'receptionist_manager', 'receptionist', 'laundry_manager', 'housekeeping_manager', 'maintenance_manager', 'finance_manager', 'accountant'].includes(roleId);
 
@@ -459,13 +519,11 @@ export const AuthProvider = ({ children }) => {
         return ['finance_manager', 'accountant'].includes(roleId);
 
       case 'Internal Messaging':
+      case 'Internal Messaging - Send Direct Messages':
         return !['guest'].includes(roleId);
       
       case 'Internal Messaging - Broadcast Announcements':
         return ['front_desk_lead', 'receptionist_manager', 'laundry_manager', 'housekeeping_manager', 'maintenance_manager', 'finance_manager', 'kitchen_manager', 'bar_manager', 'restaurant_manager'].includes(roleId);
-
-      case 'Internal Messaging - Send Direct Messages':
-        return !['guest'].includes(roleId);
 
       case 'Monthly Reports':
         return ['receptionist_manager', 'front_desk_lead', 'finance_manager', 'accountant', 'laundry_manager', 'housekeeping_manager', 'maintenance_manager', 'kitchen_manager'].includes(roleId);
@@ -476,6 +534,23 @@ export const AuthProvider = ({ children }) => {
       case 'Monthly Reports - View Performance Analytics':
         return ['receptionist_manager', 'front_desk_lead', 'finance_manager', 'accountant', 'laundry_manager', 'housekeeping_manager', 'maintenance_manager'].includes(roleId);
       
+      case 'Maintenance':
+        return ['maintenance_manager', 'head_maintenance', 'maintenance', 'front_desk_lead', 'receptionist_manager', 'finance_manager'].includes(roleId);
+      case 'Maintenance - Manage Tickets & Fixes':
+        return ['maintenance_manager', 'head_maintenance', 'maintenance'].includes(roleId);
+      case 'Maintenance - Manage Professionals':
+        return ['maintenance_manager', 'head_maintenance'].includes(roleId);
+      case 'Maintenance - Manage Purchases & Payments':
+        return ['maintenance_manager', 'finance_manager', 'accountant'].includes(roleId);
+
+      case 'Service Portals':
+      case 'Service Portals - Airport Pickup Service':
+      case 'Service Portals - Spa & Massage':
+      case 'Service Portals - Swimming Pool':
+      case 'Service Portals - Walk-in Direct Register':
+      case 'Service Portals - Close of Day Compiler':
+        return ['front_desk_lead', 'receptionist_manager', 'receptionist', 'finance_manager', 'accountant', 'customer_support'].includes(roleId);
+
       default:
         return false;
     }
@@ -483,10 +558,13 @@ export const AuthProvider = ({ children }) => {
 
   const hasAccess = (moduleName) => {
     if (!user || !user.role) return false;
-    const roleId = user.role.toLowerCase().trim();
+    const roleId = user.role.toLowerCase().trim().replace(/[-\s]+/g, '_');
     if (roleId === 'super_admin' || roleId === 'hotel_owner') return true; 
     
-    const perm = permissions.find(p => p.module === moduleName);
+    const perm = permissions.find(p => {
+      const pRole = p.role ? p.role.toLowerCase().trim().replace(/[-\s]+/g, '_') : '';
+      return p.module === moduleName && pRole === roleId;
+    });
     if (perm !== undefined) return perm.has_access;
     
     return getRolePermissionDefault(roleId, moduleName);

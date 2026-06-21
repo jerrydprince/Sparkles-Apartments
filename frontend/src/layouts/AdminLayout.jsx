@@ -1,9 +1,147 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, Navigate } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, Users, Settings, LogOut, BedDouble, FileText, Globe, Bell, TrendingUp, Sparkles, Network, MessageSquare, ShieldCheck, Zap, ShieldAlert, Menu, X, Sun, Moon, Package, Wallet, ShoppingCart, Archive, Shirt, ClipboardList, SearchCheck, CalendarClock, MailOpen, Award, Wrench, ChefHat } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Users, Settings, LogOut, BedDouble, FileText, Globe, Bell, TrendingUp, Sparkles, Network, MessageSquare, ShieldCheck, Zap, ShieldAlert, Menu, X, Sun, Moon, Package, Wallet, ShoppingCart, Archive, Shirt, ClipboardList, SearchCheck, CalendarClock, MailOpen, Award, Wrench, ChefHat, Compass } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import TopbarAttendanceClock from '../components/TopbarAttendanceClock';
 import { supabase } from '../lib/supabase';
+import { getDefaultAdminRoute } from '../utils/routes';
+
+const ROUTE_PERMISSIONS = {
+  '/admin/frontdesk': 'Front Desk',
+  '/admin/reservations': 'Reservations',
+  '/admin/crm': 'CRM & Guests',
+  '/admin/lost-found': 'Lost & Found',
+  '/admin/housekeeping': 'Housekeeping',
+  '/admin/laundry': 'Laundry',
+  '/admin/maintenance': 'Maintenance',
+  '/admin/store': 'Store Keeping',
+  '/admin/restaurant': ['Restaurant Desk', 'Kitchen Desk', 'Order History'],
+  '/admin/pos': 'POS',
+  '/admin/billing': 'Finance & Billing',
+  '/admin/accounting': 'Accounting',
+  '/admin/rooms': 'Rooms',
+  '/admin/channel-manager': 'Channel Manager',
+  '/admin/staff': ['Staff & Roles', 'Leave & Absences - Request Leave of Absence', 'Leave & Absences - Review Leave Applications'],
+  '/admin/cms': 'Website CMS',
+  '/admin/settings': 'Settings',
+  '/admin/duty-reports': 'Duty Logs',
+  '/admin/reminders': 'Reminders',
+  '/admin/messages': 'Internal Messaging',
+  '/admin/monthly-reports': 'Monthly Reports',
+  '/admin/services': 'Guest Services',
+  '/admin/services-portal': 'Service Portals',
+  '/admin/automations': 'Automations & Alerts',
+  '/admin/security': 'Security & Privacy',
+  '/admin/calendar': 'Reservations',
+};
+
+const MODULE_SUBPERMISSIONS = {
+  'Dashboard': [
+    'Dashboard - View Room Grid Matrix',
+    'Dashboard - View Operations Statistics'
+  ],
+  'Reservations': [
+    'Reservations - Manage Bookings',
+    'Reservations - Handle Room Assignments'
+  ],
+  'Front Desk': [
+    'Front Desk - Create Booking & Check-in',
+    'Front Desk - Override Room Rates & Invoicing'
+  ],
+  'Housekeeping': [
+    'Housekeeping - Perform Room Cleaning',
+    'Housekeeping - Assign Tasks to Staff',
+    'Housekeeping - Inspect & Approve Clean Rooms'
+  ],
+  'CRM & Guests': [
+    'CRM & Guests - Manage Profiles',
+    'CRM & Guests - View Guest History'
+  ],
+  'Finance & Billing': [
+    'Finance - Manage General Ledgers & Payroll',
+    'Finance - Process Refunds & Adjustments'
+  ],
+  'Accounting': [
+    'Accounting - Settle Ledger',
+    'Accounting - View General Ledger Logs'
+  ],
+  'Channel Manager': [
+    'Channel Manager - Sync Channels',
+    'Channel Manager - Adjust External Rates'
+  ],
+  'Reports & Analytics': [
+    'Reports & Analytics - View Revenue Reports',
+    'Reports & Analytics - Export Financial Sheets'
+  ],
+  'Staff & Roles': [
+    'Staff & Roles - Onboard Staff',
+    'Staff & Roles - Modify Access Policies'
+  ],
+  'Website CMS': [
+    'Website CMS - Edit General Pages',
+    'Website CMS - Update Banner Announcements'
+  ],
+  'Settings': [
+    'Settings - Update System Profile',
+    'Automations & Alerts',
+    'Security & Privacy'
+  ],
+  'Store Keeping': [
+    'Store Keeping - Log Requisitions',
+    'Store Keeping - Register & Restock Items',
+    'Store Keeping - Approve Outgoing Material Releases'
+  ],
+  'POS': [
+    'POS - Process Sales & Suite Charging',
+    'POS - Manage Menu Items & Custom Pricing'
+  ],
+  'Guest Services': [
+    'Guest Services - Request Amenities',
+    'Guest Services - Verify Active Orders'
+  ],
+  'Laundry': [
+    'Laundry - Process Laundry Orders',
+    'Laundry - Post Folio Charges',
+    'Laundry - Register Walk-in Sales'
+  ],
+  'Leave & Absences': [
+    'Leave & Absences - Request Leave of Absence',
+    'Leave & Absences - Review Leave Applications'
+  ],
+  'Duty Logs': [
+    'Duty Logs - Submit Shift Handover',
+    'Duty Logs - Review Historical Logs'
+  ],
+  'Lost & Found': [
+    'Lost & Found - Register Found Items',
+    'Lost & Found - Notify Guest & Settle Claims',
+    'Lost & Found - Dispose Items'
+  ],
+  'Reminders': [
+    'Reminders - Create & Edit Schedules',
+    'Reminders - Settle Payments & Sync Ledger'
+  ],
+  'Internal Messaging': [
+    'Internal Messaging - Broadcast Announcements',
+    'Internal Messaging - Send Direct Messages'
+  ],
+  'Monthly Reports': [
+    'Monthly Reports - Submit Departmental Report',
+    'Monthly Reports - View Performance Analytics'
+  ],
+  'Maintenance': [
+    'Maintenance - Manage Tickets & Fixes',
+    'Maintenance - Manage Professionals',
+    'Maintenance - Manage Purchases & Payments'
+  ],
+  'Service Portals': [
+    'Service Portals - Airport Pickup Service',
+    'Service Portals - Spa & Massage',
+    'Service Portals - Swimming Pool',
+    'Service Portals - Walk-in Direct Register',
+    'Service Portals - Close of Day Compiler'
+  ],
+};
 
 const AdminLayout = () => {
   const { user, hasRole, hasAccess, logout } = useAuth();
@@ -16,6 +154,19 @@ const AdminLayout = () => {
   const [unreadCount, setUnreadCount] = useState(0);
 
   const [brandLogo, setBrandLogo] = useState('');
+
+  const hasAnyAccess = (permissionName) => {
+    if (!permissionName) return false;
+    if (Array.isArray(permissionName)) {
+      return permissionName.some(p => hasAnyAccess(p));
+    }
+    if (hasAccess(permissionName)) return true;
+    const subs = MODULE_SUBPERMISSIONS[permissionName];
+    if (subs) {
+      return subs.some(sub => hasAccess(sub));
+    }
+    return false;
+  };
 
   useEffect(() => {
     if (isDarkTheme) {
@@ -121,6 +272,31 @@ const AdminLayout = () => {
     );
   }
 
+  // If visiting the base /admin path and doesn't have Dashboard access, redirect to first allowed route
+  if ((location.pathname === '/admin' || location.pathname === '/admin/') && !hasAnyAccess('Dashboard') && user.role !== 'super_admin' && user.role !== 'hotel_owner') {
+    const fallbackPath = getDefaultAdminRoute(user.role, hasAnyAccess);
+    if (fallbackPath && fallbackPath !== '/admin' && fallbackPath !== '/admin/') {
+      return <Navigate to={fallbackPath} replace />;
+    }
+  }
+
+  // Centered Permission Route Guard
+  const currentPath = location.pathname.replace(/\/$/, ''); // Remove trailing slash
+  let requiredPermission = ROUTE_PERMISSIONS[currentPath];
+  
+  if (!requiredPermission) {
+    // Check dynamic routes / prefixes
+    const matchingKey = Object.keys(ROUTE_PERMISSIONS).find(key => currentPath.startsWith(key + '/'));
+    if (matchingKey) {
+      requiredPermission = ROUTE_PERMISSIONS[matchingKey];
+    }
+  }
+
+  let isRouteForbidden = false;
+  if (requiredPermission && user.role !== 'super_admin' && user.role !== 'hotel_owner') {
+    isRouteForbidden = !hasAnyAccess(requiredPermission);
+  }
+
   return (
     <div className="flex h-screen bg-dark-900 overflow-hidden">
       
@@ -160,41 +336,41 @@ const AdminLayout = () => {
         <nav className="flex-1 px-3 py-6 space-y-4.5 overflow-y-auto custom-scrollbar select-none">
           
           {/* CATEGORY 1: OVERVIEW & COMMS */}
-          {(hasAccess('Dashboard') || hasAccess('Internal Messaging') || hasAccess('Reminders') || hasAccess('Reports & Analytics') || hasAccess('Duty Logs') || hasAccess('Monthly Reports')) && (
+          {(hasAnyAccess('Dashboard') || hasAnyAccess('Internal Messaging') || hasAnyAccess('Reminders') || hasAnyAccess('Reports & Analytics') || hasAnyAccess('Duty Logs') || hasAnyAccess('Monthly Reports')) && (
             <div className="space-y-1">
               <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Overview & Comms</h4>
               <div className="space-y-0.5">
-                {hasAccess('Dashboard') && (
+                {hasAnyAccess('Dashboard') && (
                   <Link to="/admin" className={linkClass('/admin')}>
                     <LayoutDashboard size={16} />
                     <span className="text-xs font-semibold">Live Dashboard</span>
                   </Link>
                 )}
-                {hasAccess('Internal Messaging') && (
+                {hasAnyAccess('Internal Messaging') && (
                   <Link to="/admin/messages" className={linkClass('/admin/messages')}>
                     <MessageSquare size={16} />
                     <span className="text-xs font-semibold">Internal Messaging</span>
                   </Link>
                 )}
-                {hasAccess('Reminders') && (
+                {hasAnyAccess('Reminders') && (
                   <Link to="/admin/reminders" className={linkClass('/admin/reminders')}>
                     <CalendarClock size={16} />
                     <span className="text-xs font-semibold">Schedules & Reminders</span>
                   </Link>
                 )}
-                {hasAccess('Reports & Analytics') && (
+                {hasAnyAccess('Reports & Analytics') && (
                   <Link to="/admin/reports" className={linkClass('/admin/reports')}>
                     <TrendingUp size={16} />
                     <span className="text-xs font-semibold">Reports & Analytics</span>
                   </Link>
                 )}
-                {hasAccess('Duty Logs') && (
+                {hasAnyAccess('Duty Logs') && (
                   <Link to="/admin/duty-reports" className={linkClass('/admin/duty-reports')}>
                     <ClipboardList size={16} />
                     <span className="text-xs font-semibold">Duty Manager Logs</span>
                   </Link>
                 )}
-                {hasAccess('Monthly Reports') && (
+                {hasAnyAccess('Monthly Reports') && (
                   <Link to="/admin/monthly-reports" className={linkClass('/admin/monthly-reports')}>
                     <MailOpen size={16} />
                     <span className="text-xs font-semibold">Monthly Reports Dispatch</span>
@@ -205,29 +381,29 @@ const AdminLayout = () => {
           )}
 
           {/* CATEGORY 2: FRONT OFFICE */}
-          {(hasAccess('Front Desk') || hasAccess('CRM & Guests') || hasAccess('Lost & Found') || hasAccess('Reservations')) && (
+          {(hasAnyAccess('Front Desk') || hasAnyAccess('CRM & Guests') || hasAnyAccess('Lost & Found') || hasAnyAccess('Reservations')) && (
             <div className="space-y-1">
               <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Front Office</h4>
               <div className="space-y-0.5">
-                {hasAccess('Front Desk') && (
+                {hasAnyAccess('Front Desk') && (
                   <Link to="/admin/frontdesk" className={linkClass('/admin/frontdesk')}>
                     <Bell size={16} />
                     <span className="text-xs font-semibold">Front Desk Reception</span>
                   </Link>
                 )}
-                {hasAccess('Reservations') && (
+                {hasAnyAccess('Reservations') && (
                   <Link to="/admin/reservations" className={linkClass('/admin/reservations')}>
                     <CalendarDays size={16} />
                     <span className="text-xs font-semibold">Suite Bookings (Reservations)</span>
                   </Link>
                 )}
-                {hasAccess('CRM & Guests') && (
+                {hasAnyAccess('CRM & Guests') && (
                   <Link to="/admin/crm" className={linkClass('/admin/crm')}>
                     <Users size={16} />
                     <span className="text-xs font-semibold">CRM Guest Directory</span>
                   </Link>
                 )}
-                {hasAccess('Lost & Found') && (
+                {hasAnyAccess('Lost & Found') && (
                   <Link to="/admin/lost-found" className={linkClass('/admin/lost-found')}>
                     <SearchCheck size={16} />
                     <span className="text-xs font-semibold">Lost & Found Registry</span>
@@ -238,38 +414,44 @@ const AdminLayout = () => {
           )}
 
           {/* CATEGORY 3: HOTEL OPERATIONS */}
-          {(hasAccess('Housekeeping') || hasAccess('Laundry') || hasAccess('Store Keeping') || hasAccess('Maintenance')) && (
+          {(hasAnyAccess('Housekeeping') || hasAnyAccess('Laundry') || hasAnyAccess('Store Keeping') || hasAnyAccess('Maintenance') || hasAnyAccess('Restaurant Desk') || hasAnyAccess('Kitchen Desk') || hasAnyAccess('Order History') || hasAnyAccess('Guest Services')) && (
             <div className="space-y-1">
               <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Hotel Operations</h4>
               <div className="space-y-0.5">
-                {hasAccess('Housekeeping') && (
+                {hasAnyAccess('Housekeeping') && (
                   <Link to="/admin/housekeeping" className={linkClass('/admin/housekeeping')}>
                     <Sparkles size={16} />
                     <span className="text-xs font-semibold">Housekeeping Cleaning</span>
                   </Link>
                 )}
-                {hasAccess('Laundry') && (
+                {hasAnyAccess('Laundry') && (
                   <Link to="/admin/laundry" className={linkClass('/admin/laundry')}>
                     <Shirt size={16} />
                     <span className="text-xs font-semibold">Laundry Department</span>
                   </Link>
                 )}
-                {hasAccess('Maintenance') && (
+                {hasAnyAccess('Maintenance') && (
                   <Link to="/admin/maintenance" className={linkClass('/admin/maintenance')}>
                     <Wrench size={16} />
                     <span className="text-xs font-semibold">Maintenance Department</span>
                   </Link>
                 )}
-                {(hasAccess('Store Keeping') || user?.role === 'super_admin') && (
+                {(hasAnyAccess('Store Keeping') || user?.role === 'super_admin') && (
                   <Link to="/admin/store" className={linkClass('/admin/store')}>
                     <Archive size={16} />
                     <span className="text-xs font-semibold">Stores & Warehouses</span>
                   </Link>
                 )}
-                {(hasAccess('Restaurant Desk') || hasAccess('Kitchen Desk') || hasAccess('Order History') || user?.role === 'super_admin') && (
+                {(hasAnyAccess('Restaurant Desk') || hasAnyAccess('Kitchen Desk') || hasAnyAccess('Order History') || user?.role === 'super_admin') && (
                   <Link to="/admin/restaurant" className={linkClass('/admin/restaurant')}>
                     <ChefHat size={16} />
                     <span className="text-xs font-semibold">Restaurant & Kitchen</span>
+                  </Link>
+                )}
+                {(hasAnyAccess('Service Portals') || user?.role === 'super_admin') && (
+                  <Link to="/admin/services-portal" className={linkClass('/admin/services-portal')}>
+                    <Compass size={16} />
+                    <span className="text-xs font-semibold">🛎️ Service Portals</span>
                   </Link>
                 )}
               </div>
@@ -277,7 +459,7 @@ const AdminLayout = () => {
           )}
 
           {/* CATEGORY 4: POINT OF SALE */}
-          {(hasAccess('POS') || user?.role === 'super_admin') && (
+          {(hasAnyAccess('POS') || user?.role === 'super_admin') && (
             <div className="space-y-1">
               <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Point of Sale</h4>
               <div className="space-y-0.5">
@@ -290,17 +472,17 @@ const AdminLayout = () => {
           )}
 
           {/* CATEGORY 5: FINANCE & AUDITS */}
-          {(hasAccess('Finance & Billing') || hasAccess('Accounting')) && (
+          {(hasAnyAccess('Finance & Billing') || hasAnyAccess('Accounting')) && (
             <div className="space-y-1">
               <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Finance & Auditing</h4>
               <div className="space-y-0.5">
-                {hasAccess('Finance & Billing') && (
+                {hasAnyAccess('Finance & Billing') && (
                   <Link to="/admin/billing" className={linkClass('/admin/billing')}>
                     <FileText size={16} />
                     <span className="text-xs font-semibold">Folios & Billings</span>
                   </Link>
                 )}
-                {hasAccess('Accounting') && (
+                {hasAnyAccess('Accounting') && (
                   <Link to="/admin/accounting" className={linkClass('/admin/accounting')}>
                     <Wallet size={16} />
                     <span className="text-xs font-semibold">General Ledger & Accounts</span>
@@ -311,35 +493,35 @@ const AdminLayout = () => {
           )}
 
           {/* CATEGORY 6: SYSTEM CONTROL */}
-          {(hasAccess('Rooms') || user?.role === 'super_admin' || hasAccess('Channel Manager') || hasAccess('Staff & Roles') || hasAccess('Website CMS') || hasAccess('Settings')) && (
+          {(hasAnyAccess('Rooms') || user?.role === 'super_admin' || hasAnyAccess('Channel Manager') || hasAnyAccess('Staff & Roles') || hasAnyAccess('Leave & Absences') || hasAnyAccess('Website CMS') || hasAnyAccess('Settings')) && (
             <div className="space-y-1">
               <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">System Control</h4>
               <div className="space-y-0.5">
-                {(hasAccess('Rooms') || user?.role === 'super_admin') && (
+                {(hasAnyAccess('Rooms') || user?.role === 'super_admin') && (
                   <Link to="/admin/rooms" className={linkClass('/admin/rooms')}>
                     <BedDouble size={16} />
-                    <span className="text-xs font-semibold">Rooms & Inventory</span>
+                    <span className="text-xs font-semibold">Rooms, Halls & Inventory</span>
                   </Link>
                 )}
-                {hasAccess('Channel Manager') && (
+                {hasAnyAccess('Channel Manager') && (
                   <Link to="/admin/channel-manager" className={linkClass('/admin/channel-manager')}>
                     <Network size={16} />
                     <span className="text-xs font-semibold">Channel Manager Sync</span>
                   </Link>
                 )}
-                {hasAccess('Staff & Roles') && (
+                {(hasAnyAccess('Staff & Roles') || hasAccess('Leave & Absences - Request Leave of Absence') || hasAccess('Leave & Absences - Review Leave Applications')) && (
                   <Link to="/admin/staff" className={linkClass('/admin/staff')}>
                     <ShieldCheck size={16} />
                     <span className="text-xs font-semibold">Staff & Security Matrix</span>
                   </Link>
                 )}
-                {hasAccess('Website CMS') && (
+                {hasAnyAccess('Website CMS') && (
                   <Link to="/admin/cms" className={linkClass('/admin/cms')}>
                     <Globe size={16} />
                     <span className="text-xs font-semibold">Website CMS Manager</span>
                   </Link>
                 )}
-                {hasAccess('Settings') && (
+                {hasAnyAccess('Settings') && (
                   <Link to="/admin/settings" className={linkClass('/admin/settings')}>
                     <Settings size={16} />
                     <span className="text-xs font-semibold">System Settings</span>
@@ -379,7 +561,7 @@ const AdminLayout = () => {
             <TopbarAttendanceClock />
             
             {/* Topbar Operations Chat Notification Hub */}
-            {hasAccess('Internal Messaging') && (
+            {hasAnyAccess('Internal Messaging') && (
               <Link 
                 to="/admin/messages" 
                 className="relative p-2 rounded-full text-gray-400 hover:text-white hover:bg-dark-700 transition-all duration-300 active:scale-95 group"
@@ -408,8 +590,32 @@ const AdminLayout = () => {
         </header>
 
         {/* Content Area */}
-        <div className="p-4 md:p-8 flex-1">
-          <Outlet />
+        <div className="p-4 md:p-8 flex-1 flex flex-col min-w-0">
+          {isRouteForbidden ? (
+            <div className="m-auto glass-panel text-center p-8 rounded-2xl max-w-md w-full border border-dark-700 shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+              <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <ShieldAlert size={32} />
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
+              <p className="text-gray-400 mb-6 font-medium">
+                Your role does not have permission to view the <strong>{Array.isArray(requiredPermission) ? requiredPermission.join(' / ') : requiredPermission}</strong> module.
+              </p>
+              <p className="text-gray-500 text-xs mb-8">
+                Please contact the hotel administrator to adjust your dynamic security permissions matrix.
+              </p>
+              <button 
+                type="button"
+                onClick={() => {
+                  window.location.href = getDefaultAdminRoute(user.role, hasAccess);
+                }}
+                className="bg-brand-500 hover:bg-brand-600 text-dark-950 font-bold px-6 py-3 rounded-xl transition-all"
+              >
+                Go to my Department Home
+              </button>
+            </div>
+          ) : (
+            <Outlet />
+          )}
         </div>
       </main>
     </div>

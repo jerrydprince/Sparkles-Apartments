@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeSync } from '../../lib/useRealtimeSync';
 import toast from 'react-hot-toast';
-import { LogIn, LogOut, Key, UserCheck, Calendar as CalendarIcon, Search, Plus, X, ShieldCheck, PenTool, Users, FileText, ArrowRightLeft, LayoutGrid, Wrench, Sparkles, CheckCircle, AlertTriangle, Clock, Check, Phone, ChevronLeft, ChevronRight, Filter, Package, Archive, Wallet, CalendarDays, SearchCheck, ShoppingBag, Coins, CreditCard, ArrowUpRight } from 'lucide-react';
+import { LogIn, LogOut, Key, UserCheck, Calendar as CalendarIcon, Search, Plus, X, ShieldCheck, PenTool, Users, FileText, ArrowRightLeft, LayoutGrid, Wrench, Sparkles, CheckCircle, AlertTriangle, Clock, Check, Phone, ChevronLeft, ChevronRight, Filter, Package, Archive, Wallet, CalendarDays, SearchCheck, ShoppingBag, Coins, CreditCard, ArrowUpRight, ChefHat } from 'lucide-react';
 import StoreRequisitionModal from '../../components/admin/StoreRequisitionModal';
 import { format, addDays, differenceInDays } from 'date-fns';
 import ManualBookingModal from '../../components/admin/ManualBookingModal';
@@ -12,6 +12,7 @@ import AdminReservations from './Reservations';
 import LostFound from './LostFound';
 import { triggerAutomationRules } from '../../lib/emailService';
 import AdminBilling from './Billing';
+import AdminHalls from './AdminHalls';
 
 
 const MENU_SEGMENTS = ['Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Drinks', 'Appetizers'];
@@ -276,8 +277,27 @@ const AdminFrontDesk = () => {
   const [selectedFoodServiceId, setSelectedFoodServiceId] = useState('');
   const [selectedServicesList, setSelectedServicesList] = useState([]);
   const [bulkSelections, setBulkSelections] = useState({});
+  const [isMealsSelected, setIsMealsSelected] = useState(false);
+  const [kitchenMenuTab, setKitchenMenuTab] = useState('Breakfast');
 
   const handleToggleBulkCheck = (service, isChecked) => {
+    if (service.id === 'meals-virtual') {
+      setIsMealsSelected(isChecked);
+      if (!isChecked) {
+        // Remove all restaurant/F&B services from bulkSelections
+        setBulkSelections(prev => {
+          const copy = { ...prev };
+          Object.keys(copy).forEach(key => {
+            if (copy[key].service?.internal_notes?.toLowerCase().trim() === 'restaurant') {
+              delete copy[key];
+            }
+          });
+          return copy;
+        });
+      }
+      return;
+    }
+
     setBulkSelections(prev => {
       if (!isChecked) {
         const copy = { ...prev };
@@ -343,6 +363,7 @@ const AdminFrontDesk = () => {
     if (newCartItems.length > 0) {
       setSelectedServicesList([...selectedServicesList, ...newCartItems]);
       setBulkSelections({});
+      setIsMealsSelected(false);
       toast.success(`✓ Added ${newCartItems.length} items to order list.`);
     }
   };
@@ -614,8 +635,76 @@ const AdminFrontDesk = () => {
     }
   };
 
+  const handleReopenFrontOffice = async () => {
+    const allowedRoles = ['super_admin', 'admin', 'hotel_manager', 'hotel_owner'];
+    if (!profile || !allowedRoles.includes(profile.role)) {
+      return toast.error("You do not have authorization to reopen departmental ledgers. Contact an Administrator or Manager.");
+    }
+
+    if (!window.confirm("Are you sure you want to RE-OPEN the Front Office ledger for today? This will clear the closure record and allow new transactions to be posted.")) {
+      return;
+    }
+
+    const toastId = toast.loading("Reopening Front Office ledger...");
+    try {
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+
+      // 1. Fetch current closures
+      let currentClosures = [];
+      const { data: closuresData } = await supabase
+        .from('system_settings')
+        .select('setting_value')
+        .eq('setting_key', 'departmental_closures')
+        .maybeSingle();
+      if (closuresData && closuresData.setting_value) {
+        currentClosures = typeof closuresData.setting_value === 'string' ? JSON.parse(closuresData.setting_value) : closuresData.setting_value;
+      }
+
+      // 2. Fetch current reports
+      let currentReports = [];
+      const { data: reportsData } = await supabase
+        .from('system_settings')
+        .select('setting_value')
+        .eq('setting_key', 'departmental_close_reports')
+        .maybeSingle();
+      if (reportsData && reportsData.setting_value) {
+        currentReports = typeof reportsData.setting_value === 'string' ? JSON.parse(reportsData.setting_value) : reportsData.setting_value;
+      }
+
+      const updatedClosures = currentClosures.filter(c => !(c.department === 'front_office' && c.business_date === todayStr));
+      const updatedReports = currentReports.filter(r => !(r.department === 'front_office' && r.business_date === todayStr));
+
+      // 3. Save closures
+      await supabase.from('system_settings').upsert({
+        setting_key: 'departmental_closures',
+        setting_value: updatedClosures
+      }, { onConflict: 'setting_key' });
+
+      // 4. Save reports
+      await supabase.from('system_settings').upsert({
+        setting_key: 'departmental_close_reports',
+        setting_value: updatedReports
+      }, { onConflict: 'setting_key' });
+
+      // 5. Audit log
+      await supabase.from('system_logs').insert({
+        user_id: profile?.id,
+        log_type: 'activity',
+        action: `Front Office ledger reopened for date ${todayStr} by ${profile.first_name} ${profile.last_name}`,
+        module: 'Accounting'
+      });
+
+      setDepartmentalClosures(updatedClosures);
+      toast.success("Front Office ledger reopened successfully!", { id: toastId });
+    } catch (err) {
+      console.error("Failed to reopen Front Office ledger:", err);
+      toast.error(`Failed to reopen ledger: ${err.message}`, { id: toastId });
+    }
+  };
+
+
   // Real-time Postgres changes channel subscription using custom sync hook
-  useRealtimeSync(['bookings', 'rooms', 'housekeeping_tasks', 'booking_services', 'system_settings'], (table) => {
+  useRealtimeSync(['bookings', 'rooms', 'housekeeping_tasks', 'booking_services', 'system_settings', 'payments', 'invoices', 'refund_settlements', 'halls', 'hall_bookings', 'hall_meal_options', 'hall_booking_meals'], (table) => {
     fetchFrontDeskData(false);
     if (table === 'system_settings') {
       fetchClosures();
@@ -1817,6 +1906,8 @@ const AdminFrontDesk = () => {
     setServiceNotes('');
     setSelectedServicesList([]);
     setBulkSelections({});
+    setIsMealsSelected(false);
+    setKitchenMenuTab('Breakfast');
     
     try {
       const { data, error } = await supabase
@@ -1826,9 +1917,10 @@ const AdminFrontDesk = () => {
         
       if (error) throw error;
       
-      // Filter out POS and restaurant items from standard catalog selection
+      // Filter out POS and restaurant items from standard catalog selection, and explicitly exclude breakfast
       const standard = (data || []).filter(s => 
-        !['bar', 'restaurant', 'kitchen'].includes(s.internal_notes?.toLowerCase().trim() || '')
+        !['bar', 'restaurant', 'kitchen'].includes(s.internal_notes?.toLowerCase().trim() || '') &&
+        !s.name?.toLowerCase().includes('breakfast')
       );
       const foodItems = (data || []).filter(s => 
         s.internal_notes?.toLowerCase().trim() === 'restaurant'
@@ -1922,7 +2014,7 @@ const AdminFrontDesk = () => {
         total_price_ngn: item.total_price_ngn,
         scheduled_date: item.scheduled_date,
         scheduled_time: item.scheduled_time,
-        status: item.is_restaurant ? 'pending' : 'scheduled',
+        status: item.is_restaurant ? 'confirmed' : 'scheduled',
         notes: item.is_restaurant
           ? `restaurant_order: ${item.notes || 'Ordered by Front Desk'}`
           : (item.notes ? `front_desk_request: ${item.notes}` : 'front_desk_request'),
@@ -2390,14 +2482,24 @@ const AdminFrontDesk = () => {
   return (
     <div className="space-y-6 pb-20">
       {isFrontOfficeClosed && (
-        <div className="bg-red-500/10 border-2 border-red-500/35 text-red-200 p-4 rounded-xl flex items-center gap-4 shadow-lg shadow-red-500/5 animate-pulse">
-          <AlertTriangle size={24} className="text-red-500 animate-bounce flex-shrink-0" />
-          <div className="flex-1">
-            <h4 className="font-extrabold text-sm uppercase tracking-wider text-white">Front Office Ledger Closed for Today</h4>
-            <p className="text-xs text-red-300/95 mt-0.5 font-medium">
-              All front office operations including suite bookings, stay transfers, guest check-ins/check-outs, and guest wallet operations are locked. Contact a super admin, admin or hotel manager to re-open the daily ledger.
-            </p>
+        <div className="bg-red-500/10 border-2 border-red-500/35 text-red-200 p-4 rounded-xl flex items-center justify-between gap-4 shadow-lg shadow-red-500/5">
+          <div className="flex items-center gap-4">
+            <AlertTriangle size={24} className="text-red-500 animate-bounce flex-shrink-0" />
+            <div className="flex-1">
+              <h4 className="font-extrabold text-sm uppercase tracking-wider text-white">Front Office Ledger Closed for Today</h4>
+              <p className="text-xs text-red-300/95 mt-0.5 font-medium">
+                All front office operations including suite bookings, stay transfers, guest check-ins/check-outs, and guest wallet operations are locked. Contact a super admin, admin or hotel manager to re-open the daily ledger.
+              </p>
+            </div>
           </div>
+          {profile && ['super_admin', 'admin', 'hotel_manager', 'hotel_owner'].includes(profile.role) && (
+            <button 
+              onClick={handleReopenFrontOffice}
+              className="bg-red-600 hover:bg-red-500 text-white font-extrabold px-4 py-2 rounded-lg text-xs transition-all duration-200 shadow-md flex-shrink-0 active:scale-95 cursor-pointer"
+            >
+              Reopen Ledger
+            </button>
+          )}
         </div>
       )}
       {/* Header Panel */}
@@ -2524,6 +2626,11 @@ const AdminFrontDesk = () => {
         {hasAccess('Finance & Billing') && (
           <button onClick={() => setActiveTab('billing')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'billing' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
             <FileText size={18} /> Folios & Billing
+          </button>
+        )}
+        {hasAccess('Halls & Catering') && (
+          <button onClick={() => setActiveTab('halls')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'halls' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
+            <Sparkles size={18} /> Halls & Catering
           </button>
         )}
       </div>
@@ -3167,20 +3274,32 @@ const AdminFrontDesk = () => {
                       activeBooking ? (
                         <div className="flex gap-2">
                           <button 
-                            onClick={() => setTransferBooking(activeBooking)} 
-                            className="flex-1 bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-dark-900 border border-amber-500/20 text-xs py-1.5 px-1 rounded-lg font-bold transition-all flex items-center justify-center gap-1"
+                            disabled={isFrontOfficeClosed}
+                            onClick={() => {
+                              if (isFrontOfficeClosed) return toast.error("Front Office operations are locked due to daily ledger closure.");
+                              setTransferBooking(activeBooking);
+                            }} 
+                            className="flex-1 bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-dark-900 border border-amber-500/20 text-xs py-1.5 px-1 rounded-lg font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             <ArrowRightLeft size={12} /> Transfer
                           </button>
                           <button 
-                            onClick={() => setActiveVisitorRegistration(activeBooking)} 
-                            className="flex-1 bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white border border-blue-500/20 text-xs py-1.5 px-1 rounded-lg font-bold transition-all flex items-center justify-center gap-1"
+                            disabled={isFrontOfficeClosed}
+                            onClick={() => {
+                              if (isFrontOfficeClosed) return toast.error("Front Office operations are locked due to daily ledger closure.");
+                              setActiveVisitorRegistration(activeBooking);
+                            }} 
+                            className="flex-1 bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white border border-blue-500/20 text-xs py-1.5 px-1 rounded-lg font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             <Users size={12} /> Visitor
                           </button>
                           <button 
-                            onClick={() => setActiveCheckOut(activeBooking)} 
-                            className="flex-1 bg-dark-700 hover:bg-red-500/20 hover:text-red-400 border border-dark-600 text-xs py-1.5 px-1 rounded-lg font-bold transition-all text-gray-300"
+                            disabled={isFrontOfficeClosed}
+                            onClick={() => {
+                              if (isFrontOfficeClosed) return toast.error("Front Office operations are locked due to daily ledger closure.");
+                              setActiveCheckOut(activeBooking);
+                            }} 
+                            className="flex-1 bg-dark-700 hover:bg-red-500/20 hover:text-red-400 border border-dark-600 text-xs py-1.5 px-1 rounded-lg font-bold transition-all text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             Out
                           </button>
@@ -3195,11 +3314,16 @@ const AdminFrontDesk = () => {
                         if (taskStatus === 'inspected') {
                           return (
                             <button 
+                              disabled={isFrontOfficeClosed}
                               onClick={() => {
+                                if (isFrontOfficeClosed) {
+                                  toast.error("Front Office operations are locked due to daily ledger closure.");
+                                  return;
+                                }
                                 setPreselectedRoomId(room.id);
                                 setIsNewBookingModalOpen(true);
                               }}
-                              className="w-full bg-green-500/10 text-green-400 hover:bg-green-500 hover:text-dark-900 border border-green-500/20 text-xs py-2 px-3 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5"
+                              className="w-full bg-green-500/10 text-green-400 hover:bg-green-500 hover:text-dark-900 border border-green-500/20 text-xs py-2 px-3 rounded-lg font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               <Key size={13} /> Book Room
                             </button>
@@ -3796,7 +3920,7 @@ const AdminFrontDesk = () => {
 
       {activeTab === 'reservations' && hasAccess('Reservations') && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <AdminReservations onUpdate={() => fetchFrontDeskData(false)} />
+          <AdminReservations onUpdate={() => fetchFrontDeskData(false)} isFrontOfficeClosed={isFrontOfficeClosed} />
         </div>
       )}
 
@@ -3808,7 +3932,13 @@ const AdminFrontDesk = () => {
 
       {activeTab === 'billing' && hasAccess('Finance & Billing') && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <AdminBilling />
+          <AdminBilling isFrontOfficeClosed={isFrontOfficeClosed} />
+        </div>
+      )}
+
+      {activeTab === 'halls' && hasAccess('Halls & Catering') && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <AdminHalls isFrontOfficeClosed={isFrontOfficeClosed} />
         </div>
       )}
 
@@ -3898,24 +4028,34 @@ const AdminFrontDesk = () => {
 
               {/* Actions mapping directly to check-in/check-out wizards */}
               <div className="pt-2 border-t border-dark-700 flex flex-col gap-2">
+                {isFrontOfficeClosed && (
+                  <div className="text-red-400 text-xs font-semibold flex items-center gap-1.5 mb-2 bg-red-500/10 p-2.5 rounded-lg border border-red-500/25 animate-pulse">
+                    <AlertTriangle size={14} className="text-red-500" />
+                    <span>Operations locked due to daily ledger closure.</span>
+                  </div>
+                )}
                 {selectedCalendarBooking.status === 'confirmed' && (
                   <button 
+                    disabled={isFrontOfficeClosed}
                     onClick={() => {
+                      if (isFrontOfficeClosed) return toast.error("Front Office operations are locked due to daily ledger closure.");
                       handleStartCheckIn(selectedCalendarBooking);
                       setSelectedCalendarBooking(null);
                     }}
-                    className="w-full btn-primary py-3 font-bold text-sm"
+                    className="w-full btn-primary py-3 font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Start Check-In Workflow
                   </button>
                 )}
                 {selectedCalendarBooking.status === 'checked_in' && (
                   <button 
+                    disabled={isFrontOfficeClosed}
                     onClick={() => {
+                      if (isFrontOfficeClosed) return toast.error("Front Office operations are locked due to daily ledger closure.");
                       setActiveCheckOut(selectedCalendarBooking);
                       setSelectedCalendarBooking(null);
                     }}
-                    className="w-full bg-brand-500 hover:bg-brand-400 text-dark-900 font-bold py-3 text-sm transition-all rounded shadow-[0_2px_8px_rgba(234,179,8,0.25)]"
+                    className="w-full bg-brand-500 hover:bg-brand-400 text-dark-900 font-bold py-3 text-sm transition-all rounded shadow-[0_2px_8px_rgba(234,179,8,0.25)] disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {selectedCalendarBooking.payment_status === 'paid' ? 'Mark as Checked Out' : 'Process Check-Out Workflow'}
                   </button>
@@ -3923,20 +4063,24 @@ const AdminFrontDesk = () => {
                 {selectedCalendarBooking.status === 'checked_in' && (
                   <>
                     <button 
+                      disabled={isFrontOfficeClosed}
                       onClick={() => {
+                        if (isFrontOfficeClosed) return toast.error("Front Office operations are locked due to daily ledger closure.");
                         handleOpenAddService(selectedCalendarBooking);
                         setSelectedCalendarBooking(null);
                       }}
-                      className="w-full bg-purple-500/10 hover:bg-purple-500 text-purple-400 hover:text-white font-medium py-2.5 rounded border border-purple-500/20 transition-all text-xs flex items-center justify-center gap-1.5"
+                      className="w-full bg-purple-500/10 hover:bg-purple-500 text-purple-400 hover:text-white font-medium py-2.5 rounded border border-purple-500/20 transition-all text-xs flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <Package size={13} /> Add Stay Enhancement (Folio)
                     </button>
                     <button 
+                      disabled={isFrontOfficeClosed}
                       onClick={() => {
+                        if (isFrontOfficeClosed) return toast.error("Front Office operations are locked due to daily ledger closure.");
                         setActiveVisitorRegistration(selectedCalendarBooking);
                         setSelectedCalendarBooking(null);
                       }}
-                      className="w-full bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-white font-medium py-2.5 rounded border border-blue-500/20 transition-all text-xs flex items-center justify-center gap-1.5"
+                      className="w-full bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-white font-medium py-2.5 rounded border border-blue-500/20 transition-all text-xs flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <Users size={13} /> Register Guest Visitor
                     </button>
@@ -3944,32 +4088,38 @@ const AdminFrontDesk = () => {
                 )}
                 {(selectedCalendarBooking.status === 'confirmed' || selectedCalendarBooking.status === 'pending') && (
                   <button 
+                    disabled={isFrontOfficeClosed}
                     onClick={() => {
+                      if (isFrontOfficeClosed) return toast.error("Front Office operations are locked due to daily ledger closure.");
                       setActiveNoShowModal(selectedCalendarBooking);
                       setSelectedCalendarBooking(null);
                     }}
-                    className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-2.5 rounded border border-orange-600/30 transition-all text-xs flex items-center justify-center gap-1.5 shadow-[0_2px_6px_rgba(249,115,22,0.15)]"
+                    className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-2.5 rounded border border-orange-600/30 transition-all text-xs flex items-center justify-center gap-1.5 shadow-[0_2px_6px_rgba(249,115,22,0.15)] disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <AlertTriangle size={13} /> Mark as No-Show / Rebook
                   </button>
                 )}
                 {selectedCalendarBooking.status === 'no_show' && (
                   <button 
+                    disabled={isFrontOfficeClosed}
                     onClick={() => {
+                      if (isFrontOfficeClosed) return toast.error("Front Office operations are locked due to daily ledger closure.");
                       setActiveNoShowModal(selectedCalendarBooking);
                       setSelectedCalendarBooking(null);
                     }}
-                    className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-2.5 rounded border border-orange-600/30 transition-all text-xs flex items-center justify-center gap-1.5 shadow-[0_2px_6px_rgba(249,115,22,0.15)]"
+                    className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-2.5 rounded border border-orange-600/30 transition-all text-xs flex items-center justify-center gap-1.5 shadow-[0_2px_6px_rgba(249,115,22,0.15)] disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <AlertTriangle size={13} /> Rebook No-Show Guest
                   </button>
                 )}
                 <button 
+                  disabled={isFrontOfficeClosed}
                   onClick={() => {
+                    if (isFrontOfficeClosed) return toast.error("Front Office operations are locked due to daily ledger closure.");
                     setTransferBooking(selectedCalendarBooking);
                     setSelectedCalendarBooking(null);
                   }}
-                  className="w-full bg-dark-700 hover:bg-dark-600 text-white font-medium py-2.5 rounded border border-dark-600 transition-colors text-xs flex items-center justify-center gap-1.5"
+                  className="w-full bg-dark-700 hover:bg-dark-600 text-white font-medium py-2.5 rounded border border-dark-600 transition-colors text-xs flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <ArrowRightLeft size={13} /> Request Room Transfer
                 </button>
@@ -4709,59 +4859,88 @@ const AdminFrontDesk = () => {
                 Room {activeAddServiceBooking.rooms?.room_number} — {activeAddServiceBooking.profiles ? `${activeAddServiceBooking.profiles.first_name} ${activeAddServiceBooking.profiles.last_name}` : activeAddServiceBooking.guest_name}
               </div>
 
-              {/* Service Selection Checklist */}
-              <div className="space-y-4">
-                <label className="block text-sm font-bold text-gray-300">Select Stay Enhancements & Meals</label>
-                
-                {/* Standard Services */}
-                <div className="space-y-3 text-left">
-                  <h5 className="text-xs font-extrabold text-purple-400 uppercase tracking-wider">Standard Services</h5>
-                  {availableServices.filter(s => s.id !== 'meals-virtual').length === 0 ? (
-                    <p className="text-xs text-gray-500">No active standard services registered.</p>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {availableServices.filter(s => s.id !== 'meals-virtual').map(service => {
-                        const isChecked = !!bulkSelections[service.id];
-                        return (
-                          <div 
-                            key={service.id} 
-                            onClick={() => handleToggleBulkCheck(service, !isChecked)}
-                            className={`p-3.5 border rounded-xl transition-all cursor-pointer bg-dark-900/40 hover:bg-dark-900/60 flex items-center justify-between gap-3 ${
-                              isChecked ? 'border-purple-500 bg-purple-500/5 shadow-md shadow-purple-500/5' : 'border-dark-700'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => {}} // Controlled by outer div click
-                                className="w-4 h-4 rounded border-dark-600 text-purple-500 accent-purple-500 focus:ring-0 focus:ring-offset-0 bg-dark-800 cursor-pointer"
-                              />
-                              <div className="text-left">
-                                <span className="text-xs font-bold text-white block leading-tight">{service.name}</span>
-                                <span className="text-[10px] text-gray-400 font-mono">₦{Number(service.base_price_ngn).toLocaleString()}</span>
-                              </div>
+              {/* Standard Services */}
+              <div className="space-y-3 text-left">
+                <h5 className="text-xs font-extrabold text-purple-400 uppercase tracking-wider">Standard Services</h5>
+                {availableServices.length === 0 ? (
+                  <p className="text-xs text-gray-500">No active standard services registered.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {availableServices.map(service => {
+                      const isVirtualMeals = service.id === 'meals-virtual';
+                      const isChecked = isVirtualMeals ? isMealsSelected : !!bulkSelections[service.id];
+                      return (
+                        <div 
+                          key={service.id} 
+                          onClick={() => handleToggleBulkCheck(service, !isChecked)}
+                          className={`p-3.5 border rounded-xl transition-all cursor-pointer bg-dark-900/40 hover:bg-dark-900/60 flex items-center justify-between gap-3 ${
+                            isChecked 
+                              ? (isVirtualMeals ? 'border-amber-500 bg-amber-500/5 shadow-md shadow-amber-500/5' : 'border-purple-500 bg-purple-500/5 shadow-md shadow-purple-500/5') 
+                              : 'border-dark-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {}} // Controlled by outer div click
+                              className={`w-4 h-4 rounded border-dark-600 accent-current focus:ring-0 focus:ring-offset-0 bg-dark-800 cursor-pointer ${
+                                isVirtualMeals ? 'text-amber-500' : 'text-purple-500'
+                              }`}
+                            />
+                            <div className="text-left">
+                              <span className="text-xs font-bold text-white block leading-tight">{service.name}</span>
+                              <span className="text-[10px] text-gray-400 font-mono">
+                                {isVirtualMeals ? 'Order Food / Drinks' : `₦${Number(service.base_price_ngn).toLocaleString()}`}
+                              </span>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
-                {/* Food & Beverage Meals */}
-                {foodMenuServices.length > 0 && (
-                  <div className="space-y-3 pt-2 text-left">
-                    <h5 className="text-xs font-extrabold text-amber-500 uppercase tracking-wider">Food & Beverage (Meals)</h5>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {foodMenuServices.map(service => {
+              {/* Food & Beverage Meals Selection Panel (opens upon selection of Meals virtual service) */}
+              {isMealsSelected && foodMenuServices.length > 0 && (
+                <div className="space-y-4 pt-4 border-t border-dark-700/50 text-left animate-in slide-in-from-top-2 duration-200">
+                  <h5 className="text-xs font-extrabold text-amber-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <ChefHat size={14} /> Kitchen Menu Selection
+                  </h5>
+                  
+                  {/* Menu Tabs */}
+                  <div className="flex flex-wrap gap-1 bg-dark-900 p-1.5 rounded-xl border border-dark-700 w-fit">
+                    {['Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Drinks', 'Appetizers'].map(tab => {
+                      const count = foodMenuServices.filter(s => parseDescription(s.description).segment === tab).length;
+                      return (
+                        <button
+                          key={tab}
+                          type="button"
+                          onClick={() => setKitchenMenuTab(tab)}
+                          className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                            kitchenMenuTab === tab 
+                              ? 'bg-amber-500 text-dark-900 font-extrabold shadow-sm' 
+                              : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          {tab} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Menu items under active tab */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[250px] overflow-y-auto pr-1 custom-scrollbar">
+                    {foodMenuServices
+                      .filter(s => parseDescription(s.description).segment === kitchenMenuTab)
+                      .map(service => {
                         const isChecked = !!bulkSelections[service.id];
-                        const { segment } = parseDescription(service.description);
                         return (
                           <div 
                             key={service.id} 
                             onClick={() => handleToggleBulkCheck(service, !isChecked)}
-                            className={`p-3.5 border rounded-xl transition-all cursor-pointer bg-dark-900/40 hover:bg-dark-900/60 flex items-center justify-between gap-3 ${
+                            className={`p-3 border rounded-xl transition-all cursor-pointer bg-dark-900/40 hover:bg-dark-900/60 flex items-center justify-between gap-3 ${
                               isChecked ? 'border-amber-500 bg-amber-500/5 shadow-md shadow-amber-500/5' : 'border-dark-700'
                             }`}
                           >
@@ -4774,18 +4953,15 @@ const AdminFrontDesk = () => {
                               />
                               <div className="text-left">
                                 <span className="text-xs font-bold text-white block leading-tight">{service.name}</span>
-                                <span className="text-[10px] text-gray-405 font-mono">
-                                  ₦{Number(service.base_price_ngn).toLocaleString()} <span className="text-[9px] text-amber-400 font-black uppercase ml-1">({segment})</span>
-                                </span>
+                                <span className="text-[10px] text-gray-450 font-mono">₦{Number(service.base_price_ngn).toLocaleString()}</span>
                               </div>
                             </div>
                           </div>
                         );
                       })}
-                    </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Configure Selected Items Section */}
               {Object.keys(bulkSelections).length > 0 && (

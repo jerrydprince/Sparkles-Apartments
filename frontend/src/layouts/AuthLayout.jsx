@@ -5,7 +5,7 @@ import { getDefaultAdminRoute } from '../utils/routes';
 import { supabase } from '../lib/supabase';
 
 const AuthLayout = () => {
-  const { user } = useAuth();
+  const { user, hasAccess } = useAuth();
   const [brandLogo, setBrandLogo] = useState('');
 
   useEffect(() => {
@@ -33,7 +33,7 @@ const AuthLayout = () => {
   }, []);
 
   if (user) {
-    return <Navigate to={user.role === 'guest' ? '/guest' : getDefaultAdminRoute(user.role)} replace />;
+    return <Navigate to={user.role === 'guest' ? '/guest' : getDefaultAdminRoute(user.role, hasAccess)} replace />;
   }
 
   return (

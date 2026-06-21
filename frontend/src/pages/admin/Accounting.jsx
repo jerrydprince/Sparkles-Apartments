@@ -144,6 +144,8 @@ const AdminAccounting = () => {
   const [closeOfDayData, setCloseOfDayData] = useState(null);
   const [isRunningNightAudit, setIsRunningNightAudit] = useState(false);
   const [showCloseOfDayModal, setShowCloseOfDayModal] = useState(false);
+  const [selectedAuditDate, setSelectedAuditDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [timelineFilterDate, setTimelineFilterDate] = useState('');
 
   // Transaction adjustment states
   const [showVoidCorrectModal, setShowVoidCorrectModal] = useState(false);
@@ -165,7 +167,7 @@ const AdminAccounting = () => {
   }, []);
 
   // Real-time synchronization for general accounting updates
-  useRealtimeSync(['salary_structures', 'staff_attendance', 'leave_applications', 'payments', 'invoices', 'expenses'], () => {
+  useRealtimeSync(['salary_structures', 'staff_attendance', 'leave_applications', 'payments', 'invoices', 'expenses', 'bookings', 'booking_services', 'refund_settlements'], () => {
     fetchFinancialData();
     fetchDailyClosures();
     fetchDebtorsData();
@@ -646,7 +648,7 @@ const AdminAccounting = () => {
           });
 
           if (activeLeave) {
-            if (activeLeave.leave_type === 'unpaid') {
+            if (activeLeave.leave_type === 'unpaid' || activeLeave.leave_type === 'leave_without_pay') {
               daysLeaveUnpaid++;
             } else {
               daysLeavePaid++;
@@ -697,27 +699,78 @@ const AdminAccounting = () => {
       }
 
       if (!staffMember.exempt_from_attendance_deduction) {
-        const penalizedDays = daysAbsent + daysLeaveUnpaid;
-        attendancePenalty = penalizedDays * dailyPenaltyRate;
+        attendancePenalty = daysAbsent * dailyPenaltyRate;
       }
 
-      const totalDeductions = standardDeduction + attendancePenalty;
+      // Compute Leave Without Pay (LWP) deductions individually to log reasons
+      let lwpDeductions = 0;
+      const lwpDeductionsDetails = [];
+
+      if (!staffMember.exempt_from_attendance_deduction) {
+        (leaves || []).forEach(l => {
+          if (l.leave_type === 'unpaid' || l.leave_type === 'leave_without_pay') {
+            let leaveLwpDays = 0;
+            const startLeave = new Date(l.start_date);
+            const endLeave = new Date(l.end_date);
+            
+            workingDates.forEach(date => {
+              const dateStr = format(date, 'yyyy-MM-dd');
+              const checkDate = new Date(dateStr);
+              if (checkDate >= startLeave && checkDate <= endLeave) {
+                const hasClockIn = (attendance || []).some(a => format(new Date(a.clock_in), 'yyyy-MM-dd') === dateStr);
+                if (!hasClockIn) {
+                  leaveLwpDays++;
+                }
+              }
+            });
+
+            if (leaveLwpDays > 0) {
+              const amt = leaveLwpDays * dailyPenaltyRate;
+              lwpDeductions += amt;
+              lwpDeductionsDetails.push({
+                start_date: l.start_date,
+                end_date: l.end_date,
+                amount: amt
+              });
+            }
+          }
+        });
+      }
+
+      const totalDeductions = standardDeduction + attendancePenalty + lwpDeductions;
 
       // Construct processed deductions list
       const processedDeductionsList = Array.isArray(baseDeductionsList) ? [...baseDeductionsList] : [];
       if (attendancePenalty > 0) {
         processedDeductionsList.push({
-          name: "Absenteeism / Unpaid Leave",
+          name: "Absenteeism Penalty",
           amount: parseFloat(attendancePenalty.toFixed(2)),
           type: "fixed"
         });
       }
 
+      lwpDeductionsDetails.forEach(detail => {
+        processedDeductionsList.push({
+          name: `Approved leave without pay from ${detail.start_date} to ${detail.end_date}`,
+          amount: parseFloat(detail.amount.toFixed(2)),
+          type: "fixed"
+        });
+      });
+
       // 6. Set payroll notes
-      const auditNote = `Attendance Audit: Out of ${expectedDays} expected shifts in pay period, staff clocked ${daysPresent} present. Exemptions: ${daysLeavePaid} Paid Leaves approved, ${daysLeaveUnpaid} Unpaid Leaves approved. Unexcused Absences: ${daysAbsent}. ` +
-        (staffMember.exempt_from_attendance_deduction 
-          ? `[Attendance Penalty Exempted due to Special Privileges Override]` 
-          : `Absenteeism Deduction: -₦${attendancePenalty.toLocaleString('en-US', { minimumFractionDigits: 2 })} (₦${dailyPenaltyRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}/day).`);
+      let auditNote = `Attendance Audit: Out of ${expectedDays} expected shifts in pay period, staff clocked ${daysPresent} present. Exemptions: ${daysLeavePaid} Paid Leaves approved, ${daysLeaveUnpaid} Unpaid Leaves approved. Unexcused Absences: ${daysAbsent}. `;
+      
+      if (lwpDeductionsDetails.length > 0) {
+        lwpDeductionsDetails.forEach(detail => {
+          auditNote += `Approved leave without pay from ${detail.start_date} to ${detail.end_date} (-₦${detail.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). `;
+        });
+      }
+
+      if (attendancePenalty > 0) {
+        auditNote += staffMember.exempt_from_attendance_deduction 
+          ? `[Attendance Penalty Exempted due to Override]` 
+          : `Absenteeism Deduction: -₦${attendancePenalty.toLocaleString('en-US', { minimumFractionDigits: 2 })} (₦${dailyPenaltyRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}/day).`;
+      }
 
       setAttendanceAuditNotes(auditNote);
 
@@ -728,7 +781,7 @@ const AdminAccounting = () => {
         bonuses: allowancesVal + (prev.extra_bonuses || 0),
         deductions: parseFloat(totalDeductions.toFixed(2)),
         deductions_list: processedDeductionsList,
-        notes: auditNote
+        notes: auditNote.trim()
       }));
 
     } catch (e) {
@@ -1009,37 +1062,35 @@ const AdminAccounting = () => {
     }
   };
 
-  const getDepartmentStatsToday = (deptKey) => {
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-    
+  const getDepartmentStatsForDate = (deptKey, dateStr) => {
     if (deptKey === 'front_office') {
       const rev = inflows
-        .filter(i => format(new Date(i.date), 'yyyy-MM-dd') === todayStr && i.category === 'Booking Revenue')
+        .filter(i => format(new Date(i.date), 'yyyy-MM-dd') === dateStr && i.category === 'Booking Revenue')
         .reduce((sum, item) => sum + item.amount, 0);
-      const count = inflows.filter(i => format(new Date(i.date), 'yyyy-MM-dd') === todayStr && i.category === 'Booking Revenue').length;
+      const count = inflows.filter(i => format(new Date(i.date), 'yyyy-MM-dd') === dateStr && i.category === 'Booking Revenue').length;
       return { revenue: rev, count };
     }
     
     if (deptKey === 'laundry') {
       const rev = inflows
-        .filter(i => format(new Date(i.date), 'yyyy-MM-dd') === todayStr && i.category === 'Laundry Revenue')
+        .filter(i => format(new Date(i.date), 'yyyy-MM-dd') === dateStr && i.category === 'Laundry Revenue')
         .reduce((sum, item) => sum + item.amount, 0);
-      const count = inflows.filter(i => format(new Date(i.date), 'yyyy-MM-dd') === todayStr && i.category === 'Laundry Revenue').length;
+      const count = inflows.filter(i => format(new Date(i.date), 'yyyy-MM-dd') === dateStr && i.category === 'Laundry Revenue').length;
       return { revenue: rev, count };
     }
     
     if (deptKey === 'bar') {
       const rev = inflows
-        .filter(i => format(new Date(i.date), 'yyyy-MM-dd') === todayStr && i.category === 'POS Revenue' && i.description?.toLowerCase().includes('outlet: bar'))
+        .filter(i => format(new Date(i.date), 'yyyy-MM-dd') === dateStr && i.category === 'POS Revenue' && i.description?.toLowerCase().includes('outlet: bar'))
         .reduce((sum, item) => sum + item.amount, 0);
-      const count = inflows.filter(i => format(new Date(i.date), 'yyyy-MM-dd') === todayStr && i.category === 'POS Revenue' && i.description?.toLowerCase().includes('outlet: bar')).length;
+      const count = inflows.filter(i => format(new Date(i.date), 'yyyy-MM-dd') === dateStr && i.category === 'POS Revenue' && i.description?.toLowerCase().includes('outlet: bar')).length;
       return { revenue: rev, count };
     }
     
     if (deptKey === 'restaurant') {
       const rev = inflows
         .filter(i => {
-          const isToday = format(new Date(i.date), 'yyyy-MM-dd') === todayStr;
+          const isTargetDate = format(new Date(i.date), 'yyyy-MM-dd') === dateStr;
           const isFnbCategory = i.category === 'POS Revenue';
           const isRestaurantOrKitchen = i.description?.toLowerCase().includes('outlet: restaurant') ||
                                         i.description?.toLowerCase().includes('outlet: kitchen') ||
@@ -1051,12 +1102,12 @@ const AdminAccounting = () => {
                                         i.notes?.toLowerCase().includes('restaurant service') ||
                                         i.notes?.toLowerCase().includes('chef_notes:') ||
                                         (i.notes && i.notes.includes('restaurant_order:'));
-          return isToday && isFnbCategory && isRestaurantOrKitchen;
+          return isTargetDate && isFnbCategory && isRestaurantOrKitchen;
         })
         .reduce((sum, item) => sum + item.amount, 0);
 
       const count = inflows.filter(i => {
-          const isToday = format(new Date(i.date), 'yyyy-MM-dd') === todayStr;
+          const isTargetDate = format(new Date(i.date), 'yyyy-MM-dd') === dateStr;
           const isFnbCategory = i.category === 'POS Revenue';
           const isRestaurantOrKitchen = i.description?.toLowerCase().includes('outlet: restaurant') ||
                                         i.description?.toLowerCase().includes('outlet: kitchen') ||
@@ -1068,7 +1119,7 @@ const AdminAccounting = () => {
                                         i.notes?.toLowerCase().includes('restaurant service') ||
                                         i.notes?.toLowerCase().includes('chef_notes:') ||
                                         (i.notes && i.notes.includes('restaurant_order:'));
-          return isToday && isFnbCategory && isRestaurantOrKitchen;
+          return isTargetDate && isFnbCategory && isRestaurantOrKitchen;
       }).length;
       return { revenue: rev, count };
     }
@@ -1077,8 +1128,8 @@ const AdminAccounting = () => {
   };
 
   const handleCloseDepartment = async (deptKey) => {
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-    const stats = getDepartmentStatsToday(deptKey);
+    const todayStr = selectedAuditDate;
+    const stats = getDepartmentStatsForDate(deptKey, todayStr);
     const closureRecord = {
       department: deptKey,
       business_date: todayStr,
@@ -1091,7 +1142,7 @@ const AdminAccounting = () => {
     
     const alreadyClosed = departmentalClosures.some(c => c.department === deptKey && c.business_date === todayStr);
     if (alreadyClosed) {
-      return toast.error("This department has already been closed for today!");
+      return toast.error(`This department has already been closed for ${todayStr}!`);
     }
     
     const updated = [...departmentalClosures, closureRecord];
@@ -1124,15 +1175,15 @@ const AdminAccounting = () => {
       return toast.error("You do not have authorization to reopen departmental ledgers. Contact an Administrator or Manager.");
     }
 
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const todayStr = selectedAuditDate;
     
     // Check if it's actually closed
     const isClosed = departmentalClosures.some(c => c.department === deptKey && c.business_date === todayStr);
     if (!isClosed) {
-      return toast.error("This department is not closed for today!");
+      return toast.error(`This department is not closed for ${todayStr}!`);
     }
     
-    if (!window.confirm(`Are you sure you want to RE-OPEN the ${deptKey.replace('_', ' ').toUpperCase()} ledger for today? This will clear the closure record and allow new transactions to be posted.`)) {
+    if (!window.confirm(`Are you sure you want to RE-OPEN the ${deptKey.replace('_', ' ').toUpperCase()} ledger for ${todayStr}? This will clear the closure record and allow new transactions to be posted.`)) {
       return;
     }
     
@@ -1821,26 +1872,172 @@ const AdminAccounting = () => {
   };
 
   const fetchDailyClosures = async () => {
+    let dbClosures = [];
     try {
-      const { data } = await supabase.from('daily_closures').select('*').order('created_at', { ascending: false });
-      if (data) {
-        setDailyClosures(data);
-      } else {
-        throw new Error("Table missing");
+      const { data, error } = await supabase.from('daily_closures').select('*').order('created_at', { ascending: false });
+      if (error) {
+        console.warn("daily_closures table query error:", error.message);
+      } else if (data) {
+        dbClosures = data;
       }
     } catch (e) {
-      try {
-        const { data: sysData } = await supabase.from('system_settings').select('*').eq('setting_key', 'daily_closure_reports').maybeSingle();
-        if (sysData && sysData.setting_value) {
-          const parsed = typeof sysData.setting_value === 'string' ? JSON.parse(sysData.setting_value) : sysData.setting_value;
-          setDailyClosures(parsed || []);
-        } else {
-          const local = localStorage.getItem('luxe_daily_closures');
-          setDailyClosures(local ? JSON.parse(local) : []);
+      console.warn("Exception checking daily_closures table:", e);
+    }
+
+    let fallbackClosures = [];
+    try {
+      const { data: sysData } = await supabase.from('system_settings').select('*').eq('setting_key', 'daily_closure_reports').maybeSingle();
+      if (sysData && sysData.setting_value) {
+        fallbackClosures = typeof sysData.setting_value === 'string' ? JSON.parse(sysData.setting_value) : sysData.setting_value;
+      } else {
+        const local = localStorage.getItem('luxe_daily_closures');
+        if (local) {
+          fallbackClosures = JSON.parse(local);
         }
-      } catch (err) {
-        setDailyClosures([]);
       }
+    } catch (err) {
+      console.warn("Exception checking fallback closure storage:", err);
+    }
+
+    // Merge reports uniquely by date to ensure historical reports compiled before/during migrations aren't lost
+    const mergedMap = new Map();
+    if (Array.isArray(fallbackClosures)) {
+      fallbackClosures.forEach(c => {
+        if (c && c.date) mergedMap.set(c.date, c);
+      });
+    }
+    if (Array.isArray(dbClosures)) {
+      dbClosures.forEach(c => {
+        if (c && c.date) mergedMap.set(c.date, c);
+      });
+    }
+
+    const mergedList = Array.from(mergedMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
+    setDailyClosures(mergedList);
+  };
+
+  const generateReportForDate = async (targetDateStr) => {
+    const toastId = toast.loading(`Generating audit sheet for ${targetDateStr}...`);
+    try {
+      // 1. Check if we already have it in dailyClosures
+      const existing = dailyClosures.find(c => {
+        const dStr = format(new Date(c.date), 'yyyy-MM-dd');
+        return dStr === targetDateStr;
+      });
+      if (existing) {
+        setCloseOfDayData(existing);
+        setShowCloseOfDayModal(true);
+        toast.success(`✓ Loaded compiled report for ${targetDateStr}!`, { id: toastId });
+        return;
+      }
+      
+      // 2. If not, compile it dynamically from local state/DB for that date!
+      const targetInflows = inflows.filter(i => {
+        const dStr = format(new Date(i.date), 'yyyy-MM-dd');
+        return dStr === targetDateStr && i.category === 'Booking Revenue';
+      });
+      const roomRevenue = targetInflows.reduce((sum, item) => sum + item.amount, 0);
+      
+      const targetPOS = inflows.filter(i => {
+        const dStr = format(new Date(i.date), 'yyyy-MM-dd');
+        return dStr === targetDateStr && i.category === 'POS Revenue';
+      });
+      const posRevenue = targetPOS.reduce((sum, item) => sum + item.amount, 0);
+      
+      const targetLaundry = inflows.filter(i => {
+        const dStr = format(new Date(i.date), 'yyyy-MM-dd');
+        return dStr === targetDateStr && i.category === 'Laundry Revenue';
+      });
+      const laundryRevenue = targetLaundry.reduce((sum, item) => sum + item.amount, 0);
+      
+      const targetExpensesList = expenses.filter(e => {
+        const dStr = format(new Date(e.expense_date || e.created_at || e.date), 'yyyy-MM-dd');
+        return dStr === targetDateStr;
+      });
+      const totalExpenses = targetExpensesList.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      
+      const targetAllInflows = inflows.filter(i => {
+        const dStr = format(new Date(i.date), 'yyyy-MM-dd');
+        return dStr === targetDateStr;
+      });
+      
+      const paymentMethods = {
+        cash: targetAllInflows.filter(i => i.method === 'cash').reduce((sum, item) => sum + item.amount, 0),
+        pos: targetAllInflows.filter(i => i.method === 'pos').reduce((sum, item) => sum + item.amount, 0),
+        bank_transfer: targetAllInflows.filter(i => ['bank_transfer', 'transfer'].includes(i.method)).reduce((sum, item) => sum + item.amount, 0),
+        paystack: targetAllInflows.filter(i => i.method === 'paystack').reduce((sum, item) => sum + item.amount, 0),
+        ar_wallet: targetAllInflows.filter(i => ['ar_wallet', 'ar'].includes(i.method)).reduce((sum, item) => sum + item.amount, 0),
+        room_charge: targetAllInflows.filter(i => i.method === 'room_charge').reduce((sum, item) => sum + item.amount, 0),
+      };
+      
+      const posOutlets = {
+        bar: targetPOS.filter(i => i.description?.toLowerCase().includes('outlet: bar')).reduce((sum, item) => sum + item.amount, 0),
+        restaurant: targetPOS.filter(i => i.description?.toLowerCase().includes('outlet: restaurant')).reduce((sum, item) => sum + item.amount, 0),
+        kitchen: targetPOS.filter(i => i.description?.toLowerCase().includes('outlet: kitchen')).reduce((sum, item) => sum + item.amount, 0),
+      };
+      
+      const accountedPOS = posOutlets.bar + posOutlets.restaurant + posOutlets.kitchen;
+      const otherPOS = Math.max(0, posRevenue - accountedPOS);
+      if (otherPOS > 0) {
+        posOutlets.restaurant += otherPOS;
+      }
+      
+      // Fetch bookings joined with profiles and rooms details for that date
+      const { data: bookings } = await supabase
+        .from('bookings')
+        .select('*, profiles(first_name, last_name), rooms(room_number, name)');
+      const resolvedBookings = bookings || [];
+      
+      const arrivalsCount = resolvedBookings.filter(b => b.check_in_date === targetDateStr && ['checked_in', 'checked_out'].includes(b.status)).length;
+      const departuresCount = resolvedBookings.filter(b => b.check_out_date === targetDateStr && b.status === 'checked_out').length;
+      
+      // For historical in-house guests, we can look at bookings that were active on targetDateStr
+      const inHouseBookings = resolvedBookings.filter(b => {
+        if (b.status === 'cancelled' || b.status === 'pending') return false;
+        return b.check_in_date <= targetDateStr && b.check_out_date >= targetDateStr;
+      });
+      const inHouseCount = inHouseBookings.reduce((sum, b) => sum + Number(b.number_of_guests || 1), 0);
+      
+      const { data: rooms } = await supabase.from('rooms').select('id');
+      const totalRoomsCount = rooms?.length || 10;
+      const occupiedRoomsCount = inHouseBookings.length;
+      const occupancyPercentage = Math.round((occupiedRoomsCount / totalRoomsCount) * 100);
+      
+      const inHouseList = inHouseBookings.map(b => ({
+        room_number: b.rooms?.room_number || 'N/A',
+        room_name: b.rooms?.name || 'N/A',
+        guest_name: b.guest_name || (b.profiles ? `${b.profiles.first_name} ${b.profiles.last_name}` : 'Walk-in'),
+        check_in: b.check_in_date,
+        check_out: b.check_out_date,
+        paid: b.amount_paid_ngn || 0,
+        total: b.total_amount_ngn || 0
+      }));
+      
+      const compiledReport = {
+        id: 'closure_temp_' + targetDateStr.replace(/-/g, ''),
+        date: targetDateStr,
+        room_revenue: roomRevenue,
+        pos_revenue: posRevenue,
+        laundry_revenue: laundryRevenue,
+        total_revenue: roomRevenue + posRevenue + laundryRevenue,
+        total_expenses: totalExpenses,
+        net_cash_flow: (roomRevenue + posRevenue + laundryRevenue) - totalExpenses,
+        arrivals: arrivalsCount,
+        departures: departuresCount,
+        in_house_guests: inHouseCount,
+        occupancy_rate: occupancyPercentage,
+        payment_methods: paymentMethods,
+        pos_outlets: posOutlets,
+        in_house_list: inHouseList,
+        created_at: new Date().toISOString()
+      };
+      
+      setCloseOfDayData(compiledReport);
+      setShowCloseOfDayModal(true);
+      toast.success(`✓ Dynamic report sheet generated for ${targetDateStr}!`, { id: toastId });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate report: " + err.message, { id: toastId });
     }
   };
 
@@ -1849,7 +2046,7 @@ const AdminAccounting = () => {
     const toastId = toast.loading("Compiling Night Audit & Close of Day...");
     
     try {
-      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const todayStr = selectedAuditDate;
       
       const todayInflows = inflows.filter(i => {
         const dStr = format(new Date(i.date), 'yyyy-MM-dd');
@@ -1956,14 +2153,20 @@ const AdminAccounting = () => {
       const updatedClosures = [compiledReport, ...dailyClosures];
       setDailyClosures(updatedClosures);
       
+      const { error: dbErr } = await supabase.from('daily_closures').insert([compiledReport]);
+      if (dbErr) {
+        console.warn("Failed to insert daily closure in database, falling back to system_settings / localStorage:", dbErr.message);
+      }
+
+      // Always sync to system_settings and localStorage as fallback/backup
       try {
-        await supabase.from('daily_closures').insert([compiledReport]);
-      } catch (dbErr) {
         await supabase.from('system_settings').upsert({
           setting_key: 'daily_closure_reports',
           setting_value: updatedClosures
         }, { onConflict: 'setting_key' });
         localStorage.setItem('luxe_daily_closures', JSON.stringify(updatedClosures));
+      } catch (fallbackErr) {
+        console.error("Failed to save daily closures to fallbacks:", fallbackErr);
       }
       
       await supabase.from('system_logs').insert([{
@@ -3982,15 +4185,51 @@ const AdminAccounting = () => {
       {activeTab === 'close_of_day' && (
         <div className="space-y-6">
           {/* Header Row */}
-          <div>
-            <h2 className="text-xl font-bold text-white flex items-center gap-2"><Clock className="text-amber-400" /> Close of Day & Daily Night Audit</h2>
-            <p className="text-gray-400 text-xs mt-1">Review live reception occupancy, compiles daily departmental revenues, and seals logs before close of business.</p>
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-dark-700/30 pb-4">
+            <div>
+              <h2 className="text-xl font-bold text-white flex items-center gap-2"><Clock className="text-amber-400" /> Close of Day & Daily Night Audit</h2>
+              <p className="text-gray-400 text-xs mt-1">Review live reception occupancy, compiles daily departmental revenues, and seals logs before close of business.</p>
+            </div>
+            
+            {/* Target Audit Date Selector */}
+            <div className="flex flex-wrap items-center gap-3 bg-dark-900/60 border border-dark-700/60 rounded-2xl px-4 py-2.5 shadow-inner">
+              <div className="flex items-center gap-2">
+                <Calendar size={14} className="text-amber-400" />
+                <span className="text-xs text-gray-400 font-bold tracking-wider uppercase font-sans">Target Audit Date:</span>
+              </div>
+              <input
+                type="date"
+                value={selectedAuditDate}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val) setSelectedAuditDate(val);
+                }}
+                max={format(new Date(), 'yyyy-MM-dd')}
+                className="bg-dark-950/80 border border-dark-750 rounded-xl px-3 py-1.5 text-xs font-bold text-white font-sans focus:outline-none focus:border-amber-500 cursor-pointer"
+              />
+              <button
+                type="button"
+                onClick={() => generateReportForDate(selectedAuditDate)}
+                className="bg-amber-500/10 hover:bg-amber-500 hover:text-dark-900 border border-amber-500/20 text-amber-400 py-1.5 px-3 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5"
+              >
+                <FileText size={13} /> View Audit Sheet
+              </button>
+              {selectedAuditDate !== format(new Date(), 'yyyy-MM-dd') && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedAuditDate(format(new Date(), 'yyyy-MM-dd'))}
+                  className="text-xs text-amber-500 hover:text-amber-400 font-bold font-sans transition-colors active:scale-95"
+                >
+                  Reset to Today
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Departmental Close of Day Grid */}
           <div className="glass-panel p-6 rounded-2xl border border-dark-700/50 space-y-4">
             <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <Building size={16} className="text-brand-500" /> Departmental End-of-Day Closures Status
+              <Building size={16} className="text-brand-500" /> Departmental End-of-Day Closures Status ({selectedAuditDate})
             </h3>
             <p className="text-xs text-gray-400">Each operations department ledger must be independently verified and closed before the overall system-wide Night Audit.</p>
             
@@ -4001,9 +4240,9 @@ const AdminAccounting = () => {
                 { key: 'restaurant', label: 'Restaurant & Kitchen' },
                 { key: 'bar', label: 'Bar' }
               ].map(dept => {
-                const todayStr = format(new Date(), 'yyyy-MM-dd');
+                const todayStr = selectedAuditDate;
                 const closure = departmentalClosures.find(c => c.department === dept.key && c.business_date === todayStr);
-                const stats = getDepartmentStatsToday(dept.key);
+                const stats = getDepartmentStatsForDate(dept.key, todayStr);
                 
                 return (
                   <div key={dept.key} className={`p-4 rounded-xl border flex flex-col justify-between min-h-[160px] transition-all duration-300 ${
@@ -4022,7 +4261,7 @@ const AdminAccounting = () => {
                       </div>
                       
                       <div className="space-y-1 mt-3">
-                        <div className="text-[10px] text-gray-500">Live Today:</div>
+                        <div className="text-[10px] text-gray-500">Live Revenue:</div>
                         <div className="text-sm font-bold text-white font-mono">₦{stats.revenue.toLocaleString()}</div>
                         <div className="text-[10px] text-gray-400 font-mono">{stats.count} Transactions</div>
                       </div>
@@ -4033,7 +4272,7 @@ const AdminAccounting = () => {
                         <div className="flex flex-col gap-2">
                           <div className="text-[9px] text-gray-450 leading-relaxed">
                             <div className="font-semibold truncate">By: {closure.staff_name}</div>
-                            <div className="font-mono text-gray-500 mt-0.5">{format(new Date(closure.closed_at), 'HH:mm')}</div>
+                            <div className="font-mono text-gray-500 mt-0.5">{format(new Date(closure.closed_at), 'yyyy-MM-dd HH:mm')}</div>
                           </div>
                           <button
                             type="button"
@@ -4125,7 +4364,7 @@ const AdminAccounting = () => {
                 </div>
                 <div>
                   <h4 className="font-bold text-white">Daily Closure Engine</h4>
-                  <span className="text-[10px] text-gray-400 uppercase tracking-widest font-mono">Business Date: {format(new Date(), 'yyyy-MM-dd')}</span>
+                  <span className="text-[10px] text-gray-400 uppercase tracking-widest font-mono">Business Date: {selectedAuditDate}</span>
                 </div>
               </div>
 
@@ -4136,7 +4375,7 @@ const AdminAccounting = () => {
                 <div className="bg-dark-950/80 border border-dark-700/40 p-4 rounded-xl space-y-3 font-mono text-xs text-gray-400">
                   <div className="flex justify-between">
                     <span>Business Date:</span>
-                    <span className="text-white">{format(new Date(), 'MMM dd, yyyy')}</span>
+                    <span className="text-white">{format(new Date(selectedAuditDate + 'T00:00:00'), 'MMM dd, yyyy')}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Audit Time:</span>
@@ -4170,10 +4409,28 @@ const AdminAccounting = () => {
 
             {/* Audit History Log */}
             <div className="glass-panel p-6 rounded-2xl border border-dark-700/50 space-y-4 lg:col-span-2">
-              <h4 className="font-bold text-white border-b border-dark-700/40 pb-3 flex items-center justify-between">
-                <span>Closure Audit Timeline Log</span>
-                <span className="text-xs text-gray-500 normal-case font-normal">Past compiled reports</span>
-              </h4>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-dark-700/40 pb-3">
+                <h4 className="font-bold text-white flex items-center gap-2">
+                  <span>Closure Audit Timeline Log</span>
+                </h4>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400 font-bold font-sans">Filter Date:</span>
+                  <input
+                    type="date"
+                    value={timelineFilterDate}
+                    onChange={(e) => setTimelineFilterDate(e.target.value)}
+                    className="bg-dark-900/60 border border-dark-700/80 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500 font-sans cursor-pointer"
+                  />
+                  {timelineFilterDate && (
+                    <button
+                      onClick={() => setTimelineFilterDate('')}
+                      className="text-xs text-red-400 hover:text-red-300 font-bold font-sans transition-colors active:scale-95"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm whitespace-nowrap">
@@ -4189,9 +4446,12 @@ const AdminAccounting = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-dark-700/40 text-gray-300 font-mono text-xs">
-                    {dailyClosures.map((item, idx) => (
+                    {(timelineFilterDate
+                      ? dailyClosures.filter(item => item.date === timelineFilterDate)
+                      : dailyClosures
+                    ).map((item, idx) => (
                       <tr key={`closure-item-${idx}-${item.id}`} className="hover:bg-dark-700/10 transition-colors">
-                        <td className="py-3.5 font-bold text-white font-sans">{format(new Date(item.date), 'MMM dd, yyyy')}</td>
+                        <td className="py-3.5 font-bold text-white font-sans">{format(new Date(item.date + 'T00:00:00'), 'MMM dd, yyyy')}</td>
                         <td className="py-3.5 text-right font-black text-green-400">₦{Number(item.total_revenue).toLocaleString()}</td>
                         <td className="py-3.5 text-right text-gray-400">₦{Number(item.room_revenue).toLocaleString()}</td>
                         <td className="py-3.5 text-right text-gray-400">₦{Number(item.pos_revenue).toLocaleString()}</td>
@@ -4219,7 +4479,10 @@ const AdminAccounting = () => {
                         </td>
                       </tr>
                     ))}
-                    {dailyClosures.length === 0 && (
+                    {(timelineFilterDate
+                      ? dailyClosures.filter(item => item.date === timelineFilterDate)
+                      : dailyClosures
+                    ).length === 0 && (
                       <tr>
                         <td colSpan="7" className="py-12 text-center text-gray-500 font-sans">No daily closure reports found. Execute your first audit using the engine controls.</td>
                       </tr>
@@ -5446,9 +5709,9 @@ const AdminAccounting = () => {
       {/* Daily Close & Night Audit Modal Printable Sheet */}
       {showCloseOfDayModal && closeOfDayData && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto print:bg-white print:p-0">
-          <div className="bg-white border border-gray-200 w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col my-8 print:bg-white print:border-none print:shadow-none print:w-full print:m-0 print:rounded-none">
-            <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50 screen-only text-gray-900">
-              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+          <div className="bg-pure-white border border-pure-gray-200 w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col my-8 print:bg-white print:border-none print:shadow-none print:w-full print:m-0 print:rounded-none">
+            <div className="p-6 border-b border-pure-gray-200 flex justify-between items-center bg-pure-white screen-only text-pure-black">
+              <h2 className="text-lg font-bold text-pure-black flex items-center gap-2">
                 <Clock className="text-amber-600"/> Daily Night Audit Sheet
               </h2>
               <div className="flex items-center gap-3">
@@ -5459,14 +5722,14 @@ const AdminAccounting = () => {
                 >
                   <Printer size={14} /> Print Report
                 </button>
-                <button onClick={() => setShowCloseOfDayModal(false)} className="text-gray-400 hover:text-gray-900 transition-colors">
+                <button onClick={() => setShowCloseOfDayModal(false)} className="text-pure-gray-500 hover:text-pure-black transition-colors">
                   <X size={20} />
                 </button>
               </div>
             </div>
             
             {/* Printable Area Wrapper (Light-themed corporate audit sheet look) */}
-            <div id="close-of-day-print-area" className="p-8 bg-white text-pure-black font-sans space-y-6 min-h-[700px] overflow-y-auto max-h-[80vh] print-container print-a4 print:max-h-none print:shadow-none print:border-none print:w-full print:m-0 print:p-0">
+            <div id="close-of-day-print-area" className="p-8 bg-pure-white text-pure-black font-sans space-y-6 min-h-[700px] overflow-y-auto max-h-[80vh] print-container print-a4 print:max-h-none print:shadow-none print:border-none print:w-full print:m-0 print:p-0">
               {/* Report Header */}
               <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 text-left">
                 <div>
@@ -5618,19 +5881,19 @@ const AdminAccounting = () => {
                 <h3 className="text-xs font-black uppercase tracking-widest text-pure-black border-b border-gray-300 pb-1">4. Front Office & Reception Telemetry</h3>
                 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="border border-gray-200 p-3 rounded-lg text-center bg-gray-50">
+                  <div className="border border-pure-gray-200 p-3 rounded-lg text-center bg-pure-white">
                     <span className="text-[9px] uppercase tracking-wider text-pure-gray-400 block font-semibold">Today's Arrivals</span>
                     <strong className="text-lg text-pure-black block font-mono font-black mt-0.5">{closeOfDayData.arrivals}</strong>
                   </div>
-                  <div className="border border-gray-200 p-3 rounded-lg text-center bg-gray-50">
+                  <div className="border border-pure-gray-200 p-3 rounded-lg text-center bg-pure-white">
                     <span className="text-[9px] uppercase tracking-wider text-pure-gray-400 block font-semibold">Today's Departures</span>
                     <strong className="text-lg text-pure-black block font-mono font-black mt-0.5">{closeOfDayData.departures}</strong>
                   </div>
-                  <div className="border border-gray-200 p-3 rounded-lg text-center bg-gray-50">
+                  <div className="border border-pure-gray-200 p-3 rounded-lg text-center bg-pure-white">
                     <span className="text-[9px] uppercase tracking-wider text-pure-gray-400 block font-semibold">In-House Guests</span>
                     <strong className="text-lg text-pure-black block font-mono font-black mt-0.5">{closeOfDayData.in_house_guests}</strong>
                   </div>
-                  <div className="border border-gray-200 p-3 rounded-lg text-center bg-gray-50">
+                  <div className="border border-pure-gray-200 p-3 rounded-lg text-center bg-pure-white">
                     <span className="text-[9px] uppercase tracking-wider text-pure-gray-400 block font-semibold">Occupancy Rate</span>
                     <strong className="text-lg text-pure-black block font-mono font-black mt-0.5">{closeOfDayData.occupancy_rate}%</strong>
                   </div>
@@ -5706,7 +5969,7 @@ const AdminAccounting = () => {
               </div>
 
               {/* GAAP Notice and Audit Statements */}
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-[9px] text-pure-gray-500 space-y-1.5 leading-relaxed font-sans text-left">
+              <div className="bg-pure-white border border-pure-gray-200 rounded-xl p-4 text-[9px] text-pure-gray-500 space-y-1.5 leading-relaxed font-sans text-left">
                 <strong className="text-pure-black block font-bold uppercase tracking-wider text-[10px]">Internal Audit & GAAPs Compliance Review:</strong>
                 <p>
                   This night audit has compiled the ledger accounts and reception telemetry recorded up to the standard hotel end-of-day cut-off time. Total daily revenue captures all cash settlements, pos transactions, bank transfers, and prepaid wallet settlements.
@@ -5717,26 +5980,26 @@ const AdminAccounting = () => {
               </div>
 
               {/* Signatures */}
-              <div className="flex justify-between items-end pt-12 border-t border-dashed border-gray-300 text-left">
+              <div className="flex justify-between items-end pt-12 border-t border-dashed border-pure-gray-200 text-left">
                 <div className="text-center w-48">
-                  <div className="border-b border-gray-300 h-8"></div>
+                  <div className="border-b border-pure-gray-200 h-8"></div>
                   <span className="text-[9px] text-pure-gray-400 font-bold block mt-1.5 uppercase tracking-wider">Prepared By</span>
                 </div>
                 <div className="text-center w-48 relative">
                   <div className="absolute top-[-30px] left-1/2 -translate-x-1/2 text-green-700/10 font-bold border-4 border-green-700/10 rounded-xl px-4 py-1 rotate-[-12deg] text-xs select-none">
                     AUDIT COMPLETED
                   </div>
-                  <div className="border-b border-gray-300 h-8"></div>
+                  <div className="border-b border-pure-gray-200 h-8"></div>
                   <span className="text-[9px] text-pure-gray-400 font-bold block mt-1.5 uppercase tracking-wider">Audited By (Hotel Manager)</span>
                 </div>
               </div>
             </div>
 
-            <div className="p-6 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 screen-only">
+            <div className="p-6 border-t border-pure-gray-200 bg-pure-white flex justify-end gap-3 screen-only">
               <button 
                 type="button"
                 onClick={() => setShowCloseOfDayModal(false)}
-                className="bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 font-bold py-2.5 px-5 rounded-xl text-xs shadow-sm active:scale-95 transition-all"
+                className="bg-pure-white border border-pure-gray-200 hover:bg-gray-100 text-pure-black font-bold py-2.5 px-5 rounded-xl text-xs shadow-sm active:scale-95 transition-all"
               >
                 Close Audit Viewer
               </button>
@@ -6174,7 +6437,18 @@ const AdminAccounting = () => {
       {/* Comprehensive Bank Settlement Payroll Modal */}
       {showBankSettlementModal && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4 print:p-0 print:bg-white print:absolute print:inset-0">
-          <div className="bg-pure-white text-pure-black w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] border border-pure-gray-200 print-container print-a4 print:max-h-none print:shadow-none print:border-none print:w-full print:m-0">
+          <style dangerouslySetInnerHTML={{__html: `
+            @media print {
+              @page {
+                size: landscape !important;
+              }
+              .print-container.print-landscape {
+                width: 100% !important;
+                max-width: 297mm !important;
+              }
+            }
+          `}} />
+          <div className="bg-pure-white text-pure-black w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] border border-pure-gray-200 print-container print-landscape print:max-h-none print:shadow-none print:border-none print:w-full print:m-0">
             {/* Modal actions */}
             <div className="p-4 bg-gray-100 border-b border-gray-200 flex justify-between items-center select-none print:hidden">
               <span className="font-bold text-xs uppercase tracking-wider text-pure-gray-500 flex items-center gap-2">

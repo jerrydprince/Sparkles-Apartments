@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { supabase } from './supabase';
 
 /**
@@ -10,6 +10,12 @@ import { supabase } from './supabase';
  * @param {Function} callback - Callback function triggered on event, called with (table, payload)
  */
 export const useRealtimeSync = (tables, callback) => {
+  const callbackRef = useRef(callback);
+
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
+
   useEffect(() => {
     if (!tables || tables.length === 0) return;
 
@@ -23,8 +29,8 @@ export const useRealtimeSync = (tables, callback) => {
         { event: '*', schema: 'public', table: table },
         (payload) => {
           console.log(`[Realtime Sync] Change detected on table "${table}":`, payload);
-          if (callback) {
-            callback(table, payload);
+          if (callbackRef.current) {
+            callbackRef.current(table, payload);
           }
         }
       );
@@ -40,5 +46,6 @@ export const useRealtimeSync = (tables, callback) => {
       console.log(`[Realtime Sync] Unsubscribing from tables: ${tables.join(', ')}`);
       supabase.removeChannel(channel);
     };
-  }, [JSON.stringify(tables), callback]);
+  }, [JSON.stringify(tables)]);
 };
+

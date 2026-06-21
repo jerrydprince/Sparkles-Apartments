@@ -342,3 +342,78 @@ export const sendSMSNotification = async ({ to, message }) => {
     return { success: false, error: e.message };
   }
 };
+
+/**
+ * Welcome Email Dispatcher for New Guests
+ */
+export const sendWelcomeEmail = async ({ email, firstName, lastName, password = null }) => {
+  const loginUrl = `${window.location.origin}/login`;
+  const subject = password 
+    ? 'Your Sparkles Apartments Credentials & Account Details' 
+    : 'Welcome to Sparkles Apartments - Premium Luxury Shortlets';
+
+  const htmlContent = `
+    <div style="font-family: 'Outfit', sans-serif; padding: 40px; color: #1f2937; max-width: 600px; margin: auto; border: 1px solid #e5e7eb; border-top: 8px solid #DF6853; border-radius: 16px; background-color: #ffffff;">
+      <div style="text-align: center; border-bottom: 1px solid #f3f4f6; padding-bottom: 25px; margin-bottom: 25px;">
+        <h2 style="color: #000000; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: 0.05em;">SPARKLES APARTMENTS</h2>
+        <span style="font-size: 11px; color: #DF6853; text-transform: uppercase; letter-spacing: 0.15em; font-weight: bold;">Premium Luxury Shortlets</span>
+      </div>
+      
+      <div style="margin-bottom: 30px;">
+        <h3 style="color: #111827; font-size: 18px; font-weight: 700; margin-top: 0; margin-bottom: 15px; border-left: 4px solid #DF6853; padding-left: 10px;">Welcome to Sparkles Apartments!</h3>
+        <p style="font-size: 14px; line-height: 1.6; color: #4b5563; margin: 0;">
+          Dear <strong>${firstName} ${lastName}</strong>,
+        </p>
+        <p style="font-size: 14px; line-height: 1.6; color: #4b5563; margin-top: 10px;">
+          Thank you for registering with Sparkles Apartments. Your account has been successfully created. You can now log in to the Guest Portal to view and manage your bookings, request room upgrades, make laundry and dining orders, and view your prepayment wallet.
+        </p>
+      </div>
+
+      <div style="background-color: #f9fafb; border: 1px solid #f3f4f6; border-radius: 10px; padding: 20px; margin-bottom: 30px;">
+        <h4 style="color: #374151; font-size: 13px; font-weight: 700; margin-top: 0; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.05em;">Your Login Credentials</h4>
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px; color: #4b5563;">
+          <tr>
+            <td style="padding: 6px 0; font-weight: bold; width: 35%;">Guest Portal URL:</td>
+            <td style="padding: 6px 0; color: #111827;"><a href="${loginUrl}" style="color: #DF6853; font-weight: bold; text-decoration: none;">Click Here to Login</a></td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; font-weight: bold;">Email Address:</td>
+            <td style="padding: 6px 0; color: #111827; font-weight: bold;">${email}</td>
+          </tr>
+          \${password ? \`
+          <tr>
+            <td style="padding: 6px 0; font-weight: bold; color: #b45309;">Password:</td>
+            <td style="padding: 6px 0; color: #b45309; font-family: monospace; font-size: 14px; font-weight: bold;">\${password}</td>
+          </tr>
+          \` : \`
+          <tr>
+            <td style="padding: 6px 0; font-weight: bold;">Password:</td>
+            <td style="padding: 6px 0; color: #111827; font-style: italic;">The password you selected during registration</td>
+          </tr>
+          \`}
+        </table>
+        \${password ? \`
+        <div style="margin-top: 15px; font-size: 11px; color: #b45309; background-color: #fffbeb; padding: 10px; border: 1px solid #fef3c7; border-radius: 6px;">
+          ⚠️ For security reasons, please log in and change your password immediately in the settings tab.
+        </div>
+        \` : ''}
+      </div>
+
+      <div style="text-align: center; margin-top: 30px;">
+        <a href="${loginUrl}" style="background-color: #DF6853; color: white; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px; display: inline-block;">Access Guest Portal</a>
+      </div>
+
+      <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #f3f4f6; text-align: center; font-size: 12px; color: #9ca3af;">
+        <p style="margin: 0 0 5px 0;">This is an official automated onboarding notification from Sparkles Apartments.</p>
+        <p style="margin: 0;">Plot 572 Iduwa Ogenyi Street Mabushi, Off Ahmadu Bello Way, Abuja</p>
+      </div>
+    </div>
+  `;
+
+  return await sendResendEmail({
+    to: email,
+    subject: subject,
+    html: htmlContent,
+    from: 'welcome@sparklesapartments.ng'
+  });
+};

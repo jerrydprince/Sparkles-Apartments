@@ -31,8 +31,22 @@ const AdminSettings = () => {
   const [showBranchModal, setShowBranchModal] = useState(false);
   const [editingBranch, setEditingBranch] = useState({ name: '', city: '', country: '', location: '', contact_email: '', contact_phone: '', manager_id: '' });
 
+  const [hue, setHue] = useState(() => {
+    return parseInt(localStorage.getItem('theme_hue') || '24', 10);
+  });
+
+  const handleHueChange = (newHue) => {
+    setHue(newHue);
+    setSettings(prev => ({ ...prev, theme_hue: newHue.toString() }));
+    document.documentElement.style.setProperty('--brand-400', `hsl(${newHue}, 80%, 65%)`);
+    document.documentElement.style.setProperty('--brand-500', `hsl(${newHue}, 70%, 50%)`);
+    document.documentElement.style.setProperty('--brand-600', `hsl(${newHue}, 70%, 40%)`);
+    localStorage.setItem('theme_hue', newHue.toString());
+  };
+
   const [settings, setSettings] = useState({
     system_theme: 'theme-slate-dark',
+    theme_hue: '24',
     contact_logo: '',
     timezone: 'Africa/Lagos',
     language: 'English',
@@ -152,6 +166,17 @@ const AdminSettings = () => {
       }
       
       const activeSettings = { ...settings, ...sysMap };
+      
+      if (sysMap.theme_hue) {
+        const parsedHue = parseInt(sysMap.theme_hue, 10);
+        setHue(parsedHue);
+        localStorage.setItem('theme_hue', sysMap.theme_hue);
+        if (sysMap.system_theme === 'theme-custom') {
+          document.documentElement.style.setProperty('--brand-400', `hsl(${parsedHue}, 80%, 65%)`);
+          document.documentElement.style.setProperty('--brand-500', `hsl(${parsedHue}, 70%, 50%)`);
+          document.documentElement.style.setProperty('--brand-600', `hsl(${parsedHue}, 70%, 40%)`);
+        }
+      }
       
       if (sysMap.custom_apis) {
         try {
@@ -343,6 +368,17 @@ const AdminSettings = () => {
         const isSlateDark = settings.system_theme === 'theme-slate-dark';
         document.documentElement.className = isSlateDark ? `dark ${settings.system_theme}` : settings.system_theme;
         localStorage.setItem('system_theme', settings.system_theme);
+        
+        if (settings.system_theme === 'theme-custom') {
+          const currentHue = settings.theme_hue || localStorage.getItem('theme_hue') || '24';
+          document.documentElement.style.setProperty('--brand-400', `hsl(${currentHue}, 80%, 65%)`);
+          document.documentElement.style.setProperty('--brand-500', `hsl(${currentHue}, 70%, 50%)`);
+          document.documentElement.style.setProperty('--brand-600', `hsl(${currentHue}, 70%, 40%)`);
+        } else {
+          document.documentElement.style.removeProperty('--brand-400');
+          document.documentElement.style.removeProperty('--brand-500');
+          document.documentElement.style.removeProperty('--brand-600');
+        }
       }
       
       if (settings.contact_logo) {
@@ -734,7 +770,8 @@ const AdminSettings = () => {
                             { name: 'Sunset Orange', value: 'theme-sunset-orange', color: 'bg-orange-500' },
                             { name: 'Rose Burgundy', value: 'theme-rose-burgundy', color: 'bg-rose-600' },
                             { name: 'Midnight Purple', value: 'theme-midnight-purple', color: 'bg-purple-600' },
-                            { name: 'Ocean Teal', value: 'theme-ocean-teal', color: 'bg-teal-500' }
+                            { name: 'Ocean Teal', value: 'theme-ocean-teal', color: 'bg-teal-500' },
+                            { name: 'Custom Slider', value: 'theme-custom', color: 'bg-gradient-to-r from-red-500 via-green-500 to-blue-500' }
                           ].map((themeOpt) => {
                             const isSelected = settings.system_theme === themeOpt.value || (!settings.system_theme && themeOpt.value === 'theme-slate-dark');
                             return (
@@ -746,6 +783,17 @@ const AdminSettings = () => {
                                   const isSlateDark = themeOpt.value === 'theme-slate-dark';
                                   document.documentElement.className = isSlateDark ? `dark ${themeOpt.value}` : themeOpt.value;
                                   localStorage.setItem('system_theme', themeOpt.value);
+                                  
+                                  if (themeOpt.value === 'theme-custom') {
+                                    document.documentElement.style.setProperty('--brand-400', `hsl(${hue}, 80%, 65%)`);
+                                    document.documentElement.style.setProperty('--brand-500', `hsl(${hue}, 70%, 50%)`);
+                                    document.documentElement.style.setProperty('--brand-600', `hsl(${hue}, 70%, 40%)`);
+                                  } else {
+                                    document.documentElement.style.removeProperty('--brand-400');
+                                    document.documentElement.style.removeProperty('--brand-500');
+                                    document.documentElement.style.removeProperty('--brand-600');
+                                  }
+                                  
                                   toast.success(`Theme switched to ${themeOpt.name}!`);
                                 }}
                                 className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all ${
@@ -760,6 +808,29 @@ const AdminSettings = () => {
                             );
                           })}
                         </div>
+
+                        {settings.system_theme === 'theme-custom' && (
+                          <div className="mt-4 bg-dark-900/60 p-4 border border-dark-750 rounded-xl space-y-2 animate-in slide-in-from-top-3 duration-200">
+                            <div className="flex justify-between items-center text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
+                              <span>Custom Theme Hue</span>
+                              <span className="text-brand-450 font-mono font-black">{hue}°</span>
+                            </div>
+                            <input 
+                              type="range" 
+                              min="0" 
+                              max="360" 
+                              value={hue} 
+                              onChange={e => handleHueChange(parseInt(e.target.value, 10))} 
+                              className="w-full h-2 bg-dark-850 rounded-lg appearance-none cursor-pointer accent-brand-500" 
+                            />
+                            <div className="flex justify-between text-[9px] text-gray-550 font-bold">
+                              <span>0° (Red)</span>
+                              <span>120° (Green)</span>
+                              <span>240° (Blue)</span>
+                              <span>360° (Red)</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 

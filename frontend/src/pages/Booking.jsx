@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { DateRange } from 'react-date-range';
 import { format, addDays, differenceInDays, startOfDay } from 'date-fns';
 import { Calendar, Users, Coffee, Car, Wind, CheckCircle, Tag, ShieldCheck, Plus, Minus, Clock, FileText, Package, Printer } from 'lucide-react';
@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import { usePaystackPayment } from 'react-paystack';
 import { useNavigate } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
-import { triggerAutomationRules } from '../lib/emailService';
+import { triggerAutomationRules, sendWelcomeEmail } from '../lib/emailService';
 import { useAuth } from '../context/AuthContext';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
@@ -109,8 +109,20 @@ const BookingEngine = () => {
   const [bookingForSomeoneElse, setBookingForSomeoneElse] = useState(false);
   const [arAccount, setArAccount] = useState(null);
 
+  // Hall Booking states
+  const [bookingMode, setBookingMode] = useState('room'); // 'room' or 'hall'
+  const [hallsList, setHallsList] = useState([]);
+  const [hallMealOptions, setHallMealOptions] = useState([]);
+  const [availableHalls, setAvailableHalls] = useState([]);
+  const [selectedHall, setSelectedHall] = useState(null);
+  const [selectedHallMeals, setSelectedHallMeals] = useState([]); // array of meal option ids
+  const [hallBookingType, setHallBookingType] = useState('daily');
+  const [hallStartTime, setHallStartTime] = useState('08:00');
+  const [hallEndTime, setHallEndTime] = useState('18:00');
+  const [hallParticipants, setHallParticipants] = useState(10);
+
   const [guestForm, setGuestForm] = useState({
-    firstName: '', lastName: '', email: '', phone: '', specialRequests: '', purpose: 'Leisure'
+    firstName: '', lastName: '', email: '', phone: '', specialRequests: '', purpose: 'Leisure', organizationName: ''
   });
 
   useEffect(() => {
@@ -229,13 +241,17 @@ const BookingEngine = () => {
   // Fetch Services, Plans, Coupons, and System purpose configurations on mount
   useEffect(() => {
     const fetchStaticData = async () => {
-      const [servicesRes, plansRes, couponsRes, cmsRes, settingsRes] = await Promise.all([
+      const [servicesRes, plansRes, couponsRes, cmsRes, settingsRes, hallsRes, hallMealsRes] = await Promise.all([
         supabase.from('services').select('*').eq('is_active', true),
         supabase.from('rate_plans').select('*').eq('is_active', true),
         supabase.from('coupons').select('*').eq('is_active', true),
         supabase.from('cms_pages').select('content').eq('slug', 'system_categories').maybeSingle(),
-        supabase.from('system_settings').select('setting_key, setting_value').in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo', 'payment_rule', 'deposit_percentage', 'cancellation_policy', 'auto_confirmation', 'paystack_public'])
+        supabase.from('system_settings').select('setting_key, setting_value').in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo', 'payment_rule', 'deposit_percentage', 'cancellation_policy', 'auto_confirmation', 'paystack_public']),
+        supabase.from('halls').select('*').eq('is_active', true),
+        supabase.from('hall_meal_options').select('*').eq('is_active', true)
       ]);
+      if (hallsRes.data) setHallsList(hallsRes.data);
+      if (hallMealsRes.data) setHallMealOptions(hallMealsRes.data);
       if (servicesRes.data) {
         const standard = servicesRes.data.filter(s => 
           s.category !== 'Food & Beverage' && s.name?.toLowerCase() !== 'breakfast' &&
@@ -435,6 +451,36 @@ const BookingEngine = () => {
   };
 
   const calculateTotal = () => {
+    if (bookingMode === 'hall') {
+      if (!selectedHall) return 0;
+      let days = 1;
+      let hours = 10;
+
+      if (hallBookingType === 'daily') {
+        days = Math.max(1, differenceInDays(dateRange[0].endDate, dateRange[0].startDate)) || 1;
+      } else {
+        const [sh, sm] = hallStartTime.split(':').map(Number);
+        const [eh, em] = hallEndTime.split(':').map(Number);
+        hours = Math.max(1, (eh + em/60) - (sh + sm/60));
+      }
+
+      const hallPrice = hallBookingType === 'daily' 
+        ? Number(selectedHall.base_price_ngn) * days 
+        : Number(selectedHall.hourly_price_ngn) * hours;
+
+      let mealsPrice = 0;
+      selectedHallMeals.forEach(mealId => {
+        const option = hallMealOptions.find(o => o.id === mealId);
+        if (option) {
+          mealsPrice += Number(option.price_per_participant_ngn) * Number(hallParticipants) * days;
+        }
+      });
+
+      const subtotal = hallPrice + mealsPrice;
+      const vat = subtotal * 0.075;
+      return subtotal + vat;
+    }
+
     let roomPrice = 0;
     if (selectedRoom) {
       roomPrice = calculateRoomPriceDetails(selectedRoom).totalRoomPrice;
@@ -514,11 +560,14 @@ const BookingEngine = () => {
 
   const payOnlineAmount = React.useMemo(() => {
     const total = calculateTotal();
+    if (bookingMode === 'hall') {
+      return total;
+    }
     if (bookingRules.payment_rule === 'partial_deposit') {
       return parseFloat((total * (bookingRules.deposit_percentage / 100)).toFixed(2));
     }
     return total;
-  }, [calculateTotal(), bookingRules.payment_rule, bookingRules.deposit_percentage]);
+  }, [calculateTotal(), bookingMode, bookingRules.payment_rule, bookingRules.deposit_percentage]);
 
   const [bookingRef, setBookingRef] = useState(null);
   const [shouldTriggerPaystack, setShouldTriggerPaystack] = useState(false);
@@ -598,7 +647,11 @@ const BookingEngine = () => {
   };
 
   const onSuccess = (reference) => {
-    handleBookingPaymentSuccess(reference);
+    if (bookingMode === 'hall') {
+      handleHallBookingPaymentSuccess(reference);
+    } else {
+      handleBookingPaymentSuccess(reference);
+    }
   };
 
   const onClose = () => {
@@ -629,7 +682,7 @@ const BookingEngine = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const paystackRef = params.get('reference') || params.get('trxref');
-    if (paystackRef && paystackRef.startsWith('WEB-')) {
+    if (paystackRef && (paystackRef.startsWith('WEB-') || paystackRef.startsWith('HALL-'))) {
       handleRedirectCallback(paystackRef);
     }
   }, []);
@@ -818,6 +871,18 @@ const BookingEngine = () => {
           if (signUpData?.user) {
             resolvedGuestId = signUpData.user.id;
             setAutoCreatedPassword(generatedPass);
+            
+            // Trigger welcome email with details
+            try {
+              await sendWelcomeEmail({
+                email: guestForm.email.toLowerCase(),
+                firstName: guestForm.firstName,
+                lastName: guestForm.lastName,
+                password: generatedPass
+              });
+            } catch (emailErr) {
+              console.warn("Failed to send welcome email:", emailErr);
+            }
             
             // Confirm their email automatically
             try {
@@ -1334,7 +1399,391 @@ const BookingEngine = () => {
     );
   };
 
-  const renderStepIndicator = () => (
+  const bookingSummary = useMemo(() => {
+    if (bookingMode !== 'hall' || !selectedHall) {
+      return { hallPrice: 0, mealsPrice: 0, subtotal: 0, tax: 0, total: 0, days: 1, hours: 10 };
+    }
+
+    let days = 1;
+    let hours = 10;
+
+    if (hallBookingType === 'daily') {
+      days = Math.max(1, differenceInDays(dateRange[0].endDate, dateRange[0].startDate)) || 1;
+    } else {
+      const [sh, sm] = hallStartTime.split(':').map(Number);
+      const [eh, em] = hallEndTime.split(':').map(Number);
+      hours = Math.max(1, (eh + em/60) - (sh + sm/60));
+    }
+
+    const hallPrice = hallBookingType === 'daily' 
+      ? Number(selectedHall.base_price_ngn) * days 
+      : Number(selectedHall.hourly_price_ngn) * hours;
+
+    let mealsPrice = 0;
+    selectedHallMeals.forEach(mealId => {
+      const option = hallMealOptions.find(o => o.id === mealId);
+      if (option) {
+        mealsPrice += Number(option.price_per_participant_ngn) * Number(hallParticipants) * days;
+      }
+    });
+
+    const subtotal = hallPrice + mealsPrice;
+    const tax = subtotal * 0.075;
+    const total = subtotal + tax;
+
+    return { hallPrice, mealsPrice, subtotal, tax, total, days, hours };
+  }, [bookingMode, selectedHall, dateRange, hallBookingType, hallStartTime, hallEndTime, selectedHallMeals, hallMealOptions, hallParticipants]);
+
+  const fetchAvailableHalls = async () => {
+    setLoading(true);
+    try {
+      const checkInDateStr = format(dateRange[0].startDate, 'yyyy-MM-dd');
+      const checkOutDateStr = hallBookingType === 'daily' 
+        ? format(dateRange[0].endDate, 'yyyy-MM-dd') 
+        : checkInDateStr;
+
+      const [hallsRes, bookedRes] = await Promise.all([
+        supabase.from('halls').select('*').eq('is_active', true),
+        supabase.from('hall_bookings').select('hall_id, start_time, end_time').eq('status', 'confirmed')
+      ]);
+
+      if (hallsRes.error) throw hallsRes.error;
+      if (bookedRes.error) throw bookedRes.error;
+
+      const allHalls = hallsRes.data || [];
+      const bookedList = bookedRes.data || [];
+
+      const newStart = new Date(`${checkInDateStr}T${hallBookingType === 'daily' ? '00:00' : hallStartTime}:00`);
+      const newEnd = new Date(`${checkOutDateStr}T${hallBookingType === 'daily' ? '23:59' : hallEndTime}:00`);
+
+      const available = allHalls.filter(hall => {
+        if (hall.capacity < hallParticipants) return false;
+        
+        const conflicts = bookedList.filter(b => b.hall_id === hall.id);
+        const hasOverlap = conflicts.some(c => {
+          const cStart = new Date(c.start_time);
+          const cEnd = new Date(c.end_time);
+          return newStart < cEnd && newEnd > cStart;
+        });
+
+        return !hasOverlap;
+      });
+
+      setAvailableHalls(available);
+      setStep(2);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to check halls availability");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleHallBookingPaymentSuccess = async (reference) => {
+    setIsProcessing(true);
+    setBookingErrorMsg(null);
+    const toastId = toast.loading('Finalizing your payment...');
+    try {
+      const pRef = pendingBookingRef.current || bookingRef;
+      if (!pRef) {
+        toast.dismiss(toastId);
+        setBookingErrorMsg("Booking reference was lost. Please contact support.");
+        return;
+      }
+
+      const { data: hallBooking, error: bookingError } = await supabase
+        .from('hall_bookings')
+        .update({
+          payment_status: 'paid',
+          amount_paid_ngn: payOnlineAmount,
+          status: 'confirmed'
+        })
+        .eq('booking_reference', pRef)
+        .select()
+        .single();
+
+      if (bookingError) throw bookingError;
+
+      const transRef = typeof reference === 'string' ? reference : (reference?.reference || reference?.transaction || 'UNKNOWN');
+      const { error: paymentError } = await supabase.from('payments').insert([{
+        hall_booking_id: hallBooking.id,
+        amount: payOnlineAmount,
+        method: 'paystack',
+        transaction_ref: transRef,
+        status: 'completed',
+        notes: `Online Hall Booking Payment for Ref: ${pRef}`
+      }]);
+      if (paymentError) console.error("Payment insert error:", paymentError);
+
+      const { error: invoiceError } = await supabase
+        .from('invoices')
+        .update({
+          amount_paid: payOnlineAmount,
+          status: 'paid'
+        })
+        .eq('hall_booking_id', hallBooking.id);
+      if (invoiceError) console.error("Invoice sync error:", invoiceError);
+
+      // Create Detailed Scheduled Kitchen Catering Items (for each selected meal & each day)
+      if (selectedHallMeals.length > 0 && hallBooking) {
+        const mealFeeds = [];
+        const days = bookingSummary.days;
+        
+        for (let i = 0; i < days; i++) {
+          const servingDate = format(addDays(dateRange[0].startDate, i), 'yyyy-MM-dd');
+          
+          selectedHallMeals.forEach(mealId => {
+            const option = hallMealOptions.find(o => o.id === mealId);
+            if (option) {
+              mealFeeds.push({
+                hall_booking_id: hallBooking.id,
+                meal_option_id: option.id,
+                course_type: option.course_type,
+                serving_date: servingDate,
+                price_per_participant_ngn: option.price_per_participant_ngn,
+                number_of_participants: Number(hallParticipants),
+                total_price_ngn: option.price_per_participant_ngn * Number(hallParticipants),
+                status: 'pending'
+              });
+            }
+          });
+        }
+
+        const { error: feedErr } = await supabase.from('hall_booking_meals').insert(mealFeeds);
+        if (feedErr) console.error("Catering schedules setup error:", feedErr);
+      }
+
+      toast.success(`Booking Confirmed! Ref: ${pRef}`, { id: toastId });
+      navigate(`/payment-success?type=hall_booking&ref=${pRef}&amount=${payOnlineAmount}`);
+    } catch (error) {
+      console.error('Hall Booking update error:', error);
+      const msg = `Payment succeeded but finalizing had an issue: ${error?.message || JSON.stringify(error)}`;
+      setBookingErrorMsg(msg);
+      toast.error(msg, { id: toastId, duration: 10000 });
+      navigate(`/payment-success?type=hall_booking&ref=${pendingBookingRef.current || 'UNKNOWN'}&amount=${payOnlineAmount}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleHallCheckout = async (e) => {
+    e.preventDefault();
+    if (!guestForm.firstName || !guestForm.lastName || !guestForm.email || !guestForm.phone) {
+      return toast.error('Please fill in all required guest details.');
+    }
+
+    if (paymentMethod === 'pay_online' && !import.meta.env.VITE_PAYSTACK_PUBLIC_KEY && !paystackPublicKey) {
+      return toast.error('Payment gateway is not configured.');
+    }
+
+    setIsProcessing(true);
+    const toastId = toast.loading('Initializing hall booking...');
+
+    try {
+      const checkInDateStr = format(dateRange[0].startDate, 'yyyy-MM-dd');
+      const checkOutDateStr = hallBookingType === 'daily' 
+        ? format(dateRange[0].endDate, 'yyyy-MM-dd') 
+        : checkInDateStr;
+
+      const newStart = new Date(`${checkInDateStr}T${hallBookingType === 'daily' ? '00:00' : hallStartTime}:00`);
+      const newEnd = new Date(`${checkOutDateStr}T${hallBookingType === 'daily' ? '23:59' : hallEndTime}:00`);
+
+      const { data: conflicts, error: confErr } = await supabase
+        .from('hall_bookings')
+        .select('id, start_time, end_time')
+        .eq('hall_id', selectedHall.id)
+        .eq('status', 'confirmed');
+
+      if (confErr) throw confErr;
+
+      const hasOverlap = conflicts.some(c => {
+        const cStart = new Date(c.start_time);
+        const cEnd = new Date(c.end_time);
+        return newStart < cEnd && newEnd > cStart;
+      });
+
+      if (hasOverlap) {
+        toast.dismiss(toastId);
+        setIsProcessing(false);
+        return toast.error("Sorry, this hall has just been booked for those dates. Please go back and select another hall.");
+      }
+
+      let resolvedGuestId = null;
+      let generatedPass = null;
+
+      try {
+        const { data: existingProf } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('email', guestForm.email.toLowerCase())
+          .maybeSingle();
+
+        if (existingProf) {
+          resolvedGuestId = existingProf.id;
+        } else {
+          const lastNameClean = (guestForm?.lastName || '').replace(/\s+/g, '') || 'Guest';
+          generatedPass = `Luxe${lastNameClean}${Math.floor(100 + Math.random() * 900)}!`;
+          const { data: signUpData } = await secondarySupabase.auth.signUp({
+            email: guestForm.email.toLowerCase(),
+            password: generatedPass,
+            options: {
+              data: {
+                first_name: guestForm.firstName,
+                last_name: guestForm.lastName,
+                phone: guestForm.phone,
+                role: 'guest'
+              }
+            }
+          });
+          if (signUpData?.user) {
+            resolvedGuestId = signUpData.user.id;
+            setAutoCreatedPassword(generatedPass);
+            try {
+              await sendWelcomeEmail({
+                email: guestForm.email.toLowerCase(),
+                firstName: guestForm.firstName,
+                lastName: guestForm.lastName,
+                password: generatedPass
+              });
+            } catch (e) {}
+            try {
+              await supabase.rpc('admin_confirm_user_email', { target_user_id: resolvedGuestId });
+            } catch (e) {}
+          }
+        }
+      } catch (e) {}
+
+      let crmGuestId = null;
+      try {
+        const { data: existingCRM } = await supabase
+          .from('crm_guests')
+          .select('id')
+          .eq('email', guestForm.email.toLowerCase())
+          .maybeSingle();
+        if (existingCRM) {
+          crmGuestId = existingCRM.id;
+          if (resolvedGuestId) {
+            await supabase.from('crm_guests').update({ profile_id: resolvedGuestId }).eq('id', crmGuestId);
+          }
+        } else {
+          const { data: newCRM } = await supabase
+            .from('crm_guests')
+            .insert([{
+              first_name: guestForm.firstName,
+              last_name: guestForm.lastName,
+              email: guestForm.email.toLowerCase(),
+              phone: guestForm.phone,
+              profile_id: resolvedGuestId,
+              nationality: 'Nigeria',
+              segment: 'standard',
+              vip_status: false,
+              loyalty_points: 10,
+              wallet_balance: 0
+            }])
+            .select().single();
+          if (newCRM) crmGuestId = newCRM.id;
+        }
+      } catch (e) {}
+
+      const ref = `HALL-WEB-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Date.now().toString().slice(-4)}`;
+      const totalAmount = calculateTotal();
+      
+      const bookingPayload = {
+        booking_reference: ref,
+        guest_id: resolvedGuestId,
+        guest_name: `${guestForm.firstName} ${guestForm.lastName}`,
+        guest_email: guestForm.email,
+        guest_phone: guestForm.phone,
+        organization_name: guestForm.organizationName || null,
+        hall_id: selectedHall.id,
+        booking_date: checkInDateStr,
+        booking_type: hallBookingType,
+        start_time: newStart.toISOString(),
+        end_time: newEnd.toISOString(),
+        num_days: bookingSummary.days,
+        num_hours: hallBookingType === 'hourly' ? bookingSummary.hours : null,
+        number_of_participants: Number(hallParticipants),
+        status: 'confirmed',
+        booking_source: 'online',
+        total_hall_price_ngn: bookingSummary.hallPrice,
+        total_meals_price_ngn: bookingSummary.mealsPrice,
+        total_amount_ngn: totalAmount,
+        amount_paid_ngn: 0,
+        payment_status: 'unpaid',
+        special_requests: guestForm.specialRequests || null
+      };
+
+      const { data: newBooking, error: bookingError } = await supabase
+        .from('hall_bookings')
+        .insert([bookingPayload])
+        .select()
+        .single();
+
+      if (bookingError) throw bookingError;
+
+      pendingBookingRef.current = ref;
+      setBookingRef(ref);
+
+      toast.dismiss(toastId);
+
+      if (paymentMethod === 'pay_online') {
+        setShouldTriggerPaystack(true);
+      } else {
+        if (selectedHallMeals.length > 0) {
+          const mealFeeds = [];
+          for (let i = 0; i < bookingSummary.days; i++) {
+            const servingDate = format(addDays(dateRange[0].startDate, i), 'yyyy-MM-dd');
+            selectedHallMeals.forEach(mealId => {
+              const option = hallMealOptions.find(o => o.id === mealId);
+              if (option) {
+                mealFeeds.push({
+                  hall_booking_id: newBooking.id,
+                  meal_option_id: option.id,
+                  course_type: option.course_type,
+                  serving_date: servingDate,
+                  price_per_participant_ngn: option.price_per_participant_ngn,
+                  number_of_participants: Number(hallParticipants),
+                  total_price_ngn: option.price_per_participant_ngn * Number(hallParticipants),
+                  status: 'pending'
+                });
+              }
+            });
+          }
+          await supabase.from('hall_booking_meals').insert(mealFeeds);
+        }
+
+        toast.success(`Booking Confirmed! Ref: ${ref}`);
+        navigate(`/payment-success?type=hall_booking&ref=${ref}&amount=0${generatedPass ? `&password=${generatedPass}` : ''}`);
+      }
+
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to initialize booking: " + err.message, { id: toastId });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const renderStepIndicator = () => {
+    const labels = bookingMode === 'hall'
+      ? ['Search Hall', 'Choose Hall', 'Meals & Catering', 'Details & Pay']
+      : ['Search Room', 'Choose Room', 'Guest Details', 'Services & Pay'];
+    return (
+      <div className="flex justify-between mb-12 relative">
+        <div className="absolute top-1/2 left-0 w-full h-0.5 bg-dark-700 -z-10 -translate-y-1/2"></div>
+        {labels.map((label, idx) => (
+          <div key={idx} className="flex flex-col items-center">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 transition-colors ${step > idx + 1 ? 'bg-gold-500 text-dark-900' : step === idx + 1 ? 'bg-dark-900 border-2 border-gold-500 text-gold-500' : 'bg-dark-800 text-gray-500 border border-dark-700'}`}>
+              {step > idx + 1 ? <CheckCircle size={20} /> : idx + 1}
+            </div>
+            <span className={`text-sm ${step === idx + 1 ? 'text-gold-500 font-medium' : 'text-gray-500'}`}>{label}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderStepIndicatorOriginalPlaceholder = () => (
     <div className="flex justify-between mb-12 relative">
       <div className="absolute top-1/2 left-0 w-full h-0.5 bg-dark-700 -z-10 -translate-y-1/2"></div>
       {['Search Room', 'Choose Room', 'Guest Details', 'Additional Services'].map((label, idx) => (
@@ -1372,7 +1821,29 @@ const BookingEngine = () => {
               {/* STEP 1: Search */}
               {step === 1 && (
                 <div className="bg-dark-800 p-8 border border-dark-700 shadow-2xl animate-in fade-in slide-in-from-bottom-4">
-                  <h3 className="text-2xl font-medium mb-8 flex items-center"><Calendar className="mr-3 text-gold-500" /> Select Dates & Guests</h3>
+                  {/* Booking Mode Selector */}
+                  <div className="flex bg-dark-900/60 p-1.5 rounded-2xl border border-dark-700/60 mb-8 shadow-inner">
+                    <button 
+                      type="button"
+                      onClick={() => setBookingMode('room')}
+                      className={`flex-1 py-3 text-center text-xs font-bold rounded-xl transition-all ${bookingMode === 'room' ? 'bg-gradient-to-tr from-gold-600 to-amber-500 text-dark-950 font-black shadow-md' : 'text-gray-400 hover:text-white'}`}
+                    >
+                      Luxury Apartments & Suites
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setBookingMode('hall')}
+                      className={`flex-1 py-3 text-center text-xs font-bold rounded-xl transition-all ${bookingMode === 'hall' ? 'bg-gradient-to-tr from-gold-600 to-amber-500 text-dark-950 font-black shadow-md' : 'text-gray-400 hover:text-white'}`}
+                    >
+                      Event Halls & Catering
+                    </button>
+                  </div>
+
+                  <h3 className="text-2xl font-medium mb-8 flex items-center">
+                    <Calendar className="mr-3 text-gold-500" /> 
+                    {bookingMode === 'hall' ? 'Select Event Date & Details' : 'Select Dates & Guests'}
+                  </h3>
+
                   <div className="mb-8 overflow-x-auto">
                     <DateRange
                       editableDateInputs={true}
@@ -1384,217 +1855,369 @@ const BookingEngine = () => {
                       className="bg-dark-900 border border-dark-700 p-4 rounded-lg w-full"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-6 mb-8">
-                    <div>
-                      <label className="block text-sm text-gray-400 mb-2">Adults</label>
-                      <select value={guests.adults} onChange={(e) => setGuests({...guests, adults: parseInt(e.target.value)})} className="w-full bg-dark-900 border border-dark-700 text-white p-3">
-                        {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
-                      </select>
+
+                  {bookingMode === 'room' ? (
+                    <div className="grid grid-cols-2 gap-6 mb-8">
+                      <div>
+                        <label className="block text-sm text-gray-400 mb-2">Adults</label>
+                        <select value={guests.adults} onChange={(e) => setGuests({...guests, adults: parseInt(e.target.value)})} className="w-full bg-dark-900 border border-dark-700 text-white p-3">
+                          {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm text-gray-400 mb-2">Children</label>
+                        <select value={guests.children} onChange={(e) => setGuests({...guests, children: parseInt(e.target.value)})} className="w-full bg-dark-900 border border-dark-700 text-white p-3">
+                          {[0,1,2,3,4].map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm text-gray-400 mb-2">Children</label>
-                      <select value={guests.children} onChange={(e) => setGuests({...guests, children: parseInt(e.target.value)})} className="w-full bg-dark-900 border border-dark-700 text-white p-3">
-                        {[0,1,2,3,4].map(n => <option key={n} value={n}>{n}</option>)}
-                      </select>
+                  ) : (
+                    <div className="space-y-4 mb-8">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-sm text-gray-400 mb-2">Rental Pricing Scheme</label>
+                          <select 
+                            value={hallBookingType} 
+                            onChange={(e) => setHallBookingType(e.target.value)} 
+                            className="w-full bg-dark-900 border border-dark-700 text-white p-3.5 cursor-pointer outline-none focus:border-gold-500"
+                          >
+                            <option value="daily">Daily Rental</option>
+                            <option value="hourly">Hourly Rental</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-400 mb-2">Expected Participants (Pax)</label>
+                          <input 
+                            type="number" 
+                            min="1"
+                            value={hallParticipants} 
+                            onChange={(e) => setHallParticipants(Math.max(1, parseInt(e.target.value) || 1))} 
+                            className="w-full bg-dark-900 border border-dark-700 text-white p-3 outline-none focus:border-gold-500"
+                          />
+                        </div>
+                      </div>
+
+                      {hallBookingType === 'hourly' && (
+                        <div className="grid grid-cols-2 gap-6 pt-2">
+                          <div>
+                            <label className="block text-xs text-gray-400 mb-1">Start Time</label>
+                            <input 
+                              type="time" 
+                              value={hallStartTime} 
+                              onChange={(e) => setHallStartTime(e.target.value)} 
+                              className="w-full bg-dark-900 border border-dark-700 text-white p-3.5 outline-none focus:border-gold-500 cursor-pointer"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-400 mb-1">End Time</label>
+                            <input 
+                              type="time" 
+                              value={hallEndTime} 
+                              onChange={(e) => setHallEndTime(e.target.value)} 
+                              className="w-full bg-dark-900 border border-dark-700 text-white p-3.5 outline-none focus:border-gold-500 cursor-pointer"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                  <button onClick={fetchAvailableRooms} disabled={loading} className="btn-primary w-full py-4 text-lg">
+                  )}
+
+                  <button 
+                    onClick={bookingMode === 'hall' ? fetchAvailableHalls : fetchAvailableRooms} 
+                    disabled={loading} 
+                    className="btn-primary w-full py-4 text-lg"
+                  >
                     {loading ? 'Searching...' : 'Check Availability'}
                   </button>
                 </div>
               )}
 
-              {/* STEP 2: Select Room */}
+              {/* STEP 2: Select Room or Hall */}
               {step === 2 && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                  <h3 className="text-2xl font-medium mb-6">Available Suites for Your Dates</h3>
-                  {availableRooms.length === 0 ? (
-                    <div className="bg-dark-800 border border-dark-700 p-8 text-center text-gray-400">
-                      No rooms available for the selected dates and capacity. Please adjust your search.
-                    </div>
-                  ) : (
-                    availableRooms.map(room => (
-                      <div key={room.id} className={`bg-dark-800 border transition-all duration-300 flex flex-col md:flex-row ${selectedRoom?.id === room.id ? 'border-gold-500 shadow-lg shadow-gold-500/10' : 'border-dark-700 hover:border-gray-500'}`}>
-                        <img src={room.image_url} alt={room.name} className="w-full md:w-1/3 h-48 md:h-auto object-cover" />
-                        <div className="p-6 flex-1 flex flex-col justify-between">
-                          <div>
-                            <div className="flex justify-between items-start mb-2">
-                              <h4 className="text-xl font-medium text-white">{room.name}</h4>
-                              <span className="text-brand-500 font-bold text-lg">₦{(calculateRoomPriceDetails(room).totalRoomPrice / totalNights).toLocaleString()}<span className="text-sm font-normal text-gray-400">/avg night</span></span>
-                            </div>
-                            <div className="flex space-x-4 text-sm text-gray-400 mb-4">
-                              <span className="flex items-center"><Users size={16} className="mr-1"/> Up to {room.capacity}</span>
-                              <span>{room.size_sqm} sqm</span>
-                            </div>
-                            <div className="flex flex-wrap gap-2 mb-4">
-                              {room.amenities.map((am, i) => (
-                                <span key={i} className="text-xs border border-dark-700 px-2 py-1 rounded bg-dark-900 text-gray-300">{am}</span>
-                              ))}
+                  {bookingMode === 'room' ? (
+                    <>
+                      <h3 className="text-2xl font-medium mb-6">Available Suites for Your Dates</h3>
+                      {availableRooms.length === 0 ? (
+                        <div className="bg-dark-800 border border-dark-700 p-8 text-center text-gray-400">
+                          No rooms available for the selected dates and capacity. Please adjust your search.
+                        </div>
+                      ) : (
+                        availableRooms.map(room => (
+                          <div key={room.id} className={`bg-dark-800 border transition-all duration-300 flex flex-col md:flex-row ${selectedRoom?.id === room.id ? 'border-gold-500 shadow-lg shadow-gold-500/10' : 'border-dark-700 hover:border-gray-500'}`}>
+                            <img src={room.image_url} alt={room.name} className="w-full md:w-1/3 h-48 md:h-auto object-cover" />
+                            <div className="p-6 flex-1 flex flex-col justify-between">
+                              <div>
+                                <div className="flex justify-between items-start mb-2">
+                                  <h4 className="text-xl font-medium text-white">{room.name}</h4>
+                                  <span className="text-brand-500 font-bold text-lg">₦{(calculateRoomPriceDetails(room).totalRoomPrice / totalNights).toLocaleString()}<span className="text-sm font-normal text-gray-400">/avg night</span></span>
+                                </div>
+                                <div className="flex space-x-4 text-sm text-gray-400 mb-4">
+                                  <span className="flex items-center"><Users size={16} className="mr-1"/> Up to {room.capacity}</span>
+                                  <span>{room.size_sqm} sqm</span>
+                                </div>
+                                <div className="flex flex-wrap gap-2 mb-4">
+                                  {room.amenities.map((am, i) => (
+                                    <span key={i} className="text-xs border border-dark-700 px-2 py-1 rounded bg-dark-900 text-gray-300">{am}</span>
+                                  ))}
+                                </div>
+                              </div>
+                              {room.isBooked ? (
+                                <button disabled className="w-full py-3 font-medium transition-colors bg-dark-700 text-gray-500 border border-dark-600 cursor-not-allowed">
+                                  {!room.isClean ? 'Awaiting Housekeeping Inspection' : 'Unavailable for Selected Dates'}
+                                </button>
+                              ) : (
+                                <button onClick={() => { setSelectedRoom(room); setStep(3); }} className={`w-full py-3 font-medium transition-colors ${selectedRoom?.id === room.id ? 'bg-gold-500 text-dark-900' : 'border border-gold-500 text-gold-500 hover:bg-gold-500 hover:text-dark-900'}`}>
+                                  {selectedRoom?.id === room.id ? 'Selected' : 'Select Room'}
+                                </button>
+                              )}
                             </div>
                           </div>
-                          {room.isBooked ? (
-                            <button disabled className="w-full py-3 font-medium transition-colors bg-dark-700 text-gray-500 border border-dark-600 cursor-not-allowed">
-                              {!room.isClean ? 'Awaiting Housekeeping Inspection' : 'Unavailable for Selected Dates'}
-                            </button>
-                          ) : (
-                            <button onClick={() => { setSelectedRoom(room); setStep(3); }} className={`w-full py-3 font-medium transition-colors ${selectedRoom?.id === room.id ? 'bg-gold-500 text-dark-900' : 'border border-gold-500 text-gold-500 hover:bg-gold-500 hover:text-dark-900'}`}>
-                              {selectedRoom?.id === room.id ? 'Selected' : 'Select Room'}
-                            </button>
-                          )}
+                        ))
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="text-2xl font-medium mb-6">Available Event Halls for Your Dates</h3>
+                      {availableHalls.length === 0 ? (
+                        <div className="bg-dark-800 border border-dark-700 p-8 text-center text-gray-400">
+                          No event halls available for the selected dates, time, and participant capacity.
                         </div>
-                      </div>
-                    ))
+                      ) : (
+                        availableHalls.map(hall => (
+                          <div key={hall.id} className={`bg-dark-800 border transition-all duration-300 flex flex-col md:flex-row ${selectedHall?.id === hall.id ? 'border-gold-500 shadow-lg shadow-gold-500/10' : 'border-dark-700 hover:border-gray-500'}`}>
+                            <div className="p-6 flex-1 flex flex-col justify-between">
+                              <div>
+                                <div className="flex justify-between items-start mb-2">
+                                  <h4 className="text-xl font-bold text-white">{hall.name}</h4>
+                                  <span className="text-gold-500 font-extrabold text-lg">
+                                    {hallBookingType === 'daily' 
+                                      ? `₦${Number(hall.base_price_ngn).toLocaleString()}/day`
+                                      : `₦${Number(hall.hourly_price_ngn).toLocaleString()}/hour`
+                                    }
+                                  </span>
+                                </div>
+                                <p className="text-gray-400 text-sm mt-1 mb-4 leading-relaxed">{hall.description || 'Spacious event hall for all occasions.'}</p>
+                                <div className="flex space-x-6 text-sm text-gray-400 mb-4">
+                                  <span className="flex items-center"><Users size={16} className="mr-1.5 text-gold-500"/> Capacity: Up to {hall.capacity} guests</span>
+                                  <span>Size: {hall.size_sqm} sqm</span>
+                                </div>
+                                <div className="flex flex-wrap gap-2 mb-4">
+                                  {hall.amenities?.map((am, i) => (
+                                    <span key={i} className="text-xs border border-dark-700 px-2 py-1 rounded bg-dark-900 text-gray-300 font-medium">{am}</span>
+                                  ))}
+                                </div>
+                              </div>
+                              <button onClick={() => { setSelectedHall(hall); setStep(3); }} className={`w-full py-3 font-semibold transition-all ${selectedHall?.id === hall.id ? 'bg-gold-500 text-dark-900' : 'border border-gold-500 text-gold-500 hover:bg-gold-500 hover:text-dark-900'}`}>
+                                {selectedHall?.id === hall.id ? 'Selected' : 'Select Hall'}
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </>
                   )}
-                  <button onClick={() => setStep(1)} className="text-gray-400 hover:text-white text-sm mt-4">← Back to Search</button>
+                  <button onClick={() => setStep(1)} className="text-gray-400 hover:text-white text-sm mt-4 block">← Back to Search</button>
                 </div>
               )}
 
-              {/* STEP 3: Guest Details */}
+              {/* STEP 3: Guest Details or Catering Packages */}
               {step === 3 && (
                 <div className="bg-dark-800 p-8 border border-dark-700 animate-in fade-in slide-in-from-bottom-4">
-                  <h3 className="text-2xl font-medium mb-6">Guest Details</h3>
-                  
-                  {/* Rate Plans Selection added to Step 3 */}
-                  <div className="mb-10 pb-10 border-b border-dark-700">
-                    <h4 className="text-lg font-medium mb-4 text-gray-300">Select a Rate Plan</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {ratePlans.map(plan => (
-                        <div key={plan.id} onClick={() => setSelectedRatePlan(plan)} className={`p-4 border cursor-pointer transition-colors relative ${selectedRatePlan?.id === plan.id ? 'border-gold-500 bg-gold-500/5' : 'border-dark-700 hover:border-gray-500'}`}>
-                          {selectedRatePlan?.id === plan.id && <div className="absolute top-4 right-4 text-gold-500"><CheckCircle size={20}/></div>}
-                          <h4 className="font-bold text-white mb-1 flex items-center gap-2">
-                            {plan.type === 'non_refundable' ? <Tag size={16} className="text-red-400"/> : <ShieldCheck size={16} className="text-green-400"/>}
-                            {plan.name}
-                          </h4>
-                          <p className="text-xs text-brand-400 font-medium mt-2">{plan.cancellation_policy}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {user && (
-                    <div className="mb-6 p-4 bg-dark-900/60 border border-dark-700 rounded-xl flex items-center gap-3">
-                      <input 
-                        type="checkbox" 
-                        id="bookForSomeoneElse" 
-                        checked={bookingForSomeoneElse} 
-                        onChange={e => {
-                          setBookingForSomeoneElse(e.target.checked);
-                          if (!e.target.checked) {
-                            setGuestForm(prev => ({
-                              ...prev,
-                              firstName: user.first_name || '',
-                              lastName: user.last_name || '',
-                              email: user.email || '',
-                              phone: user.phone || ''
-                            }));
-                          } else {
-                            setGuestForm(prev => ({
-                              ...prev,
-                              firstName: '',
-                              lastName: '',
-                              email: '',
-                              phone: ''
-                            }));
-                          }
-                        }}
-                        className="w-5 h-5 accent-gold-500 rounded cursor-pointer"
-                      />
-                      <label htmlFor="bookForSomeoneElse" className="text-sm font-bold text-gray-300 cursor-pointer">
-                        I am booking for someone else
-                      </label>
-                    </div>
-                  )}
-
-                  <form className="space-y-6">
-                    {user && !bookingForSomeoneElse ? (
-                      <div className="bg-dark-900/40 p-6 rounded-2xl border border-dark-700 space-y-4 mb-6 text-left">
-                        <h4 className="text-xs font-bold text-gold-500 uppercase tracking-widest">Booking Guest Profile</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="block text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-0.5">Name</span>
-                            <span className="font-bold text-white text-base">{user.first_name} {user.last_name}</span>
-                          </div>
-                          <div>
-                            <span className="block text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-0.5">Role / Access</span>
-                            <span className="font-bold text-gold-500 text-base capitalize">{user.role?.replace(/_/g, ' ') || 'Guest'}</span>
-                          </div>
-                          <div>
-                            <span className="block text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-0.5">Email Address</span>
-                            <span className="font-mono text-white text-base">{user.email}</span>
-                          </div>
-                          <div>
-                            <span className="block text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-0.5">Phone Number</span>
-                            <span className="font-mono text-white text-base">{user.phone || 'Not Provided'}</span>
-                          </div>
+                  {bookingMode === 'room' ? (
+                    <>
+                      <h3 className="text-2xl font-medium mb-6">Guest Details</h3>
+                      
+                      {/* Rate Plans Selection added to Step 3 */}
+                      <div className="mb-10 pb-10 border-b border-dark-700">
+                        <h4 className="text-lg font-medium mb-4 text-gray-300">Select a Rate Plan</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {ratePlans.map(plan => (
+                            <div key={plan.id} onClick={() => setSelectedRatePlan(plan)} className={`p-4 border cursor-pointer transition-colors relative ${selectedRatePlan?.id === plan.id ? 'border-gold-500 bg-gold-500/5' : 'border-dark-700 hover:border-gray-500'}`}>
+                              {selectedRatePlan?.id === plan.id && <div className="absolute top-4 right-4 text-gold-500"><CheckCircle size={20}/></div>}
+                              <h4 className="font-bold text-white mb-1 flex items-center gap-2">
+                                {plan.type === 'non_refundable' ? <Tag size={16} className="text-red-400"/> : <ShieldCheck size={16} className="text-green-400"/>}
+                                {plan.name}
+                              </h4>
+                              <p className="text-xs text-brand-400 font-medium mt-2">{plan.cancellation_policy}</p>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    ) : (
-                      <>
-                        <div className="grid grid-cols-2 gap-6">
-                          <div>
-                            <label className="block text-sm text-gray-400 mb-2">First Name *</label>
-                            <input type="text" value={guestForm.firstName} onChange={e => setGuestForm({...guestForm, firstName: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none" required/>
-                          </div>
-                          <div>
-                            <label className="block text-sm text-gray-400 mb-2">Last Name *</label>
-                            <input type="text" value={guestForm.lastName} onChange={e => setGuestForm({...guestForm, lastName: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none" required/>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm text-gray-400 mb-2">Email Address *</label>
-                          <input type="email" value={guestForm.email} onChange={e => setGuestForm({...guestForm, email: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none" required/>
-                        </div>
-                        <div>
-                          <label className="block text-sm text-gray-400 mb-2">Phone Number *</label>
-                          <input type="tel" value={guestForm.phone} onChange={e => setGuestForm({...guestForm, phone: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none" required/>
-                        </div>
-                      </>
-                    )}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm text-gray-400 mb-2">Special Requests (Optional)</label>
-                        <textarea rows="3" value={guestForm.specialRequests} onChange={e => setGuestForm({...guestForm, specialRequests: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none"></textarea>
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-400 mb-2">Purpose of Stay *</label>
-                        <select value={guestForm.purpose || 'Leisure'} onChange={e => setGuestForm({...guestForm, purpose: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3.5 focus:border-gold-500 outline-none cursor-pointer">
-                          {Object.keys(purposeAdjustments).map(purpose => {
-                            const valObj = purposeAdjustments[purpose];
-                            let label = purpose;
-                            if (valObj && typeof valObj === 'object') {
-                              if (valObj.type === 'percentage') {
-                                const sign = valObj.value >= 0 ? '+' : '';
-                                label = `${purpose} (${sign}${valObj.value}%)`;
+
+                      {user && (
+                        <div className="mb-6 p-4 bg-dark-900/60 border border-dark-700 rounded-xl flex items-center gap-3">
+                          <input 
+                            type="checkbox" 
+                            id="bookForSomeoneElse" 
+                            checked={bookingForSomeoneElse} 
+                            onChange={e => {
+                              setBookingForSomeoneElse(e.target.checked);
+                              if (!e.target.checked) {
+                                setGuestForm(prev => ({
+                                  ...prev,
+                                  firstName: user.first_name || '',
+                                  lastName: user.last_name || '',
+                                  email: user.email || '',
+                                  phone: user.phone || ''
+                                }));
                               } else {
-                                const sign = valObj.value >= 0 ? '+' : '-';
-                                label = `${purpose} (${sign}₦${Math.abs(valObj.value).toLocaleString()})`;
+                                setGuestForm(prev => ({
+                                  ...prev,
+                                  firstName: '',
+                                  lastName: '',
+                                  email: '',
+                                  phone: ''
+                                }));
                               }
-                            } else if (valObj !== undefined) {
-                              const sign = valObj >= 0 ? '+' : '';
-                              label = `${purpose} (${sign}${valObj}%)`;
-                            }
-                            return (
-                              <option key={purpose} value={purpose}>
-                                {label}
-                              </option>
-                            );
-                          })}
-                        </select>
-                        <p className="text-xs text-gray-400 mt-2">
-                          💡 Note: Purpose of stay dynamically recalculates room pricing details.
-                        </p>
+                            }}
+                            className="w-5 h-5 accent-gold-500 rounded cursor-pointer"
+                          />
+                          <label htmlFor="bookForSomeoneElse" className="text-sm font-bold text-gray-300 cursor-pointer">
+                            I am booking for someone else
+                          </label>
+                        </div>
+                      )}
+
+                      <form className="space-y-6">
+                        {user && !bookingForSomeoneElse ? (
+                          <div className="bg-dark-900/40 p-6 rounded-2xl border border-dark-700 space-y-4 mb-6 text-left">
+                            <h4 className="text-xs font-bold text-gold-500 uppercase tracking-widest">Booking Guest Profile</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <span className="block text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-0.5">Name</span>
+                                <span className="font-bold text-white text-base">{user.first_name} {user.last_name}</span>
+                              </div>
+                              <div>
+                                <span className="block text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-0.5">Role / Access</span>
+                                <span className="font-bold text-gold-500 text-base capitalize">{user.role?.replace(/_/g, ' ') || 'Guest'}</span>
+                              </div>
+                              <div>
+                                <span className="block text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-0.5">Email Address</span>
+                                <span className="font-mono text-white text-base">{user.email}</span>
+                              </div>
+                              <div>
+                                <span className="block text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-0.5">Phone Number</span>
+                                <span className="font-mono text-white text-base">{user.phone || 'Not Provided'}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="grid grid-cols-2 gap-6">
+                              <div>
+                                <label className="block text-sm text-gray-400 mb-2">First Name *</label>
+                                <input type="text" value={guestForm.firstName} onChange={e => setGuestForm({...guestForm, firstName: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none" required/>
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-400 mb-2">Last Name *</label>
+                                <input type="text" value={guestForm.lastName} onChange={e => setGuestForm({...guestForm, lastName: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none" required/>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-400 mb-2">Email Address *</label>
+                              <input type="email" value={guestForm.email} onChange={e => setGuestForm({...guestForm, email: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none" required/>
+                            </div>
+                            <div>
+                              <label className="block text-sm text-gray-400 mb-2">Phone Number *</label>
+                              <input type="tel" value={guestForm.phone} onChange={e => setGuestForm({...guestForm, phone: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none" required/>
+                            </div>
+                          </>
+                        )}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div>
+                            <label className="block text-sm text-gray-400 mb-2">Special Requests (Optional)</label>
+                            <textarea rows="3" value={guestForm.specialRequests} onChange={e => setGuestForm({...guestForm, specialRequests: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none"></textarea>
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-400 mb-2">Purpose of Stay *</label>
+                            <select value={guestForm.purpose || 'Leisure'} onChange={e => setGuestForm({...guestForm, purpose: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3.5 focus:border-gold-500 outline-none cursor-pointer">
+                              {Object.keys(purposeAdjustments).map(purpose => {
+                                const valObj = purposeAdjustments[purpose];
+                                let label = purpose;
+                                if (valObj && typeof valObj === 'object') {
+                                  if (valObj.type === 'percentage') {
+                                    const sign = valObj.value >= 0 ? '+' : '';
+                                    label = `${purpose} (${sign}${valObj.value}%)`;
+                                  } else {
+                                    const sign = valObj.value >= 0 ? '+' : '-';
+                                    label = `${purpose} (${sign}₦${Math.abs(valObj.value).toLocaleString()})`;
+                                  }
+                                } else if (valObj !== undefined) {
+                                  const sign = valObj >= 0 ? '+' : '';
+                                  label = `${purpose} (${sign}${valObj}%)`;
+                                }
+                                return (
+                                  <option key={purpose} value={purpose}>
+                                    {label}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                            <p className="text-xs text-gray-400 mt-2">
+                              💡 Note: Purpose of stay dynamically recalculates room pricing details.
+                            </p>
+                          </div>
+                        </div>
+                      </form>
+                      <div className="flex justify-between items-center mt-8 pt-6 border-t border-dark-700">
+                        <button onClick={() => setStep(2)} className="text-gray-400 hover:text-white">← Back to Rooms</button>
+                        <button onClick={() => {
+                          if (!guestForm.firstName || !guestForm.lastName || !guestForm.email || !guestForm.phone) {
+                            return toast.error("Please fill all required guest fields before continuing.");
+                          }
+                          setStep(4);
+                        }} className="btn-primary px-8 py-3">Continue to Services</button>
                       </div>
-                    </div>
-                  </form>
-                  <div className="flex justify-between items-center mt-8 pt-6 border-t border-dark-700">
-                    <button onClick={() => setStep(2)} className="text-gray-400 hover:text-white">← Back to Rooms</button>
-                    <button onClick={() => {
-                      if (!guestForm.firstName || !guestForm.lastName || !guestForm.email || !guestForm.phone) {
-                        return toast.error("Please fill all required guest fields before continuing.");
-                      }
-                      setStep(4);
-                    }} className="btn-primary px-8 py-3">Continue to Services</button>
-                  </div>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="text-2xl font-medium mb-2">Meals & Catering Packages</h3>
+                      <p className="text-gray-400 mb-8">Select separate culinary combinations to be served daily for the event participants.</p>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {hallMealOptions.map(option => {
+                          const isSelected = selectedHallMeals.includes(option.id);
+                          return (
+                            <div 
+                              key={option.id} 
+                              onClick={() => {
+                                if (isSelected) {
+                                  setSelectedHallMeals(selectedHallMeals.filter(id => id !== option.id));
+                                } else {
+                                  setSelectedHallMeals([...selectedHallMeals, option.id]);
+                                }
+                              }} 
+                              className={`p-6 border rounded-xl cursor-pointer transition-all ${isSelected ? 'border-gold-500 bg-gold-500/5' : 'border-dark-700 bg-dark-900/40 hover:border-gray-500'}`}
+                            >
+                              <div className="flex justify-between items-start mb-2">
+                                <div>
+                                  <h4 className="font-bold text-white text-lg">{option.name}</h4>
+                                  <p className="text-xs text-gold-500 uppercase tracking-wider font-semibold mt-0.5">{option.course_type}</p>
+                                </div>
+                                <div className={`w-6 h-6 border rounded-full flex items-center justify-center ${isSelected ? 'bg-gold-500 border-gold-500 text-dark-900' : 'border-dark-600 bg-dark-900'}`}>
+                                  {isSelected && <CheckCircle size={14}/>}
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5 my-3">
+                                {option.combination_items?.map((item, idx) => (
+                                  <span key={idx} className="text-xs bg-dark-900 border border-dark-700 px-2 py-0.5 rounded text-gray-300">{item}</span>
+                                ))}
+                              </div>
+                              <div className="font-bold text-base text-white">
+                                ₦{Number(option.price_per_participant_ngn).toLocaleString()} <span className="text-xs text-gray-400 font-normal">per participant / day</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex justify-between items-center mt-8 pt-6 border-t border-dark-700">
+                        <button onClick={() => setStep(2)} className="text-gray-400 hover:text-white">← Back to Halls</button>
+                        <button onClick={() => setStep(4)} className="btn-primary px-8 py-3">Continue to Details</button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1609,233 +2232,339 @@ const BookingEngine = () => {
                     </div>
                   )}
 
-                  <div className="bg-dark-800 p-8 border border-dark-700">
-                    <h3 className="text-2xl font-medium mb-2">Enhance Your Stay</h3>
-                    <p className="text-gray-400 mb-8">Select optional services to make your stay unforgettable.</p>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {services.map(service => {
-                        const isSelected = selectedServices.some(s => s.service_id === service.id);
-                        const sData = selectedServices.find(s => s.service_id === service.id);
-                        
-                        return (
-                          <div key={service.id} className={`p-6 border rounded-xl transition-all cursor-pointer ${isSelected ? 'border-gold-500 bg-gold-500/5' : 'border-dark-700 bg-dark-800 hover:border-gray-500'}`} onClick={(e) => {
-                            if(e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'svg' && e.target.tagName !== 'path') {
-                              toggleService(service);
-                            }
-                          }}>
-                            <div className="flex justify-between items-start mb-4">
-                              <div className="flex items-center gap-3">
-                                <div className={`w-10 h-10 border rounded-lg flex items-center justify-center ${isSelected ? 'bg-gold-500 text-dark-900 border-gold-500' : 'bg-dark-900 border-dark-700 text-brand-500'}`}>
-                                  {iconMap[service.icon_name] || <Package size={20}/>}
-                                </div>
-                                <div>
-                                  <h4 className="font-bold text-white text-lg">{service.name}</h4>
-                                  <p className="text-xs text-brand-400 uppercase tracking-wide">{service.pricing_type ? service.pricing_type.replace(/_/g, ' ') : 'Per Request'}</p>
-                                </div>
+                  {bookingMode === 'hall' && (
+                    <div className="bg-dark-800 p-8 border border-dark-700">
+                      <h3 className="text-2xl font-medium mb-6">Guest & Organization Details</h3>
+                      
+                      {user && (
+                        <div className="mb-6 p-4 bg-dark-900/60 border border-dark-700 rounded-xl flex items-center gap-3">
+                          <input 
+                            type="checkbox" 
+                            id="bookForSomeoneElse" 
+                            checked={bookingForSomeoneElse} 
+                            onChange={e => {
+                              setBookingForSomeoneElse(e.target.checked);
+                              if (!e.target.checked) {
+                                setGuestForm(prev => ({
+                                  ...prev,
+                                  firstName: user.first_name || '',
+                                  lastName: user.last_name || '',
+                                  email: user.email || '',
+                                  phone: user.phone || ''
+                                }));
+                              } else {
+                                setGuestForm(prev => ({
+                                  ...prev,
+                                  firstName: '',
+                                  lastName: '',
+                                  email: '',
+                                  phone: '',
+                                  organizationName: ''
+                                }));
+                              }
+                            }}
+                            className="w-5 h-5 accent-gold-500 rounded cursor-pointer"
+                          />
+                          <label htmlFor="bookForSomeoneElse" className="text-sm font-bold text-gray-300 cursor-pointer">
+                            I am booking for an organization / someone else
+                          </label>
+                        </div>
+                      )}
+
+                      <form className="space-y-6">
+                        {user && !bookingForSomeoneElse ? (
+                          <div className="bg-dark-900/40 p-6 rounded-2xl border border-dark-700 space-y-4 mb-6 text-left">
+                            <h4 className="text-xs font-bold text-gold-500 uppercase tracking-widest">Booking Guest Profile</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <span className="block text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-0.5">Name</span>
+                                <span className="font-bold text-white text-base">{user.first_name} {user.last_name}</span>
                               </div>
-                              <div className={`w-6 h-6 border rounded-full flex items-center justify-center ${isSelected ? 'bg-gold-500 border-gold-500 text-dark-900' : 'border-dark-600 bg-dark-900'}`}>
-                                {isSelected && <CheckCircle size={14}/>}
+                              <div>
+                                <span className="block text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-0.5">Role / Access</span>
+                                <span className="font-bold text-gold-500 text-base capitalize">{user.role?.replace(/_/g, ' ') || 'Guest'}</span>
+                              </div>
+                              <div>
+                                <span className="block text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-0.5">Email Address</span>
+                                <span className="font-mono text-white text-base">{user.email}</span>
+                              </div>
+                              <div>
+                                <span className="block text-gray-500 text-[10px] uppercase font-bold tracking-widest mb-0.5">Phone Number</span>
+                                <span className="font-mono text-white text-base">{user.phone || 'Not Provided'}</span>
                               </div>
                             </div>
-                            <p className="text-sm text-gray-400 mb-4 line-clamp-2">{service.description}</p>
-                            <div className="font-bold text-lg text-white mb-4">₦{Number(service.base_price_ngn).toLocaleString()}</div>
-
-                            {isSelected && (
-                              <div className="space-y-3 pt-4 border-t border-dark-700" onClick={e => e.stopPropagation()}>
-                                {service.quantity_selector && (
-                                  <div className="flex items-center justify-between bg-dark-900 p-3 rounded-lg border border-dark-700">
-                                    <span className="text-sm text-gray-400">Quantity</span>
-                                    <div className="flex items-center gap-4">
-                                      <button type="button" onClick={() => updateServiceProp(service.id, 'quantity', Math.max(1, sData.quantity - 1))} className="p-1 hover:text-brand-500 transition-colors"><Minus size={16}/></button>
-                                      <span className="font-medium w-4 text-center">{sData.quantity}</span>
-                                      <button type="button" onClick={() => updateServiceProp(service.id, 'quantity', sData.quantity + 1)} className="p-1 hover:text-brand-500 transition-colors"><Plus size={16}/></button>
-                                    </div>
-                                  </div>
-                                )}
-                                {service.scheduling_required && (
-                                  <div className="grid grid-cols-2 gap-3">
-                                    <div className="flex flex-col">
-                                      <label className="text-xs text-gray-500 mb-1">Date</label>
-                                      <input type="date" value={sData.date} min={format(dateRange[0].startDate, 'yyyy-MM-dd')} max={format(dateRange[0].endDate, 'yyyy-MM-dd')} onChange={(e) => updateServiceProp(service.id, 'date', e.target.value)} className="bg-dark-900 border border-dark-700 rounded p-2 text-sm text-white focus:border-brand-500 outline-none" />
-                                    </div>
-                                    <div className="flex flex-col">
-                                      <label className="text-xs text-gray-500 mb-1">Time</label>
-                                      <input type="time" value={sData.time} onChange={(e) => updateServiceProp(service.id, 'time', e.target.value)} className="bg-dark-900 border border-dark-700 rounded p-2 text-sm text-white focus:border-brand-500 outline-none" />
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
                           </div>
-                        )
-                      })}
-
-                      {/* Meals & Drinks Group Card */}
-                      <div className={`p-6 border rounded-xl transition-all md:col-span-2 ${isMealsDrinksOpen ? 'border-gold-500 bg-gold-500/5' : 'border-dark-700 bg-dark-800 hover:border-gray-500'}`}>
-                        <div className="flex justify-between items-start mb-4 cursor-pointer" onClick={() => setIsMealsDrinksOpen(!isMealsDrinksOpen)}>
-                          <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 border rounded-lg flex items-center justify-center ${isMealsDrinksOpen ? 'bg-gold-500 text-dark-900 border-gold-500' : 'bg-dark-900 border-dark-700 text-brand-500'}`}>
-                              <Coffee size={20} />
+                        ) : (
+                          <>
+                            <div className="grid grid-cols-2 gap-6">
+                              <div>
+                                <label className="block text-sm text-gray-400 mb-2">First Name *</label>
+                                <input type="text" value={guestForm.firstName} onChange={e => setGuestForm({...guestForm, firstName: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none" required/>
+                              </div>
+                              <div>
+                                <label className="block text-sm text-gray-400 mb-2">Last Name *</label>
+                                <input type="text" value={guestForm.lastName} onChange={e => setGuestForm({...guestForm, lastName: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none" required/>
+                              </div>
                             </div>
                             <div>
-                              <h4 className="font-bold text-white text-lg">Meals & Drinks</h4>
-                              <p className="text-xs text-brand-400 uppercase tracking-wide">Select meals, dessert, or drinks</p>
+                              <label className="block text-sm text-gray-400 mb-2">Email Address *</label>
+                              <input type="email" value={guestForm.email} onChange={e => setGuestForm({...guestForm, email: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none" required/>
                             </div>
+                            <div>
+                              <label className="block text-sm text-gray-400 mb-2">Phone Number *</label>
+                              <input type="tel" value={guestForm.phone} onChange={e => setGuestForm({...guestForm, phone: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none" required/>
+                            </div>
+                          </>
+                        )}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div>
+                            <label className="block text-sm text-gray-400 mb-2">Organization / Company Name (Optional)</label>
+                            <input type="text" value={guestForm.organizationName} onChange={e => setGuestForm({...guestForm, organizationName: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none" placeholder="e.g. Acme Corp" />
                           </div>
-                          <span className="text-xs font-bold bg-gold-500/10 text-gold-500 px-3 py-1.5 rounded border border-gold-500/20">
-                            {isMealsDrinksOpen ? 'Hide Menu' : 'Show Menu'}
-                          </span>
+                          <div>
+                            <label className="block text-sm text-gray-400 mb-2">Special Event Requirements (Optional)</label>
+                            <textarea rows="2" value={guestForm.specialRequests} onChange={e => setGuestForm({...guestForm, specialRequests: e.target.value})} className="w-full bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none" placeholder="e.g. Stage setup, extra mic..."></textarea>
+                          </div>
                         </div>
-                        <p className="text-sm text-gray-400 mb-4">Choose from our curated culinary options, including standard breakfast, hot main courses, fresh desserts, and premium bar drinks.</p>
-                        
-                        {isMealsDrinksOpen && (
-                          <div className="mt-6 pt-6 border-t border-dark-700 space-y-6">
-                            {/* Submenu Tabs */}
-                            <div className="flex border-b border-dark-700 pb-3 overflow-x-auto gap-2 scrollbar-thin">
-                              {['Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Appetizers', 'Drinks'].map(tab => {
-                                const count = getItemsForSubmenu(tab, foodServices).length;
-                                return (
-                                  <button
-                                    key={tab}
-                                    type="button"
-                                    onClick={() => setActiveSubmenu(tab)}
-                                    className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors whitespace-nowrap ${activeSubmenu === tab ? 'bg-gold-500 text-dark-900' : 'bg-dark-900 text-gray-400 hover:text-white'}`}
-                                  >
-                                    {tab} ({count})
-                                  </button>
-                                );
-                              })}
-                            </div>
+                      </form>
+                    </div>
+                  )}
 
-                            {/* Submenu Items Grid */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in duration-350">
-                              {getItemsForSubmenu(activeSubmenu, foodServices).length === 0 ? (
-                                <p className="text-sm text-gray-500 italic col-span-2">No items available in this category</p>
-                              ) : (
-                                getItemsForSubmenu(activeSubmenu, foodServices).map(item => {
-                                  const isSelected = selectedServices.some(s => s.service_id === item.id);
-                                  const sData = selectedServices.find(s => s.service_id === item.id);
-                                  return (
-                                    <div 
-                                      key={item.id}
-                                      onClick={() => toggleService(item)}
-                                      className={`p-4 border rounded-xl cursor-pointer transition-all flex flex-col justify-between ${isSelected ? 'border-gold-500 bg-gold-500/5' : 'border-dark-700 hover:border-gray-500 bg-dark-900/40'}`}
-                                    >
-                                      <div>
-                                        <div className="flex justify-between items-start mb-2">
-                                          <div className="flex items-center gap-2.5">
-                                            <div className={`w-5 h-5 border rounded-full flex items-center justify-center ${isSelected ? 'bg-gold-500 border-gold-500 text-dark-900' : 'border-dark-600 bg-dark-900'}`}>
-                                              {isSelected && <CheckCircle size={12}/>}
-                                            </div>
-                                            <h5 className="font-bold text-white text-sm">{item.name}</h5>
-                                          </div>
-                                          <span className="text-sm font-bold text-white">₦{Number(item.base_price_ngn).toLocaleString()}</span>
-                                        </div>
-                                        {item.description && (
-                                          <p className="text-xs text-gray-400 mb-3 ml-7 line-clamp-2">
-                                            {item.description.includes(' | ') ? item.description.split(' | ').slice(1).join(' | ') : item.description}
-                                          </p>
-                                        )}
+                  {bookingMode === 'room' && (
+                    <div className="bg-dark-800 p-8 border border-dark-700">
+                      <h3 className="text-2xl font-medium mb-2">Enhance Your Stay</h3>
+                      <p className="text-gray-400 mb-8">Select optional services to make your stay unforgettable.</p>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {services.map(service => {
+                          const isSelected = selectedServices.some(s => s.service_id === service.id);
+                          const sData = selectedServices.find(s => s.service_id === service.id);
+                          
+                          return (
+                            <div key={service.id} className={`p-6 border rounded-xl transition-all cursor-pointer ${isSelected ? 'border-gold-500 bg-gold-500/5' : 'border-dark-700 bg-dark-800 hover:border-gray-500'}`} onClick={(e) => {
+                              if(e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'svg' && e.target.tagName !== 'path') {
+                                toggleService(service);
+                              }
+                            }}>
+                              <div className="flex justify-between items-start mb-4">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-10 h-10 border rounded-lg flex items-center justify-center ${isSelected ? 'bg-gold-500 text-dark-900 border-gold-500' : 'bg-dark-900 border-dark-700 text-brand-500'}`}>
+                                    {iconMap[service.icon_name] || <Package size={20}/>}
+                                  </div>
+                                  <div>
+                                    <h4 className="font-bold text-white text-lg">{service.name}</h4>
+                                    <p className="text-xs text-brand-400 uppercase tracking-wide">{service.pricing_type ? service.pricing_type.replace(/_/g, ' ') : 'Per Request'}</p>
+                                  </div>
+                                </div>
+                                <div className={`w-6 h-6 border rounded-full flex items-center justify-center ${isSelected ? 'bg-gold-500 border-gold-500 text-dark-900' : 'border-dark-600 bg-dark-900'}`}>
+                                  {isSelected && <CheckCircle size={14}/>}
+                                </div>
+                              </div>
+                              <p className="text-sm text-gray-400 mb-4 line-clamp-2">{service.description}</p>
+                              <div className="font-bold text-lg text-white mb-4">₦{Number(service.base_price_ngn).toLocaleString()}</div>
+
+                              {isSelected && (
+                                <div className="space-y-3 pt-4 border-t border-dark-700" onClick={e => e.stopPropagation()}>
+                                  {service.quantity_selector && (
+                                    <div className="flex items-center justify-between bg-dark-900 p-3 rounded-lg border border-dark-700">
+                                      <span className="text-sm text-gray-400">Quantity</span>
+                                      <div className="flex items-center gap-4">
+                                        <button type="button" onClick={() => updateServiceProp(service.id, 'quantity', Math.max(1, sData.quantity - 1))} className="p-1 hover:text-brand-500 transition-colors"><Minus size={16}/></button>
+                                        <span className="font-medium w-4 text-center">{sData.quantity}</span>
+                                        <button type="button" onClick={() => updateServiceProp(service.id, 'quantity', sData.quantity + 1)} className="p-1 hover:text-brand-500 transition-colors"><Plus size={16}/></button>
                                       </div>
-                                      
-                                      {isSelected && (
-                                        <div className="flex items-center justify-between bg-dark-900 p-2.5 rounded-lg border border-dark-800 ml-7" onClick={e => e.stopPropagation()}>
-                                          <span className="text-xs text-gray-400 font-medium">Quantity</span>
-                                          <div className="flex items-center gap-3">
-                                            <button type="button" onClick={() => updateServiceProp(item.id, 'quantity', Math.max(1, sData.quantity - 1))} className="p-1 hover:text-brand-500 transition-colors"><Minus size={14}/></button>
-                                            <span className="text-xs font-semibold w-4 text-center">{sData.quantity}</span>
-                                            <button type="button" onClick={() => updateServiceProp(item.id, 'quantity', sData.quantity + 1)} className="p-1 hover:text-brand-500 transition-colors"><Plus size={14}/></button>
-                                          </div>
-                                        </div>
-                                      )}
                                     </div>
-                                  );
-                                })
+                                  )}
+                                  {service.scheduling_required && (
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div className="flex flex-col">
+                                        <label className="text-xs text-gray-500 mb-1">Date</label>
+                                        <input type="date" value={sData.date} min={format(dateRange[0].startDate, 'yyyy-MM-dd')} max={format(dateRange[0].endDate, 'yyyy-MM-dd')} onChange={(e) => updateServiceProp(service.id, 'date', e.target.value)} className="bg-dark-900 border border-dark-700 rounded p-2 text-sm text-white focus:border-brand-500 outline-none" />
+                                      </div>
+                                      <div className="flex flex-col">
+                                        <label className="text-xs text-gray-500 mb-1">Time</label>
+                                        <input type="time" value={sData.time} onChange={(e) => updateServiceProp(service.id, 'time', e.target.value)} className="bg-dark-900 border border-dark-700 rounded p-2 text-sm text-white focus:border-brand-500 outline-none" />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
+                          )
+                        })}
+
+                        {/* Meals & Drinks Group Card */}
+                        <div className={`p-6 border rounded-xl transition-all md:col-span-2 ${isMealsDrinksOpen ? 'border-gold-500 bg-gold-500/5' : 'border-dark-700 bg-dark-800 hover:border-gray-500'}`}>
+                          <div className="flex justify-between items-start mb-4 cursor-pointer" onClick={() => setIsMealsDrinksOpen(!isMealsDrinksOpen)}>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-10 h-10 border rounded-lg flex items-center justify-center ${isMealsDrinksOpen ? 'bg-gold-500 text-dark-900 border-gold-500' : 'bg-dark-900 border-dark-700 text-brand-500'}`}>
+                                <Coffee size={20} />
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-white text-lg">Meals & Drinks</h4>
+                                <p className="text-xs text-brand-400 uppercase tracking-wide">Select meals, dessert, or drinks</p>
+                              </div>
+                            </div>
+                            <span className="text-xs font-bold bg-gold-500/10 text-gold-500 px-3 py-1.5 rounded border border-gold-500/20">
+                              {isMealsDrinksOpen ? 'Hide Menu' : 'Show Menu'}
+                            </span>
                           </div>
-                        )}
+                          <p className="text-sm text-gray-400 mb-4">Choose from our curated culinary options, including standard breakfast, hot main courses, fresh desserts, and premium bar drinks.</p>
+                          
+                          {isMealsDrinksOpen && (
+                            <div className="mt-6 pt-6 border-t border-dark-700 space-y-6">
+                              {/* Submenu Tabs */}
+                              <div className="flex border-b border-dark-700 pb-3 overflow-x-auto gap-2 scrollbar-thin">
+                                {['Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Appetizers', 'Drinks'].map(tab => {
+                                  const count = getItemsForSubmenu(tab, foodServices).length;
+                                  return (
+                                    <button
+                                      key={tab}
+                                      type="button"
+                                      onClick={() => setActiveSubmenu(tab)}
+                                      className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors whitespace-nowrap ${activeSubmenu === tab ? 'bg-gold-500 text-dark-900' : 'bg-dark-900 text-gray-400 hover:text-white'}`}
+                                    >
+                                      {tab} ({count})
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Submenu Items Grid */}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in duration-350">
+                                {getItemsForSubmenu(activeSubmenu, foodServices).length === 0 ? (
+                                  <p className="text-sm text-gray-500 italic col-span-2">No items available in this category</p>
+                                ) : (
+                                  getItemsForSubmenu(activeSubmenu, foodServices).map(item => {
+                                    const isSelected = selectedServices.some(s => s.service_id === item.id);
+                                    const sData = selectedServices.find(s => s.service_id === item.id);
+                                    return (
+                                      <div 
+                                        key={item.id}
+                                        onClick={() => toggleService(item)}
+                                        className={`p-4 border rounded-xl cursor-pointer transition-all flex flex-col justify-between ${isSelected ? 'border-gold-500 bg-gold-500/5' : 'border-dark-700 hover:border-gray-500 bg-dark-900/40'}`}
+                                      >
+                                        <div>
+                                          <div className="flex justify-between items-start mb-2">
+                                            <div className="flex items-center gap-2.5">
+                                              <div className={`w-5 h-5 border rounded-full flex items-center justify-center ${isSelected ? 'bg-gold-500 border-gold-500 text-dark-900' : 'border-dark-600 bg-dark-900'}`}>
+                                                {isSelected && <CheckCircle size={12}/>}
+                                              </div>
+                                              <h5 className="font-bold text-white text-sm">{item.name}</h5>
+                                            </div>
+                                            <span className="text-sm font-bold text-white">₦{Number(item.base_price_ngn).toLocaleString()}</span>
+                                          </div>
+                                          {item.description && (
+                                            <p className="text-xs text-gray-400 mb-3 ml-7 line-clamp-2">
+                                              {item.description.includes(' | ') ? item.description.split(' | ').slice(1).join(' | ') : item.description}
+                                            </p>
+                                          )}
+                                        </div>
+                                        
+                                        {isSelected && (
+                                          <div className="flex items-center justify-between bg-dark-900 p-2.5 rounded-lg border border-dark-800 ml-7" onClick={e => e.stopPropagation()}>
+                                            <span className="text-xs text-gray-400 font-medium">Quantity</span>
+                                            <div className="flex items-center gap-3">
+                                              <button type="button" onClick={() => updateServiceProp(item.id, 'quantity', Math.max(1, sData.quantity - 1))} className="p-1 hover:text-brand-500 transition-colors"><Minus size={14}/></button>
+                                              <span className="text-xs font-semibold w-4 text-center">{sData.quantity}</span>
+                                              <button type="button" onClick={() => updateServiceProp(item.id, 'quantity', sData.quantity + 1)} className="p-1 hover:text-brand-500 transition-colors"><Plus size={14}/></button>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="bg-dark-800 p-8 border border-dark-700">
                     <h3 className="text-2xl font-medium mb-6">Complete Checkout</h3>
                     
-                    <div className="mb-8">
-                      <h4 className="font-medium text-lg mb-4">Have a Promo Code?</h4>
-                      <div className="flex gap-2">
-                        <input type="text" value={couponCode} onChange={e => setCouponCode(e.target.value)} disabled={!!appliedCoupon} className="flex-1 bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none uppercase" placeholder="Enter code" />
-                        {!appliedCoupon ? (
-                          <button type="button" onClick={applyCoupon} className="bg-dark-700 hover:bg-dark-600 text-white px-6 font-medium transition-colors">Apply</button>
-                        ) : (
-                          <button type="button" onClick={removeCoupon} className="bg-red-500/20 text-red-500 hover:bg-red-500/30 px-6 font-medium transition-colors">Remove</button>
-                        )}
+                    {bookingMode === 'room' && (
+                      <div className="mb-8">
+                        <h4 className="font-medium text-lg mb-4">Have a Promo Code?</h4>
+                        <div className="flex gap-2">
+                          <input type="text" value={couponCode} onChange={e => setCouponCode(e.target.value)} disabled={!!appliedCoupon} className="flex-1 bg-dark-900 border border-dark-700 text-white p-3 focus:border-gold-500 outline-none uppercase" placeholder="Enter code" />
+                          {!appliedCoupon ? (
+                            <button type="button" onClick={applyCoupon} className="bg-dark-700 hover:bg-dark-600 text-white px-6 font-medium transition-colors">Apply</button>
+                          ) : (
+                            <button type="button" onClick={removeCoupon} className="bg-red-500/20 text-red-500 hover:bg-red-500/30 px-6 font-medium transition-colors">Remove</button>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div className="mt-10 border-t border-dark-700 pt-8 animate-in fade-in duration-200">
+                    <div className="mt-6 border-t border-dark-700 pt-6 animate-in fade-in duration-200">
                       <h3 className="text-xl font-medium mb-4 text-white">Payment Options</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <label className={`p-4 border rounded-xl cursor-pointer flex items-center gap-3 transition-colors ${paymentMethod === 'pay_online' ? 'border-gold-500 bg-gold-500/10' : 'border-dark-700 hover:border-gray-500'}`}>
                           <input type="radio" name="paymentMethod" value="pay_online" checked={paymentMethod === 'pay_online'} onChange={() => setPaymentMethod('pay_online')} className="accent-gold-500 w-4 h-4"/>
                           <div>
                             <p className="font-bold text-white">
-                              {bookingRules.payment_rule === 'partial_deposit' 
+                              {bookingMode === 'room' && bookingRules.payment_rule === 'partial_deposit' 
                                 ? `Pay Confirmation Deposit (${bookingRules.deposit_percentage}%) via Paystack` 
                                 : 'Pay Online Now (Paystack)'}
                             </p>
                             <p className="text-xs text-gray-400">
-                              {bookingRules.payment_rule === 'partial_deposit'
+                              {bookingMode === 'room' && bookingRules.payment_rule === 'partial_deposit'
                                 ? `Pay ₦${payOnlineAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} confirmation deposit via Paystack`
                                 : 'Secure card payment via Paystack'}
                             </p>
                           </div>
                         </label>
 
-                        {bookingRules.payment_rule !== 'full_amount' && bookingRules.payment_rule !== 'partial_deposit' && (
+                        {((bookingMode === 'room' && bookingRules.payment_rule !== 'full_amount' && bookingRules.payment_rule !== 'partial_deposit') || bookingMode === 'hall') && (
                           <label className={`p-4 border rounded-xl cursor-pointer flex items-center gap-3 transition-colors ${paymentMethod === 'pay_on_arrival' ? 'border-gold-500 bg-gold-500/10' : 'border-dark-700 hover:border-gray-500'}`}>
                             <input type="radio" name="paymentMethod" value="pay_on_arrival" checked={paymentMethod === 'pay_on_arrival'} onChange={() => setPaymentMethod('pay_on_arrival')} className="accent-gold-500 w-4 h-4"/>
                             <div>
                               <p className="font-bold text-white">Pay on Arrival</p>
-                              <p className="text-xs text-gray-400">Pay at the front desk when you check-in</p>
+                              <p className="text-xs text-gray-400">Pay at the front office on check-in</p>
                             </div>
                           </label>
                         )}
 
                         {arAccount && (
                           <>
-                            {/* Option 1: 30% Deposit from AR account */}
-                            {(() => {
-                              const hasSufficient = arAccount.balance >= payOnlineAmount;
-                              return (
-                                <label className={`p-4 border rounded-xl flex items-center gap-3 transition-colors ${
-                                  !hasSufficient 
-                                    ? 'opacity-40 cursor-not-allowed border-dark-750 bg-dark-950/20' 
-                                    : paymentMethod === 'pay_ar_deposit' 
-                                      ? 'border-gold-500 bg-gold-500/10 cursor-pointer' 
-                                      : 'border-dark-700 hover:border-gray-500 cursor-pointer'
-                                }`}>
-                                  <input 
-                                    type="radio" 
-                                    name="paymentMethod" 
-                                    value="pay_ar_deposit" 
-                                    disabled={!hasSufficient}
-                                    checked={paymentMethod === 'pay_ar_deposit'} 
-                                    onChange={() => setPaymentMethod('pay_ar_deposit')} 
-                                    className="accent-gold-500 w-4 h-4"
-                                  />
-                                  <div>
-                                    <p className="font-bold text-white">Pay 30% Deposit from AR Wallet</p>
-                                    <p className="text-xs text-gray-400">
-                                      Deduct ₦{payOnlineAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} from wallet (Bal: ₦{Number(arAccount.balance).toLocaleString(undefined, { maximumFractionDigits: 0 })})
-                                    </p>
-                                    {!hasSufficient && <span className="text-[10px] text-red-500 font-bold block mt-1">⚠️ Insufficient Wallet Balance</span>}
-                                  </div>
-                                </label>
-                              );
-                            })()}
+                            {bookingMode === 'room' && (
+                              <>
+                                {/* Option 1: 30% Deposit from AR account */}
+                                {(() => {
+                                  const hasSufficient = arAccount.balance >= payOnlineAmount;
+                                  return (
+                                    <label className={`p-4 border rounded-xl flex items-center gap-3 transition-colors ${
+                                      !hasSufficient 
+                                        ? 'opacity-40 cursor-not-allowed border-dark-750 bg-dark-950/20' 
+                                        : paymentMethod === 'pay_ar_deposit' 
+                                          ? 'border-gold-500 bg-gold-500/10 cursor-pointer' 
+                                          : 'border-dark-700 hover:border-gray-500 cursor-pointer'
+                                    }`}>
+                                      <input 
+                                        type="radio" 
+                                        name="paymentMethod" 
+                                        value="pay_ar_deposit" 
+                                        disabled={!hasSufficient}
+                                        checked={paymentMethod === 'pay_ar_deposit'} 
+                                        onChange={() => setPaymentMethod('pay_ar_deposit')} 
+                                        className="accent-gold-500 w-4 h-4"
+                                      />
+                                      <div>
+                                        <p className="font-bold text-white">Pay 30% Deposit from AR Wallet</p>
+                                        <p className="text-xs text-gray-400">
+                                          Deduct ₦{payOnlineAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} from wallet (Bal: ₦{Number(arAccount.balance).toLocaleString(undefined, { maximumFractionDigits: 0 })})
+                                        </p>
+                                        {!hasSufficient && <span className="text-[10px] text-red-500 font-bold block mt-1">⚠️ Insufficient Wallet Balance</span>}
+                                      </div>
+                                    </label>
+                                  );
+                                })()}
+                              </>
+                            )}
 
                             {/* Option 2: Pay in Full from AR account */}
                             {(() => {
@@ -1872,9 +2601,9 @@ const BookingEngine = () => {
                       </div>
                     </div>
 
-                    <div className="flex justify-between items-center mt-8">
-                      <button onClick={() => setStep(3)} className="text-gray-400 hover:text-white">← Back to Details</button>
-                      <button onClick={handleCheckout} disabled={isProcessing} className="btn-primary py-4 px-12 text-lg disabled:opacity-50">
+                    <div className="flex justify-between items-center mt-8 pt-6 border-t border-dark-700">
+                      <button onClick={() => setStep(3)} className="text-gray-400 hover:text-white">← Back to {bookingMode === 'room' ? 'Details' : 'Catering'}</button>
+                      <button onClick={bookingMode === 'hall' ? handleHallCheckout : handleCheckout} disabled={isProcessing} className="btn-primary py-4 px-12 text-lg disabled:opacity-50">
                         {isProcessing ? 'Processing...' : paymentMethod === 'pay_online' ? 'Pay Securely' : ['pay_ar_deposit', 'pay_ar_full'].includes(paymentMethod) ? 'Pay from AR Wallet' : 'Complete Booking'}
                       </button>
                     </div>
@@ -1977,15 +2706,27 @@ const BookingEngine = () => {
                 <div className="mb-6 flex justify-between border-b border-dark-700 pb-6">
                   <div>
                     <p className="text-sm text-gray-400 mb-1">Duration</p>
-                    <p className="font-medium">{totalNights} Nights</p>
+                    <p className="font-medium">
+                      {bookingMode === 'hall'
+                        ? hallBookingType === 'daily'
+                          ? `${bookingSummary.days} ${bookingSummary.days === 1 ? 'Day' : 'Days'}`
+                          : `${bookingSummary.hours} ${bookingSummary.hours === 1 ? 'Hour' : 'Hours'}`
+                        : `${totalNights} Nights`
+                      }
+                    </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-400 mb-1">Guests</p>
-                    <p className="font-medium">{totalGuests} Persons</p>
+                    <p className="text-sm text-gray-400 mb-1">{bookingMode === 'hall' ? 'Participants' : 'Guests'}</p>
+                    <p className="font-medium">
+                      {bookingMode === 'hall'
+                        ? `${hallParticipants} Guests`
+                        : `${totalGuests} Persons`
+                      }
+                    </p>
                   </div>
                 </div>
 
-                {selectedRoom && (
+                {bookingMode === 'room' && selectedRoom && (
                   <div className="mb-4">
                     <p className="text-brand-500 font-medium mb-2">{selectedRoom.name}</p>
                     <div className="flex justify-between text-sm text-gray-400 mb-1">
@@ -2014,7 +2755,39 @@ const BookingEngine = () => {
                   </div>
                 )}
 
-                {selectedServices.length > 0 && (
+                {bookingMode === 'hall' && selectedHall && (
+                  <div className="mb-4">
+                    <p className="text-gold-500 font-bold mb-2">{selectedHall.name}</p>
+                    <div className="flex justify-between text-sm text-gray-400 mb-1">
+                      <span>Hall Rental ({hallBookingType === 'daily' ? 'Daily' : 'Hourly'})</span>
+                    </div>
+                    <div className="flex justify-between font-medium text-white mb-2">
+                      <span>Hall Total</span>
+                      <span>₦{bookingSummary.hallPrice.toLocaleString()}</span>
+                    </div>
+
+                    {selectedHallMeals.length > 0 && (
+                      <div className="mt-3 border-t border-dark-700 pt-3">
+                        <p className="text-sm font-semibold text-gray-300 mb-2">Catering Packages:</p>
+                        <div className="space-y-2">
+                          {selectedHallMeals.map(mealId => {
+                            const option = hallMealOptions.find(o => o.id === mealId);
+                            if (!option) return null;
+                            const optionCost = Number(option.price_per_participant_ngn) * Number(hallParticipants) * bookingSummary.days;
+                            return (
+                              <div key={mealId} className="flex justify-between text-xs text-gray-400">
+                                <span>{option.name} (₦{Number(option.price_per_participant_ngn).toLocaleString()} x {hallParticipants} pax)</span>
+                                <span>₦{optionCost.toLocaleString()}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {bookingMode === 'room' && selectedServices.length > 0 && (
                   <div className="mb-6 border-t border-dark-700 pt-4">
                     <p className="text-sm font-medium mb-3 text-white">Services & Add-ons:</p>
                     <div className="space-y-3">
@@ -2039,7 +2812,7 @@ const BookingEngine = () => {
                   </div>
                 )}
 
-                {appliedCoupon && (
+                {bookingMode === 'room' && appliedCoupon && (
                   <div className="mb-6 border-t border-dark-700 pt-4 flex justify-between text-green-400 font-medium">
                     <span>Coupon ({appliedCoupon.code})</span>
                     <span>-{appliedCoupon.discount_type === 'percentage' ? `${appliedCoupon.discount_value}%` : `₦${appliedCoupon.discount_value.toLocaleString()}`}</span>
@@ -2056,7 +2829,7 @@ const BookingEngine = () => {
                     <span className="text-xl font-bold text-gray-300">₦{calculateTotal().toLocaleString()}</span>
                   </div>
                   
-                  {bookingRules.payment_rule === 'partial_deposit' && (
+                  {bookingMode === 'room' && bookingRules.payment_rule === 'partial_deposit' && (
                     <div className="mt-4 pt-4 border-t border-dashed border-dark-700 space-y-2 animate-in fade-in duration-200">
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gold-400 font-bold">Required Confirmation Deposit ({bookingRules.deposit_percentage}%)</span>

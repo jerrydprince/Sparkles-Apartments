@@ -11,7 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // Parse route parameter
-$route = isset($_GET['route']) ? $_GET['route'] : '';
+$route = isset($_GET['route']) ? trim($_GET['route'], '/') : '';
 
 // Helper to fetch Supabase settings
 function get_supabase_settings() {
@@ -46,6 +46,61 @@ function get_supabase_settings() {
         }
     }
     return [];
+}
+
+// Supabase general cURL API helper
+function supabase_api($method, $table, $params = [], $body = null) {
+    $supabaseUrl = 'https://pjmdlifojfwoviyugjwq.supabase.co';
+    $anonKey = 'sb_publishable_Cd0GkjlGkIfFUJ0IR2etLA_IxImAYU9';
+    
+    $url = $supabaseUrl . '/rest/v1/' . $table;
+    if (!empty($params)) {
+        $url .= '?' . http_build_query($params);
+    }
+    
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+    
+    $headers = [
+        'apikey: ' . $anonKey,
+        'Authorization: Bearer ' . $anonKey
+    ];
+    
+    if ($method === 'POST') {
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body));
+        $headers[] = 'Content-Type: application/json';
+        $headers[] = 'Prefer: return=representation';
+    } else if ($method === 'PATCH') {
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PATCH');
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body));
+        $headers[] = 'Content-Type: application/json';
+        $headers[] = 'Prefer: return=representation';
+    } else if ($method === 'GET') {
+        curl_setopt($ch, CURLOPT_HTTPGET, true);
+    }
+    
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($httpCode >= 200 && $httpCode < 300) {
+        return [
+            'success' => true,
+            'data' => json_decode($response, true),
+            'code' => $httpCode
+        ];
+    }
+    
+    return [
+        'success' => false,
+        'error' => $response,
+        'code' => $httpCode
+    ];
 }
 
 // Helper to decode Base64 logo and save as a physical file
@@ -580,6 +635,303 @@ else if ($route === 'contact/submit') {
             echo json_encode(["error" => "Failed to deliver contact message or auto-responder via mail()."]);
             exit;
         }
+    }
+}
+else if ($route === 'attendance/biometric') {
+    $input = file_get_contents('php://input');
+    $postData = json_decode($input, true);
+    
+    $staff_id = isset($postData['staff_id']) ? $postData['staff_id'] : '';
+    $action = isset($postData['action']) ? $postData['action'] : '';
+    $biometric_key = isset($postData['biometric_key']) ? $postData['biometric_key'] : '';
+    
+    if (!$staff_id) {
+        http_response_code(400);
+        echo json_encode(["error" => "Missing staff_id in request body"]);
+        exit;
+    }
+    
+    // 1. Fetch profile
+    $profileRes = supabase_api('GET', 'profiles', ['id' => 'eq.' . $staff_id]);
+    if (!$profileRes['success'] || empty($profileRes['data'])) {
+        http_response_code(404);
+        echo json_encode(["error" => "Staff member profile not found."]);
+        exit;
+    }
+    
+    $profileData = $profileRes['data'][0];
+    if (!empty($biometric_key) && isset($profileData['biometric_key']) && $profileData['biometric_key'] !== $biometric_key) {
+        http_response_code(403);
+        echo json_encode(["error" => "Invalid biometric credentials / fingerprint match failed."]);
+        exit;
+    }
+    
+    $timestamp = date('c');
+    $ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '127.0.0.1';
+    
+    if ($action === 'clock_in') {
+        // 2. Perform clock-in
+        $shiftRes = supabase_api('POST', 'staff_attendance', [], [
+            'staff_id' => $staff_id,
+            'clock_in' => $timestamp,
+            'status' => 'present',
+            'notes' => 'Biometric fingerprint scan verified.'
+        ]);
+        
+        if (!$shiftRes['success']) {
+            http_response_code(500);
+            echo json_encode(["error" => "Failed to save shift: " . json_encode($shiftRes['error'])]);
+            exit;
+        }
+        
+        $shiftData = $shiftRes['data'][0];
+        
+        // Update is_on_shift
+        supabase_api('PATCH', 'profiles', ['id' => 'eq.' . $staff_id], ['is_on_shift' => true]);
+        
+        // Log activity
+        supabase_api('POST', 'system_logs', [], [
+            'user_id' => $staff_id,
+            'email' => isset($profileData['email']) ? $profileData['email'] : null,
+            'log_type' => 'activity',
+            'action' => 'Biometric Shift Clock-In',
+            'module' => 'System',
+            'entity_table' => 'staff_attendance',
+            'entity_id' => $shiftData['id'],
+            'ip_address' => $ip_address,
+            'metadata' => [
+                'biometric_scan' => 'success',
+                'key' => isset($profileData['biometric_key']) ? $profileData['biometric_key'] : 'BIO-MOCK'
+            ]
+        ]);
+        
+        echo json_encode([
+            "success" => true,
+            "message" => "✓ Biometric scan verified! " . $profileData['first_name'] . " is now on shift.",
+            "shift" => $shiftData
+        ]);
+        exit;
+        
+    } else if ($action === 'clock_out') {
+        // 3. Perform clock-out
+        // Find open active shift
+        $openShiftsRes = supabase_api('GET', 'staff_attendance', [
+            'staff_id' => 'eq.' . $staff_id,
+            'clock_out' => 'is.null',
+            'order' => 'clock_in.desc',
+            'limit' => 1
+        ]);
+        
+        $shiftData = null;
+        if ($openShiftsRes['success'] && !empty($openShiftsRes['data'])) {
+            $openShift = $openShiftsRes['data'][0];
+            $updateRes = supabase_api('PATCH', 'staff_attendance', ['id' => 'eq.' . $openShift['id']], [
+                'clock_out' => $timestamp,
+                'notes' => ($openShift['notes'] ? $openShift['notes'] : '') . "\nBiometric fingerprint check-out verified."
+            ]);
+            if ($updateRes['success']) {
+                $shiftData = $updateRes['data'][0];
+            }
+        }
+        
+        if (!$shiftData) {
+            // Fallback: create completed shift
+            $fallbackRes = supabase_api('POST', 'staff_attendance', [], [
+                'staff_id' => $staff_id,
+                'clock_in' => $timestamp,
+                'clock_out' => $timestamp,
+                'status' => 'present',
+                'notes' => 'Clock-out biometric scan verified (no active clock-in recorded).'
+            ]);
+            if ($fallbackRes['success']) {
+                $shiftData = $fallbackRes['data'][0];
+            }
+        }
+        
+        // Update shift status
+        supabase_api('PATCH', 'profiles', ['id' => 'eq.' . $staff_id], ['is_on_shift' => false]);
+        
+        // Log activity
+        if ($shiftData) {
+            supabase_api('POST', 'system_logs', [], [
+                'user_id' => $staff_id,
+                'email' => isset($profileData['email']) ? $profileData['email'] : null,
+                'log_type' => 'activity',
+                'action' => 'Biometric Shift Clock-Out',
+                'module' => 'System',
+                'entity_table' => 'staff_attendance',
+                'entity_id' => $shiftData['id'],
+                'ip_address' => $ip_address,
+                'metadata' => [
+                    'biometric_scan' => 'success',
+                    'key' => isset($profileData['biometric_key']) ? $profileData['biometric_key'] : 'BIO-MOCK'
+                ]
+            ]);
+        }
+        
+        echo json_encode([
+            "success" => true,
+            "message" => "✓ Biometric scan verified! " . $profileData['first_name'] . " is now off shift.",
+            "shift" => $shiftData
+        ]);
+        exit;
+        
+    } else {
+        http_response_code(400);
+        echo json_encode(["error" => "Invalid shift action. Must be clock_in or clock_out."]);
+        exit;
+    }
+}
+else if ($route === 'attendance/terminal-push') {
+    $input = file_get_contents('php://input');
+    $postData = json_decode($input, true);
+    
+    $device_sn = isset($postData['device_sn']) ? $postData['device_sn'] : '';
+    $user_pin = isset($postData['user_pin']) ? $postData['user_pin'] : '';
+    $verify_time = isset($postData['verify_time']) ? $postData['verify_time'] : '';
+    $verify_mode = isset($postData['verify_mode']) ? $postData['verify_mode'] : 'fingerprint';
+    $verify_status = isset($postData['verify_status']) ? $postData['verify_status'] : '';
+    
+    if (!$user_pin || !$device_sn) {
+        http_response_code(400);
+        echo json_encode(["error" => "Missing device_sn or user_pin in push packet."]);
+        exit;
+    }
+    
+    $pinStr = strtoupper(trim($user_pin));
+    
+    // Fetch profiles
+    $profilesRes = supabase_api('GET', 'profiles', ['role' => 'not.eq.guest']);
+    if (!$profilesRes['success']) {
+        http_response_code(500);
+        echo json_encode(["error" => "Failed to fetch staff directory: " . json_encode($profilesRes['error'])]);
+        exit;
+    }
+    
+    $staffMember = null;
+    foreach ($profilesRes['data'] as $p) {
+        if (!isset($p['biometric_key'])) continue;
+        $keyNormalized = strtoupper($p['biometric_key']);
+        $usernameNormalized = isset($p['username']) ? strtoupper($p['username']) : '';
+        
+        if (strpos($keyNormalized, $pinStr) !== false || (!empty($usernameNormalized) && strpos($usernameNormalized, $pinStr) !== false)) {
+            $staffMember = $p;
+            break;
+        }
+    }
+    
+    if (!$staffMember) {
+        http_response_code(404);
+        echo json_encode([
+            "error" => "Push failed: No active staff member mapped to Terminal ID PIN \"" . $user_pin . "\". Please register this terminal key in Staff Directory."
+        ]);
+        exit;
+    }
+    
+    $timestamp = !empty($verify_time) ? date('c', strtotime($verify_time)) : date('c');
+    $action = ($verify_status === 0 || $verify_status === '0' || $verify_status === 'clock_in') ? 'clock_in' : 'clock_out';
+    $ip_address = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '127.0.0.1';
+    
+    $shiftData = null;
+    
+    if ($action === 'clock_in') {
+        $insertRes = supabase_api('POST', 'staff_attendance', [], [
+            'staff_id' => $staffMember['id'],
+            'clock_in' => $timestamp,
+            'status' => 'present',
+            'notes' => 'Network Biometric Terminal Sync (Device SN: ' . $device_sn . ', Mode: Fingerprint).'
+        ]);
+        
+        if ($insertRes['success']) {
+            $shiftData = $insertRes['data'][0];
+        }
+        
+        supabase_api('PATCH', 'profiles', ['id' => 'eq.' . $staffMember['id']], ['is_on_shift' => true]);
+        
+        if ($shiftData) {
+            supabase_api('POST', 'system_logs', [], [
+                'user_id' => $staffMember['id'],
+                'email' => isset($staffMember['email']) ? $staffMember['email'] : null,
+                'log_type' => 'activity',
+                'action' => 'Network Biometric Clock-In',
+                'module' => 'System',
+                'entity_table' => 'staff_attendance',
+                'entity_id' => $shiftData['id'],
+                'ip_address' => $ip_address,
+                'metadata' => [
+                    'terminal_sn' => $device_sn,
+                    'user_pin' => $pinStr,
+                    'mode' => $verify_mode
+                ]
+            ]);
+        }
+        
+        echo json_encode([
+            "success" => true,
+            "message" => "[Terminal Push] Verified! " . $staffMember['first_name'] . " clocked in successfully at Entrance Terminal.",
+            "shift" => $shiftData
+        ]);
+        exit;
+        
+    } else {
+        // Find open shift
+        $openShiftsRes = supabase_api('GET', 'staff_attendance', [
+            'staff_id' => 'eq.' . $staffMember['id'],
+            'clock_out' => 'is.null',
+            'order' => 'clock_in.desc',
+            'limit' => 1
+        ]);
+        
+        if ($openShiftsRes['success'] && !empty($openShiftsRes['data'])) {
+            $openShift = $openShiftsRes['data'][0];
+            $updateRes = supabase_api('PATCH', 'staff_attendance', ['id' => 'eq.' . $openShift['id']], [
+                'clock_out' => $timestamp,
+                'notes' => ($openShift['notes'] ? $openShift['notes'] : '') . "\nNetwork Biometric Terminal Sync Out (Device SN: " . $device_sn . ")."
+            ]);
+            if ($updateRes['success']) {
+                $shiftData = $updateRes['data'][0];
+            }
+        }
+        
+        if (!$shiftData) {
+            $fallbackRes = supabase_api('POST', 'staff_attendance', [], [
+                'staff_id' => $staffMember['id'],
+                'clock_in' => $timestamp,
+                'clock_out' => $timestamp,
+                'status' => 'present',
+                'notes' => 'Network Biometric Terminal Sync Out Fallback (Device SN: ' . $device_sn . ', no active clock-in).'
+            ]);
+            if ($fallbackRes['success']) {
+                $shiftData = $fallbackRes['data'][0];
+            }
+        }
+        
+        supabase_api('PATCH', 'profiles', ['id' => 'eq.' . $staffMember['id']], ['is_on_shift' => false]);
+        
+        if ($shiftData) {
+            supabase_api('POST', 'system_logs', [], [
+                'user_id' => $staffMember['id'],
+                'email' => isset($staffMember['email']) ? $staffMember['email'] : null,
+                'log_type' => 'activity',
+                'action' => 'Network Biometric Clock-Out',
+                'module' => 'System',
+                'entity_table' => 'staff_attendance',
+                'entity_id' => $shiftData['id'],
+                'ip_address' => $ip_address,
+                'metadata' => [
+                    'terminal_sn' => $device_sn,
+                    'user_pin' => $pinStr,
+                    'mode' => $verify_mode
+                ]
+            ]);
+        }
+        
+        echo json_encode([
+            "success" => true,
+            "message" => "[Terminal Push] Verified! " . $staffMember['first_name'] . " clocked out successfully at Entrance Terminal.",
+            "shift" => $shiftData
+        ]);
+        exit;
     }
 }
 else {

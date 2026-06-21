@@ -92,6 +92,27 @@ const PaymentSuccess = () => {
             .maybeSingle();
           setPayment(payData);
         }
+      } else if (type === 'hall_booking' && ref) {
+        const { data: bookingData, error: bookingErr } = await supabase
+          .from('hall_bookings')
+          .select('*, halls(*)')
+          .eq('booking_reference', ref)
+          .maybeSingle();
+
+        if (bookingErr) throw bookingErr;
+        setBooking(bookingData);
+
+        if (bookingData) {
+          const { data: payData } = await supabase
+            .from('payments')
+            .select('*')
+            .eq('hall_booking_id', bookingData.id)
+            .eq('method', 'paystack')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          setPayment(payData);
+        }
       } else if (type === 'wallet') {
         // Fetch payment details
         if (paymentId) {
@@ -305,6 +326,57 @@ const PaymentSuccess = () => {
               </div>
             )}
 
+            {type === 'hall_booking' && booking && (
+              <div className="space-y-3 pt-2">
+                <h3 className="text-xs font-black uppercase text-gray-500 tracking-wider">Hall Reservation Details</h3>
+                <div className="bg-dark-900/30 p-4 border border-dark-700/40 rounded-2xl text-xs space-y-3">
+                  
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-400 font-semibold">Booking Reference</span>
+                    <span className="font-bold text-white font-mono tracking-wider">{booking.booking_reference}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-400">Guest Name</span>
+                    <span className="font-bold text-white">{booking.guest_name}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-400">Hall Name</span>
+                    <span className="font-bold text-white">{booking.halls?.name || 'Event Hall'}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-400">Booking Type / Duration</span>
+                    <span className="font-bold text-white capitalize">{booking.booking_type} ({booking.booking_type === 'daily' ? `${booking.num_days} Days` : `${booking.num_hours} Hours`})</span>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-400">Participants (Pax)</span>
+                    <span className="font-bold text-white">{booking.number_of_participants} persons</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 pt-2.5 border-t border-dark-700/40 text-[11px]">
+                    <div>
+                      <span className="text-gray-500 block">Start Date / Time</span>
+                      <span className="font-bold text-white flex items-center gap-1.5 mt-0.5">
+                        <Calendar size={12} className="text-gold-500" />
+                        {safeFormatDate(booking.start_time, 'MMM dd, yyyy HH:mm')}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 block">End Date / Time</span>
+                      <span className="font-bold text-white flex items-center gap-1.5 mt-0.5">
+                        <Calendar size={12} className="text-gold-500" />
+                        {safeFormatDate(booking.end_time, 'MMM dd, yyyy HH:mm')}
+                      </span>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            )}
+
             {/* Wallet Details Section (Render if type wallet) */}
             {type === 'wallet' && (
               <div className="space-y-3 pt-2">
@@ -362,7 +434,7 @@ const PaymentSuccess = () => {
             <span>Print Receipt</span>
           </button>
 
-          {type === 'booking' ? (
+          {type === 'booking' || type === 'hall_booking' ? (
             <>
               <button 
                 onClick={() => navigate('/guest')} 

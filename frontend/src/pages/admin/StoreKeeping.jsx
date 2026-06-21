@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
+import { useRealtimeSync } from '../../lib/useRealtimeSync';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { 
@@ -9,11 +10,96 @@ import {
   AlertTriangle, Filter, DollarSign, ListOrdered, Check, ChevronDown, Calendar, Trash2
 } from 'lucide-react';
 
+const PaginationControl = ({ currentPage, totalItems, pageSize, onPageChange }) => {
+  const totalPages = Math.ceil(totalItems / pageSize);
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className="flex items-center justify-between border-t border-dark-700 bg-dark-900/30 px-4 py-3 sm:px-6 mt-4 rounded-b-lg">
+      <div className="flex flex-1 justify-between sm:hidden">
+        <button
+          type="button"
+          disabled={currentPage === 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          className="relative inline-flex items-center rounded-md border border-dark-750 bg-dark-800 px-4 py-2 text-xs font-bold text-gray-300 hover:bg-dark-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          disabled={currentPage === totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+          className="relative ml-3 inline-flex items-center rounded-md border border-dark-750 bg-dark-800 px-4 py-2 text-xs font-bold text-gray-300 hover:bg-dark-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
+      </div>
+      <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs text-gray-400">
+            Showing <span className="font-semibold text-white">{((currentPage - 1) * pageSize) + 1}</span> to{' '}
+            <span className="font-semibold text-white">
+              {Math.min(currentPage * pageSize, totalItems)}
+            </span>{' '}
+            of <span className="font-semibold text-white">{totalItems}</span> results
+          </p>
+        </div>
+        <div>
+          <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+            <button
+              type="button"
+              disabled={currentPage === 1}
+              onClick={() => onPageChange(currentPage - 1)}
+              className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-405 ring-1 ring-inset ring-dark-750 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <span className="sr-only">Previous</span>
+              &larr;
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                type="button"
+                key={page}
+                onClick={() => onPageChange(page)}
+                className={`relative inline-flex items-center px-3 py-2 text-xs font-bold ring-1 ring-inset ring-dark-750 cursor-pointer ${
+                  page === currentPage
+                    ? 'z-10 bg-brand-500 text-dark-950 focus:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 font-extrabold'
+                    : 'text-gray-300 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              type="button"
+              disabled={currentPage === totalPages}
+              onClick={() => onPageChange(currentPage + 1)}
+              className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-455 ring-1 ring-inset ring-dark-750 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <span className="sr-only">Next</span>
+              &rarr;
+            </button>
+          </nav>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const StoreKeeping = () => {
   const { user, profile, hasAccess } = useAuth();
   
+  const hasStoreKeepingAdmin = hasAccess('Store Keeping') || hasAccess('Store Keeping - Register & Restock Items') || hasAccess('Store Keeping - Approve Outgoing Material Releases');
+  
   // Tab control: 'inventory', 'request', 'approvals', 'logs'
-  const [activeTab, setActiveTab] = useState('inventory');
+  const [activeTab, setActiveTab] = useState(() => {
+    return (hasAccess('Store Keeping') || hasAccess('Store Keeping - Register & Restock Items') || hasAccess('Store Keeping - Approve Outgoing Material Releases')) ? 'inventory' : 'request';
+  });
+
+  useEffect(() => {
+    if (user && !hasAccess('Store Keeping') && !hasAccess('Store Keeping - Register & Restock Items') && !hasAccess('Store Keeping - Approve Outgoing Material Releases')) {
+      setActiveTab('request');
+    }
+  }, [user]);
   
   // Data States
   const [items, setItems] = useState([]);
@@ -31,6 +117,20 @@ const StoreKeeping = () => {
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
   const [sortField, setSortField] = useState('date'); // 'date', 'department', 'giver', 'receiver', 'approver'
   const [sortDirection, setSortDirection] = useState('desc'); // 'asc' or 'desc'
+
+  const [currentPageItems, setCurrentPageItems] = useState(1);
+  const [currentPageLogs, setCurrentPageLogs] = useState(1);
+  const [currentPageApprovals, setCurrentPageApprovals] = useState(1);
+  const [currentPageProcurement, setCurrentPageProcurement] = useState(1);
+  const pageSize = 10;
+
+  useEffect(() => {
+    setCurrentPageItems(1);
+  }, [searchQuery, filterCategory]);
+
+  useEffect(() => {
+    setCurrentPageLogs(1);
+  }, [logTypeFilter, logDeptFilter, logStartDate, logEndDate, sortField, sortDirection]);
 
   // Modals & Form States
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -145,6 +245,10 @@ const StoreKeeping = () => {
   useEffect(() => {
     fetchStoreData();
   }, []);
+
+  useRealtimeSync(['store_items', 'store_logs', 'store_purchase_requests'], () => {
+    fetchStoreData();
+  });
 
   const fetchStoreData = async () => {
     setLoading(true);
@@ -1030,6 +1134,26 @@ const StoreKeeping = () => {
     return logs.filter(l => l.status === 'pending_approval' && approvedDepartments.includes((l.department || '').toLowerCase().trim()));
   }, [logs, approvedDepartments]);
 
+  const paginatedItems = useMemo(() => {
+    const startIndex = (currentPageItems - 1) * pageSize;
+    return filteredItems.slice(startIndex, startIndex + pageSize);
+  }, [filteredItems, currentPageItems]);
+
+  const paginatedLogs = useMemo(() => {
+    const startIndex = (currentPageLogs - 1) * pageSize;
+    return filteredLogs.slice(startIndex, startIndex + pageSize);
+  }, [filteredLogs, currentPageLogs]);
+
+  const paginatedApprovals = useMemo(() => {
+    const startIndex = (currentPageApprovals - 1) * pageSize;
+    return pendingApprovals.slice(startIndex, startIndex + pageSize);
+  }, [pendingApprovals, currentPageApprovals]);
+
+  const paginatedProcurements = useMemo(() => {
+    const startIndex = (currentPageProcurement - 1) * pageSize;
+    return purchaseRequests.slice(startIndex, startIndex + pageSize);
+  }, [purchaseRequests, currentPageProcurement]);
+
   return (
     <div className="min-h-screen pb-12">
       {/* 1. Header Area */}
@@ -1045,13 +1169,15 @@ const StoreKeeping = () => {
         </div>
 
         <div className="flex bg-dark-800 p-1.5 rounded-2xl border border-dark-700/60 shadow-lg select-none">
-          <button 
-            onClick={() => setActiveTab('inventory')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 ${activeTab === 'inventory' ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
-          >
-            <Layers size={14} />
-            <span>Store Registry</span>
-          </button>
+          {hasStoreKeepingAdmin && (
+            <button 
+              onClick={() => setActiveTab('inventory')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 ${activeTab === 'inventory' ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+            >
+              <Layers size={14} />
+              <span>Store Registry</span>
+            </button>
+          )}
           <button 
             onClick={() => setActiveTab('request')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 ${activeTab === 'request' ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
@@ -1059,44 +1185,48 @@ const StoreKeeping = () => {
             <ArrowUpRight size={14} />
             <span>Material Request</span>
           </button>
-          <button 
-            onClick={() => setActiveTab('approvals')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 relative ${activeTab === 'approvals' ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
-          >
-            <ShieldCheck size={14} />
-            <span>Release Approvals</span>
-            {pendingApprovals.length > 0 && (
-              <span className="absolute -top-1.5 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[8px] font-black text-white ring-2 ring-dark-900 animate-pulse">
-                {pendingApprovals.length}
-              </span>
-            )}
-          </button>
-          <button 
-            onClick={() => setActiveTab('procurement')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 relative ${activeTab === 'procurement' ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
-          >
-            <ListOrdered size={14} />
-            <span>Procurement Requests</span>
-            {purchaseRequests.filter(r => r.status === 'pending_purchase').length > 0 && (
-              <span className="absolute -top-1.5 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-yellow-500 text-[8px] font-black text-dark-900 ring-2 ring-dark-900 animate-pulse">
-                {purchaseRequests.filter(r => r.status === 'pending_purchase').length}
-              </span>
-            )}
-          </button>
-          <button 
-            onClick={() => setActiveTab('logs')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 ${activeTab === 'logs' ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
-          >
-            <Clock size={14} />
-            <span>Audit History</span>
-          </button>
+          {hasStoreKeepingAdmin && (
+            <>
+              <button 
+                onClick={() => setActiveTab('approvals')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 relative ${activeTab === 'approvals' ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+              >
+                <ShieldCheck size={14} />
+                <span>Release Approvals</span>
+                {pendingApprovals.length > 0 && (
+                  <span className="absolute -top-1.5 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[8px] font-black text-white ring-2 ring-dark-900 animate-pulse">
+                    {pendingApprovals.length}
+                  </span>
+                )}
+              </button>
+              <button 
+                onClick={() => setActiveTab('procurement')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 relative ${activeTab === 'procurement' ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+              >
+                <ListOrdered size={14} />
+                <span>Procurement Requests</span>
+                {purchaseRequests.filter(r => r.status === 'pending_purchase').length > 0 && (
+                  <span className="absolute -top-1.5 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-yellow-500 text-[8px] font-black text-dark-900 ring-2 ring-dark-900 animate-pulse">
+                    {purchaseRequests.filter(r => r.status === 'pending_purchase').length}
+                  </span>
+                )}
+              </button>
+              <button 
+                onClick={() => setActiveTab('logs')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 ${activeTab === 'logs' ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+              >
+                <Clock size={14} />
+                <span>Audit History</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       {/* 2. TAB CONTENT switches */}
 
       {/* TAB 1: STORE REGISTRY & LIVE MASTER INVENTORY */}
-      {activeTab === 'inventory' && (
+      {activeTab === 'inventory' && hasStoreKeepingAdmin && (
         <div className="space-y-6">
           {/* Quick Metrics Bar */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1186,7 +1316,7 @@ const StoreKeeping = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dark-700">
-                  {filteredItems.map(item => (
+                  {paginatedItems.map(item => (
                     <tr key={item.id} className="hover:bg-dark-700/20 transition-colors">
                       <td className="p-4 font-extrabold text-white">{item.name}</td>
                       <td className="p-4">
@@ -1218,6 +1348,12 @@ const StoreKeeping = () => {
                 </tbody>
               </table>
             )}
+            <PaginationControl
+              currentPage={currentPageItems}
+              totalItems={filteredItems.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPageItems}
+            />
           </div>
         </div>
       )}
@@ -1381,7 +1517,7 @@ const StoreKeeping = () => {
       )}
 
       {/* TAB 3: RELEASE APPROVALS QUEUE */}
-      {activeTab === 'approvals' && (
+      {activeTab === 'approvals' && hasStoreKeepingAdmin && (
         <div className="space-y-6 animate-fade-in">
           {/* RLS/Role Restriction Warning if staff isn't Manager */}
           {!isApprover ? (
@@ -1433,7 +1569,7 @@ const StoreKeeping = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-dark-700">
-                      {pendingApprovals.map(log => {
+                      {paginatedApprovals.map(log => {
                         const totalVal = log.quantity * log.price_at_transaction;
                         return (
                           <tr key={log.id} className="hover:bg-dark-700/20 transition-colors">
@@ -1477,6 +1613,12 @@ const StoreKeeping = () => {
                       })}
                     </tbody>
                   </table>
+                  <PaginationControl
+                    currentPage={currentPageApprovals}
+                    totalItems={pendingApprovals.length}
+                    pageSize={pageSize}
+                    onPageChange={setCurrentPageApprovals}
+                  />
                 </div>
               )}
             </div>
@@ -1484,7 +1626,7 @@ const StoreKeeping = () => {
         </div>
       )}
       {/* TAB 5: PROCUREMENT WORKSPACE */}
-      {activeTab === 'procurement' && (
+      {activeTab === 'procurement' && hasStoreKeepingAdmin && (
         <div className="space-y-6 animate-fade-in">
           {/* Quick Metrics Bar */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1547,7 +1689,7 @@ const StoreKeeping = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dark-700">
-                  {purchaseRequests.map(req => (
+                  {paginatedProcurements.map(req => (
                     <tr key={req.id} className="hover:bg-dark-700/20 transition-colors">
                       <td className="p-4 text-gray-400 font-mono text-[10px]">
                         {format(new Date(req.created_at), 'yyyy-MM-dd HH:mm')}
@@ -1620,12 +1762,18 @@ const StoreKeeping = () => {
                 </tbody>
               </table>
             )}
+            <PaginationControl
+              currentPage={currentPageProcurement}
+              totalItems={purchaseRequests.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPageProcurement}
+            />
           </div>
         </div>
       )}
 
       {/* TAB 4: AUDIT HISTORY */}
-      {activeTab === 'logs' && (
+      {activeTab === 'logs' && hasStoreKeepingAdmin && (
         <div className="space-y-6 animate-fade-in">
           {/* Auditing controls bar */}
           <div className="flex flex-col xl:flex-row gap-4 items-center justify-between bg-dark-800 p-4 border border-dark-700/60 rounded-2xl shadow-md">
@@ -1769,7 +1917,7 @@ const StoreKeeping = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dark-700">
-                  {filteredLogs.map(log => (
+                  {paginatedLogs.map(log => (
                     <tr key={log.id} className="hover:bg-dark-700/20 transition-colors">
                       <td className="p-4 text-gray-400 font-mono text-[10px]">
                         {format(new Date(log.transaction_date), 'yyyy-MM-dd HH:mm')}
@@ -1811,6 +1959,12 @@ const StoreKeeping = () => {
                 </tbody>
               </table>
             )}
+            <PaginationControl
+              currentPage={currentPageLogs}
+              totalItems={filteredLogs.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPageLogs}
+            />
           </div>
         </div>
       )}

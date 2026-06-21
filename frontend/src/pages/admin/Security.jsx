@@ -226,38 +226,146 @@ const AdminSecurity = () => {
   }, [activeTab, currentPage, pageSize, logTypeFilter, startDate, endDate]);
 
   const handleSaveSettings = async (e) => {
-    e.preventDefault();
-    const keys = Object.keys(settings);
-    let successCount = 0;
-    
-    for (const key of keys) {
-      const val = settings[key].toString();
-      const { data: exists } = await supabase.from('system_settings').select('id').eq('setting_key', key).single();
-      
-      let err;
-      if (exists) {
-        const { error } = await supabase.from('system_settings').update({ setting_value: val }).eq('setting_key', key);
-        err = error;
-      } else {
-        const { error } = await supabase.from('system_settings').insert([{ setting_key: key, setting_value: val }]);
-        err = error;
-      }
-      if (!err) successCount++;
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
     }
+    const rows = Object.keys(settings).map(key => ({
+      setting_key: key,
+      setting_value: settings[key].toString()
+    }));
     
-    if (successCount === keys.length) toast.success('Security settings updated securely.');
-    else toast.error('Failed to update some settings.');
+    const { error } = await supabase
+      .from('system_settings')
+      .upsert(rows, { onConflict: 'setting_key' });
+      
+    if (!error) {
+      toast.success('Security settings updated securely.');
+    } else {
+      console.error(error);
+      toast.error('Failed to update settings: ' + error.message);
+    }
   };
 
-  const triggerManualBackup = () => {
-    toast.promise(
-      new Promise(resolve => setTimeout(resolve, 3000)),
-      {
-        loading: 'Connecting to database cluster... generating backup snapshot...',
-        success: 'Backup snapshot created and stored securely!',
-        error: 'Failed to create backup.',
+  const triggerManualBackup = async () => {
+    const toastId = toast.loading('Connecting to database cluster... generating backup snapshot...');
+    try {
+      // Fetch system settings
+      const { data: settingsData, error: settingsError } = await supabase
+        .from('system_settings')
+        .select('*');
+      if (settingsError) throw settingsError;
+
+      // Fetch profiles
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('*');
+      if (profilesError) throw profilesError;
+
+      // Fetch system logs (limit to 1000 to avoid huge payload)
+      const { data: logsData, error: logsError } = await supabase
+        .from('system_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1000);
+      if (logsError) throw logsError;
+
+      const backupPayload = {
+        exported_at: new Date().toISOString(),
+        version: '1.0',
+        system_settings: settingsData || [],
+        profiles: profilesData || [],
+        system_logs: logsData || []
+      };
+
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupPayload, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `sparkles_pms_backup_${new Date().toISOString().slice(0, 10)}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+
+      toast.success('Backup snapshot generated and downloaded successfully!', { id: toastId });
+    } catch (err) {
+      console.error(err);
+      toast.error(`Failed to create backup: ${err.message}`, { id: toastId });
+    }
+  };
+
+  const handleRestoreBackup = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!window.confirm("Are you sure you want to restore this backup? This may overwrite existing system settings and profiles!")) {
+      e.target.value = ''; // Reset file input
+      return;
+    }
+
+    const toastId = toast.loading('Reading backup file...');
+    try {
+      const text = await file.text();
+      const backupData = JSON.parse(text);
+
+      if (!backupData.system_settings || !backupData.profiles) {
+        throw new Error('Invalid backup file structure. Missing settings or profiles data.');
       }
-    );
+
+      toast.loading('Restoring system settings...', { id: toastId });
+      // Restore system_settings
+      if (backupData.system_settings.length > 0) {
+        const cleanSettings = backupData.system_settings.map(s => ({
+          setting_key: s.setting_key,
+          setting_value: s.setting_value
+        }));
+        const { error: settingsErr } = await supabase
+          .from('system_settings')
+          .upsert(cleanSettings, { onConflict: 'setting_key' });
+        if (settingsErr) throw settingsErr;
+      }
+
+      toast.loading('Restoring profiles...', { id: toastId });
+      // Restore profiles
+      if (backupData.profiles.length > 0) {
+        const cleanProfiles = backupData.profiles.map(p => ({
+          id: p.id,
+          first_name: p.first_name,
+          last_name: p.last_name,
+          email: p.email,
+          role: p.role,
+          is_active: p.is_active,
+          status: p.status,
+          updated_at: new Date().toISOString()
+        }));
+        const { error: profilesErr } = await supabase
+          .from('profiles')
+          .upsert(cleanProfiles, { onConflict: 'id' });
+        if (profilesErr) throw profilesErr;
+      }
+
+      // Optionally restore system_logs
+      if (backupData.system_logs && backupData.system_logs.length > 0) {
+        toast.loading('Restoring system logs...', { id: toastId });
+        const cleanLogs = backupData.system_logs.map(l => ({
+          user_id: l.user_id,
+          log_type: l.log_type,
+          action: l.action,
+          module: l.module,
+          entity_table: l.entity_table,
+          metadata: l.metadata,
+          ip_address: l.ip_address,
+          created_at: l.created_at
+        }));
+        await supabase.from('system_logs').insert(cleanLogs);
+      }
+
+      toast.success('✓ System successfully restored from backup snapshot!', { id: toastId });
+      fetchSettings(); // Refresh active settings
+    } catch (err) {
+      console.error(err);
+      toast.error(`Restore failed: ${err.message}`, { id: toastId });
+    } finally {
+      e.target.value = ''; // Reset file input
+    }
   };
 
   const clearOldLogs = () => {
@@ -569,11 +677,27 @@ const AdminSecurity = () => {
                 <div className="bg-dark-900 p-5 border border-dark-700 rounded flex flex-col gap-4">
                   <div>
                     <h5 className="font-bold text-white text-sm">Manual Snapshot</h5>
-                    <p className="text-xs text-gray-400 mt-1">Generate an immediate, downloadable SQL dump of the current database state.</p>
+                    <p className="text-xs text-gray-400 mt-1">Generate an immediate, downloadable JSON dump of the current settings, profiles, and logs.</p>
                   </div>
                   <button onClick={triggerManualBackup} className="w-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-500 font-bold py-3 rounded border border-blue-500/30 transition-colors flex items-center justify-center gap-2">
                     <Download size={18}/> Generate Snapshot
                   </button>
+                </div>
+
+                <div className="bg-dark-900 p-5 border border-dark-700 rounded flex flex-col gap-4">
+                  <div>
+                    <h5 className="font-bold text-white text-sm">Restore from Snapshot</h5>
+                    <p className="text-xs text-gray-400 mt-1">Restore system settings and profiles from a previously exported JSON backup.</p>
+                  </div>
+                  <label className="w-full bg-green-600/20 hover:bg-green-600/30 text-green-500 font-bold py-3 rounded border border-green-500/30 transition-colors flex items-center justify-center gap-2 cursor-pointer text-center">
+                    <RefreshCw size={18}/> Restore Backup
+                    <input 
+                      type="file" 
+                      accept=".json" 
+                      onChange={handleRestoreBackup} 
+                      className="hidden" 
+                    />
+                  </label>
                 </div>
               </div>
             </div>

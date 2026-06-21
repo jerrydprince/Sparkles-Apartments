@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -134,33 +135,71 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
 });
 
 
-// Resend Email Integration
+// Email Dispatcher (Supports SMTP/cPanel & Resend Fallback)
 app.post('/api/email/send', async (req, res) => {
   const { to, subject, html, from } = req.body;
-  
-  let apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    try {
-      const { data, error } = await supabase
-        .from('system_settings')
-        .select('setting_value')
-        .eq('setting_key', 'resend_api_key')
-        .single();
-      
-      if (!error && data) {
-        apiKey = data.setting_value;
-      }
-    } catch (e) {
-      console.warn("Failed to fetch resend_api_key from system_settings table: ", e.message);
-    }
-  }
-
-  if (!apiKey) {
-    return res.status(500).json({ error: 'Resend API key is not configured in process.env or system_settings.' });
-  }
 
   try {
+    // 1. Fetch system settings
+    const { data: settings, error: settingsError } = await supabase
+      .from('system_settings')
+      .select('setting_key, setting_value');
+
+    const settingsMap = {};
+    if (!settingsError && settings) {
+      settings.forEach(row => {
+        settingsMap[row.setting_key] = row.setting_value;
+      });
+    }
+
+    const smtpEnabled = settingsMap.smtp_enabled === 'true' || settingsMap.smtp_enabled === true;
+
+    // 2. If SMTP (cPanel Webmail) is enabled, route via Nodemailer SMTP
+    if (smtpEnabled) {
+      const host = settingsMap.smtp_host || 'mail.sparklesapartments.ng';
+      const port = parseInt(settingsMap.smtp_port || '465', 10);
+      const username = settingsMap.smtp_username || 'info@sparklesapartments.ng';
+      const password = settingsMap.smtp_password || '';
+      const secure = settingsMap.smtp_secure === 'ssl' || port === 465;
+
+      const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure,
+        auth: {
+          user: username,
+          pass: password
+        },
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
+
+      // Force info@sparklesapartments.ng from address as requested by user
+      const smtpFrom = `Sparkles Apartments <info@sparklesapartments.ng>`;
+
+      const mailOptions = {
+        from: smtpFrom,
+        to,
+        subject,
+        html
+      };
+
+      console.log(`[SMTP Backend] Dispatching email to: ${to} via cPanel SMTP (${host}:${port}) from ${smtpFrom}...`);
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`[SMTP Backend] Email sent successfully via SMTP: ${info.messageId}`);
+      return res.json({ success: true, id: info.messageId });
+    }
+
+    // 3. Fallback to Resend API
+    let apiKey = process.env.RESEND_API_KEY || settingsMap.resend_api_key;
+
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Neither SMTP nor Resend API key is configured.' });
+    }
+
     const fromAddress = from ? `Sparkles Apartments <${from}>` : 'Sparkles Apartments <onboarding@resend.dev>';
+    console.log(`[Resend Backend] Dispatching email to: ${to} via Resend...`);
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -175,10 +214,213 @@ app.post('/api/email/send', async (req, res) => {
       })
     });
 
-    const data = await response.json();
-    res.json(data);
+    const responseData = await response.json();
+    if (!response.ok) {
+      throw new Error(responseData.message || 'Resend API returned an error');
+    }
+    res.json(responseData);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to send email via Resend' });
+    console.error('[Email Dispatch Error]', error);
+    res.status(500).json({ error: error.message || 'Failed to dispatch email' });
+  }
+});
+
+// Helper function to send email internally for auth actions
+async function sendAuthEmailInternal({ to, subject, html }) {
+  try {
+    const { data: settings, error: settingsError } = await supabase
+      .from('system_settings')
+      .select('setting_key, setting_value');
+
+    const settingsMap = {};
+    if (!settingsError && settings) {
+      settings.forEach(row => {
+        settingsMap[row.setting_key] = row.setting_value;
+      });
+    }
+
+    const smtpEnabled = settingsMap.smtp_enabled === 'true' || settingsMap.smtp_enabled === true;
+
+    if (smtpEnabled) {
+      const host = settingsMap.smtp_host || 'mail.sparklesapartments.ng';
+      const port = parseInt(settingsMap.smtp_port || '465', 10);
+      const username = settingsMap.smtp_username || 'info@sparklesapartments.ng';
+      const password = settingsMap.smtp_password || '';
+      const secure = settingsMap.smtp_secure === 'ssl' || port === 465;
+
+      const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure,
+        auth: { user: username, pass: password },
+        tls: { rejectUnauthorized: false }
+      });
+
+      const smtpFrom = `Sparkles Apartments <info@sparklesapartments.ng>`;
+      await transporter.sendMail({
+        from: smtpFrom,
+        to,
+        subject,
+        html
+      });
+      console.log(`[SMTP Auth] Email sent successfully to ${to}`);
+      return { success: true };
+    }
+
+    let apiKey = process.env.RESEND_API_KEY || settingsMap.resend_api_key;
+    if (!apiKey) {
+      throw new Error('Neither SMTP nor Resend API key is configured.');
+    }
+
+    const fromAddress = 'Sparkles Apartments <info@sparklesapartments.ng>';
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: fromAddress,
+        to: [to],
+        subject,
+        html
+      })
+    });
+
+    const responseData = await response.json();
+    if (!response.ok) {
+      throw new Error(responseData.message || 'Resend API returned an error');
+    }
+    console.log(`[Resend Auth] Email sent successfully to ${to}`);
+    return { success: true };
+  } catch (error) {
+    console.error('[Auth Email Helper Error]', error);
+    throw error;
+  }
+}
+
+// Request Password Recovery Token & Dispatch Email
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Email address is required' });
+  }
+
+  try {
+    const cleanEmail = email.trim().toLowerCase();
+    
+    // 1. Verify user exists in profiles or auth.users
+    const { data: profile, error: profileErr } = await supabase
+      .from('profiles')
+      .select('id, email, first_name, last_name')
+      .eq('email', cleanEmail)
+      .maybeSingle();
+
+    if (profileErr) {
+      console.error('[Forgot Password] Profile query error:', profileErr);
+    }
+
+    if (!profile) {
+      // Prevent user enumeration by returning success anyway
+      console.log(`[Forgot Password] Request received for non-existent profile: ${cleanEmail}`);
+      return res.json({ success: true, message: 'Recovery link sent if email is registered.' });
+    }
+
+    // 2. Generate secure token
+    const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + '-' + Date.now();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour expiry
+
+    // 3. Insert token into password_resets
+    const { error: insertErr } = await supabase
+      .from('password_resets')
+      .insert({
+        email: cleanEmail,
+        token,
+        expires_at: expiresAt,
+        used: false
+      });
+
+    if (insertErr) throw insertErr;
+
+    // 4. Send email
+    const origin = req.headers.origin || 'http://localhost:5173';
+    const resetLink = `${origin}/reset-password?token=${token}&email=${encodeURIComponent(cleanEmail)}`;
+
+    const htmlContent = `
+      <div style="font-family: 'Outfit', sans-serif; padding: 40px; color: #1f2937; max-width: 600px; margin: auto; border: 1px solid #e5e7eb; border-top: 8px solid #DF6853; border-radius: 16px; background-color: #ffffff;">
+        <div style="text-align: center; border-bottom: 1px solid #f3f4f6; padding-bottom: 25px; margin-bottom: 25px;">
+          <h2 style="color: #000000; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: 0.05em;">SPARKLES APARTMENTS</h2>
+          <span style="font-size: 11px; color: #DF6853; text-transform: uppercase; letter-spacing: 0.15em; font-weight: bold;">Premium Luxury Shortlets</span>
+        </div>
+        
+        <div style="margin-bottom: 30px;">
+          <h3 style="color: #111827; font-size: 18px; font-weight: 700; margin-top: 0; margin-bottom: 15px; border-left: 4px solid #DF6853; padding-left: 10px;">Reset Your Password</h3>
+          <p style="font-size: 14px; line-height: 1.6; color: #4b5563; margin: 0;">
+            Dear <strong>${profile.first_name || 'Guest'}</strong>,
+          </p>
+          <p style="font-size: 14px; line-height: 1.6; color: #4b5563; margin-top: 10px;">
+            We received a request to reset your password for your Sparkles Apartments account. Please click the button below to choose a new password. This link is secure and valid for 1 hour.
+          </p>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
+          <a href="${resetLink}" style="background-color: #DF6853; color: white; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px; display: inline-block;">Reset Password</a>
+        </div>
+
+        <div style="font-size: 12px; color: #9ca3af; line-height: 1.5; margin-bottom: 20px;">
+          If the button above does not work, copy and paste the following URL into your browser:<br/>
+          <a href="${resetLink}" style="color: #DF6853; text-decoration: underline; word-break: break-all;">${resetLink}</a>
+        </div>
+
+        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #f3f4f6; text-align: center; font-size: 12px; color: #9ca3af;">
+          <p style="margin: 0 0 5px 0;">If you did not request a password reset, please ignore this email.</p>
+          <p style="margin: 0;">Plot 572 Iduwa Ogenyi Street Mabushi, Off Ahmadu Bello Way, Abuja</p>
+        </div>
+      </div>
+    `;
+
+    await sendAuthEmailInternal({
+      to: cleanEmail,
+      subject: 'Reset Password Request - Sparkles Apartments',
+      html: htmlContent
+    });
+
+    res.json({ success: true, message: 'Recovery link sent successfully.' });
+  } catch (error) {
+    console.error('[Forgot Password Error]', error);
+    res.status(500).json({ error: error.message || 'Failed to request password reset' });
+  }
+});
+
+// Verify Recovery Token & Update Password via Database Security Definer RPC
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { email, token, password } = req.body;
+
+  if (!email || !token || !password) {
+    return res.status(400).json({ error: 'Email, token, and password are required' });
+  }
+
+  try {
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Call the database function to reset user password
+    const { data: resetResult, error: resetError } = await supabase.rpc('reset_auth_user_password', {
+      p_email: cleanEmail,
+      p_token: token,
+      p_new_password: password
+    });
+
+    if (resetError) throw resetError;
+
+    if (resetResult === true) {
+      console.log(`[Reset Password] Password reset successfully for: ${cleanEmail}`);
+      res.json({ success: true, message: 'Password updated successfully!' });
+    } else {
+      res.status(400).json({ error: 'Password reset link is invalid, expired, or has already been used.' });
+    }
+  } catch (error) {
+    console.error('[Reset Password Error]', error);
+    res.status(500).json({ error: error.message || 'Failed to update password' });
   }
 });
 

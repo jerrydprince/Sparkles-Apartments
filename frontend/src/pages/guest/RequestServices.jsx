@@ -306,6 +306,23 @@ const RequestServices = () => {
     }
   };
 
+  const handleConfirmService = async (requestId) => {
+    const toastId = toast.loading('Confirming service...');
+    try {
+      const { error } = await supabase
+        .from('booking_services')
+        .update({ status: 'confirmed' })
+        .eq('id', requestId);
+
+      if (error) throw error;
+      toast.success('Service confirmed and routed to department!', { id: toastId });
+      fetchExistingRequests();
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to confirm service: ' + (err.message || 'Error occurred'), { id: toastId });
+    }
+  };
+
   if (loading) {
     return <div className="text-gray-400 p-8 text-center bg-dark-800 border border-dark-700 rounded-lg">Loading services and active stays...</div>;
   }
@@ -617,6 +634,93 @@ const RequestServices = () => {
             </div>
           </div>
         </form>
+      )}
+
+      {/* Existing Requests Section */}
+      {selectedBookingId && (
+        <div className="bg-dark-800 border border-dark-700 p-6 rounded-lg shadow-md mt-8">
+          <h3 className="text-lg font-bold border-b border-dark-700 pb-4 text-white flex items-center gap-2">
+            <span>📋</span> Active & Historic Requests
+          </h3>
+
+          {existingRequests.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-8">No service requests submitted yet for this stay.</p>
+          ) : (
+            <div className="overflow-x-auto mt-4">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-dark-700 text-xs text-gray-400 font-bold uppercase">
+                    <th className="pb-3 pr-4">Service</th>
+                    <th className="pb-3 px-4">Schedule</th>
+                    <th className="pb-3 px-4">Qty</th>
+                    <th className="pb-3 px-4">Total Cost</th>
+                    <th className="pb-3 px-4">Status</th>
+                    <th className="pb-3 pl-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-700/50 text-sm text-gray-300">
+                  {existingRequests.map(req => {
+                    const price = req.total_price_ngn;
+                    const isCheckedIn = activeBooking?.status === 'checked_in';
+                    const isPending = req.status === 'pending';
+                    const canConfirm = isCheckedIn && isPending;
+
+                    return (
+                      <tr key={req.id} className="hover:bg-dark-750/30 transition-colors">
+                        <td className="py-4 pr-4">
+                          <span className="font-semibold text-white block">{req.services?.name || 'Custom Service'}</span>
+                          {req.notes && (
+                            <span className="text-xs text-gray-500 block max-w-[250px] truncate mt-0.5" title={req.notes}>
+                              {req.notes.replace(/^(restaurant_order|laundry_request):\s*/, '')}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-4 px-4 text-xs font-mono text-gray-450">
+                          {req.scheduled_date ? (
+                            <span>{req.scheduled_date} @ {req.scheduled_time || 'Anytime'}</span>
+                          ) : (
+                            <span className="text-gray-600">N/A</span>
+                          )}
+                        </td>
+                        <td className="py-4 px-4 font-semibold text-center">{req.quantity}</td>
+                        <td className="py-4 px-4 font-bold text-white">
+                          {price === 0 ? 'TBD' : `₦${price.toLocaleString()}`}
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className={`inline-flex px-2 py-0.5 rounded text-xs font-extrabold border ${
+                            req.status === 'pending' ? 'bg-yellow-500/10 border-yellow-500/25 text-yellow-400' :
+                            req.status === 'confirmed' ? 'bg-orange-500/10 border-orange-500/25 text-orange-400' :
+                            req.status === 'scheduled' ? 'bg-blue-500/10 border-blue-500/25 text-blue-400' :
+                            req.status === 'in_progress' ? 'bg-teal-500/10 border-teal-500/25 text-teal-400' :
+                            req.status === 'completed' ? 'bg-green-500/10 border-green-500/25 text-green-400' :
+                            'bg-gray-500/10 border-gray-500/25 text-gray-400'
+                          }`}>
+                            {req.status.replace('_', ' ').toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="py-4 pl-4 text-right">
+                          {canConfirm ? (
+                            <button
+                              type="button"
+                              onClick={() => handleConfirmService(req.id)}
+                              className="bg-gold-500 hover:bg-gold-600 text-dark-950 font-bold px-3 py-1.5 rounded text-xs transition-colors shadow-sm active:scale-95"
+                            >
+                              Confirm Service
+                            </button>
+                          ) : isPending && !isCheckedIn ? (
+                            <span className="text-[10px] text-gray-500 italic">Awaiting Check-in</span>
+                          ) : (
+                            <span className="text-xs text-gray-500">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

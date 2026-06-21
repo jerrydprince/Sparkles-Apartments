@@ -1,6 +1,81 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Mail, Phone, MapPin, MoreVertical, Star, X, Plus, Crown, Wallet, Clock, CheckCircle, MessageSquare, Edit, Send, LayoutGrid, List, Eye, EyeOff } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Search, Mail, Phone, MapPin, MoreVertical, Star, X, Plus, Crown, Wallet, Clock, CheckCircle, MessageSquare, Edit, Send, LayoutGrid, List, Eye, EyeOff, RefreshCcw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+
+const PaginationControl = ({ currentPage, totalItems, pageSize, onPageChange }) => {
+  const totalPages = Math.ceil(totalItems / pageSize);
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className="flex items-center justify-between border-t border-dark-700 bg-dark-900/30 px-4 py-3 sm:px-6 mt-4 rounded-b-lg">
+      <div className="flex flex-1 justify-between sm:hidden">
+        <button
+          type="button"
+          disabled={currentPage === 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          className="relative inline-flex items-center rounded-md border border-dark-750 bg-dark-800 px-4 py-2 text-xs font-bold text-gray-300 hover:bg-dark-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          disabled={currentPage === totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+          className="relative ml-3 inline-flex items-center rounded-md border border-dark-750 bg-dark-800 px-4 py-2 text-xs font-bold text-gray-300 hover:bg-dark-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
+      </div>
+      <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs text-gray-400">
+            Showing <span className="font-semibold text-white">{((currentPage - 1) * pageSize) + 1}</span> to{' '}
+            <span className="font-semibold text-white">
+              {Math.min(currentPage * pageSize, totalItems)}
+            </span>{' '}
+            of <span className="font-semibold text-white">{totalItems}</span> results
+          </p>
+        </div>
+        <div>
+          <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+            <button
+              type="button"
+              disabled={currentPage === 1}
+              onClick={() => onPageChange(currentPage - 1)}
+              className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-dark-750 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <span className="sr-only">Previous</span>
+              &larr;
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                type="button"
+                key={page}
+                onClick={() => onPageChange(page)}
+                className={`relative inline-flex items-center px-3 py-2 text-xs font-bold ring-1 ring-inset ring-dark-750 cursor-pointer ${
+                  page === currentPage
+                    ? 'z-10 bg-brand-500 text-dark-950 focus:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 font-extrabold'
+                    : 'text-gray-300 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              type="button"
+              disabled={currentPage === totalPages}
+              onClick={() => onPageChange(currentPage + 1)}
+              className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-450 ring-1 ring-inset ring-dark-750 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <span className="sr-only">Next</span>
+              &rarr;
+            </button>
+          </nav>
+        </div>
+      </div>
+    </div>
+  );
+};
 import toast from 'react-hot-toast';
 import { createClient } from '@supabase/supabase-js';
 
@@ -10,11 +85,17 @@ const secondarySupabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }
 });
 import { optimizeImage } from '../../utils/imageOptimizer';
+import { sendWelcomeEmail, sendResendEmail, sendSMSNotification } from '../../lib/emailService';
 
 
 const AdminGuests = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [guests, setGuests] = useState([]);
+  const [currentPageGuests, setCurrentPageGuests] = useState(1);
+  const [currentPageGroups, setCurrentPageGroups] = useState(1);
+  const [currentPageAR, setCurrentPageAR] = useState(1);
+  const pageSize = 10;
+
   const [loading, setLoading] = useState(true);
   const [selectedGuest, setSelectedGuest] = useState(null);
   const [viewMode, setViewMode] = useState('list'); // 'card' or 'list'
@@ -59,6 +140,14 @@ const AdminGuests = () => {
 
   // Group Booking / Corporate CRM States
   const [parentTab, setParentTab] = useState('standard');
+  const [broadcastChannel, setBroadcastChannel] = useState('email');
+  const [broadcastSegment, setBroadcastSegment] = useState('all');
+  const [broadcastSubject, setBroadcastSubject] = useState('');
+  const [broadcastBody, setBroadcastBody] = useState('');
+  const [broadcastSending, setBroadcastSending] = useState(false);
+  const [broadcastProgress, setBroadcastProgress] = useState({ current: 0, total: 0 });
+  const [broadcastConsoleLogs, setBroadcastConsoleLogs] = useState([]);
+  const broadcastActiveRef = React.useRef(false);
   const [groupAccounts, setGroupAccounts] = useState([]);
   const [closedGroupAccounts, setClosedGroupAccounts] = useState([]);
   const [deactivatedGroupAccounts, setDeactivatedGroupAccounts] = useState([]);
@@ -143,6 +232,18 @@ const AdminGuests = () => {
       console.error("Failed to load contact settings:", e);
     }
   };
+
+  useEffect(() => {
+    setCurrentPageGuests(1);
+  }, [searchTerm, viewMode]);
+
+  useEffect(() => {
+    setCurrentPageGroups(1);
+  }, [groupSearchTerm]);
+
+  useEffect(() => {
+    setCurrentPageAR(1);
+  }, [selectedGuest]);
 
   useEffect(() => {
     fetchGuests();
@@ -507,6 +608,7 @@ const AdminGuests = () => {
     const toastId = toast.loading('Provisioning new guest account...');
     try {
       let newUserId = null;
+      let isNewAccount = false;
 
       // 1. SignUp in background using secondary supabase client
       try {
@@ -536,6 +638,7 @@ const AdminGuests = () => {
           }
         } else {
           newUserId = authData?.user?.id;
+          isNewAccount = true;
         }
       } catch (signUpErr) {
         // Double check profiles lookup in case signUp threw completely
@@ -581,6 +684,20 @@ const AdminGuests = () => {
         .eq('id', selectedGuest.id);
 
       if (crmLinkError) throw crmLinkError;
+
+      // Send welcome email if new account
+      if (isNewAccount) {
+        try {
+          await sendWelcomeEmail({
+            email: selectedGuest.email.toLowerCase(),
+            firstName: selectedGuest.first_name,
+            lastName: selectedGuest.last_name,
+            password: provisionPassword
+          });
+        } catch (emailErr) {
+          console.warn("Failed to send welcome email:", emailErr);
+        }
+      }
 
       toast.success(`Account successfully provisioned or linked! Profile connected.`, { id: toastId, duration: 8000 });
       
@@ -1136,6 +1253,115 @@ const AdminGuests = () => {
     }
   };
 
+  const handleStartBroadcast = async (e) => {
+    e.preventDefault();
+    if (!broadcastBody.trim()) return toast.error("Broadcast message body cannot be empty.");
+    if (broadcastChannel === 'email' && !broadcastSubject.trim()) {
+      return toast.error("Email subject is required.");
+    }
+
+    let targets = guests;
+    if (broadcastSegment === 'vip') {
+      targets = guests.filter(g => g.vip_status === true || g.segment === 'vip');
+    } else if (broadcastSegment === 'standard') {
+      targets = guests.filter(g => g.segment === 'standard');
+    } else if (broadcastSegment === 'corporate') {
+      targets = guests.filter(g => g.segment === 'corporate');
+    }
+
+    if (targets.length === 0) {
+      return toast.error("No guests match the selected filter segment.");
+    }
+
+    if (!window.confirm(`Are you sure you want to send this broadcast message to ${targets.length} guests?`)) {
+      return;
+    }
+
+    setBroadcastSending(true);
+    broadcastActiveRef.current = true;
+    setBroadcastProgress({ current: 0, total: targets.length });
+    setBroadcastConsoleLogs([`Starting broadcast dispatch to ${targets.length} recipients...`]);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < targets.length; i++) {
+      if (!broadcastActiveRef.current) {
+        break;
+      }
+      
+      const guest = targets[i];
+      const guestName = `${guest.first_name || ''} ${guest.last_name || ''}`.trim() || 'Valued Guest';
+      
+      setBroadcastConsoleLogs(prev => [...prev, `[${i + 1}/${targets.length}] Sending to ${guestName}...`]);
+
+      let res;
+      try {
+        if (broadcastChannel === 'email') {
+          if (!guest.email) throw new Error("Missing email address");
+          
+          const emailHtml = `
+            <div style="font-family: sans-serif; padding: 20px; color: #1f2937; max-width: 600px; margin: auto; border: 1px solid #e5e7eb; border-top: 6px solid #DF6853; border-radius: 12px;">
+              <h2 style="color: #000000; border-bottom: 1px solid #e5e7eb; padding-bottom: 10px; font-size: 20px;">Sparkles Apartments</h2>
+              <p style="font-size: 15px; line-height: 1.6;">Hello ${guestName},</p>
+              <div style="font-size: 15px; line-height: 1.6; color: #4b5563;">
+                ${broadcastBody.replace(/\{\{guest_name\}\}/g, guestName).replace(/\n/g, '<br/>')}
+              </div>
+              <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #9ca3af; text-align: center;">
+                <p>This is a broadcast message from Sparkles Apartments.</p>
+                <p>${contactInfo.address} | Phone: ${contactInfo.phone}</p>
+              </div>
+            </div>
+          `;
+          
+          res = await sendResendEmail({
+            to: guest.email,
+            subject: broadcastSubject,
+            from: 'info@sparklesapartments.ng',
+            html: emailHtml
+          });
+        } else {
+          if (!guest.phone) throw new Error("Missing phone number");
+          res = await sendSMSNotification({
+            to: guest.phone,
+            message: broadcastBody.replace(/\{\{guest_name\}\}/g, guestName)
+          });
+        }
+
+        if (res.success) {
+          successCount++;
+          await supabase.from('communication_logs').insert([{
+            crm_guest_id: guest.id,
+            type: broadcastChannel,
+            category: 'broadcast',
+            content: broadcastBody.replace(/\{\{guest_name\}\}/g, guestName),
+            status: 'sent'
+          }]);
+          setBroadcastConsoleLogs(prev => [...prev, `  ✓ Sent successfully to ${guest.email || guest.phone}`]);
+        } else {
+          throw new Error(res.error || 'Dispatch error');
+        }
+      } catch (err) {
+        failCount++;
+        await supabase.from('communication_logs').insert([{
+          crm_guest_id: guest.id,
+          type: broadcastChannel,
+          category: 'broadcast',
+          content: broadcastBody.replace(/\{\{guest_name\}\}/g, guestName),
+          status: 'failed'
+        }]);
+        setBroadcastConsoleLogs(prev => [...prev, `  ❌ Failed for ${guest.email || guest.phone || guestName}: ${err.message}`]);
+      }
+
+      setBroadcastProgress(prev => ({ ...prev, current: i + 1 }));
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    setBroadcastConsoleLogs(prev => [...prev, `Broadcast completed! Sent: ${successCount}, Failed: ${failCount}`]);
+    setBroadcastSending(false);
+    toast.success(`Broadcast finished! Successfully dispatched ${successCount} messages.`);
+  };
+
   const handleSaveLoyaltySettings = async (e) => {
     e.preventDefault();
     setSavingLoyalty(true);
@@ -1272,6 +1498,21 @@ const AdminGuests = () => {
     g.contact_name?.toLowerCase().includes(groupSearchTerm.toLowerCase())
   );
 
+  const paginatedGuests = useMemo(() => {
+    const start = (currentPageGuests - 1) * pageSize;
+    return filteredGuests.slice(start, start + pageSize);
+  }, [filteredGuests, currentPageGuests]);
+
+  const paginatedGroups = useMemo(() => {
+    const start = (currentPageGroups - 1) * pageSize;
+    return filteredGroups.slice(start, start + pageSize);
+  }, [filteredGroups, currentPageGroups]);
+
+  const paginatedARStatement = useMemo(() => {
+    const start = (currentPageAR - 1) * pageSize;
+    return arStatement.slice(start, start + pageSize);
+  }, [arStatement, currentPageAR]);
+
   return (
     <div className="text-white pb-20">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
@@ -1287,7 +1528,7 @@ const AdminGuests = () => {
       </div>
 
       {/* Parent Tab Selectors */}
-      <div className="flex border border-dark-700 bg-dark-900/50 p-1 rounded-lg w-full md:w-fit mb-8">
+      <div className="flex flex-wrap border border-dark-700 bg-dark-900/50 p-1 rounded-lg w-full md:w-fit mb-8 gap-1">
         <button 
           onClick={() => setParentTab('standard')} 
           className={`flex-1 md:flex-none px-6 py-2 rounded-md font-bold text-xs uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-2 ${parentTab === 'standard' ? 'bg-brand-500 text-dark-900 shadow-md font-black' : 'text-gray-400 hover:text-white'}`}
@@ -1305,6 +1546,12 @@ const AdminGuests = () => {
           className={`flex-1 md:flex-none px-6 py-2 rounded-md font-bold text-xs uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-2 ${parentTab === 'loyalty' ? 'bg-brand-500 text-dark-900 shadow-md font-black' : 'text-gray-400 hover:text-white'}`}
         >
           ⭐ Loyalty Rewards Program
+        </button>
+        <button 
+          onClick={() => setParentTab('broadcast')} 
+          className={`flex-1 md:flex-none px-6 py-2 rounded-md font-bold text-xs uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-2 ${parentTab === 'broadcast' ? 'bg-brand-500 text-dark-900 shadow-md font-black' : 'text-gray-400 hover:text-white'}`}
+        >
+          💬 Customer Broadcast
         </button>
       </div>
 
@@ -1346,137 +1593,153 @@ const AdminGuests = () => {
           ) : filteredGuests.length === 0 ? (
             <div className="text-gray-400 p-8 text-center bg-dark-800 border border-dark-700 rounded-lg">No guests found.</div>
           ) : viewMode === 'card' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredGuests.map((guest) => (
-                <div key={guest.id} className="bg-dark-800 border border-dark-700 p-6 rounded-lg hover:border-brand-500 transition-colors group relative cursor-pointer" onClick={() => { setSelectedGuest(guest); setActiveTab('overview'); }}>
-                  
-                  {guest.vip_status && (
-                    <div className="absolute -top-3 -right-3 w-8 h-8 bg-brand-500 rounded-full flex items-center justify-center text-dark-900 shadow-lg" title="VIP Guest">
-                      <Crown size={16} />
-                    </div>
-                  )}
+            <div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {paginatedGuests.map((guest) => (
+                  <div key={guest.id} className="bg-dark-800 border border-dark-700 p-6 rounded-lg hover:border-brand-500 transition-colors group relative cursor-pointer" onClick={() => { setSelectedGuest(guest); setActiveTab('overview'); }}>
+                    
+                    {guest.vip_status && (
+                      <div className="absolute -top-3 -right-3 w-8 h-8 bg-brand-500 rounded-full flex items-center justify-center text-dark-900 shadow-lg" title="VIP Guest">
+                        <Crown size={16} />
+                      </div>
+                    )}
 
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="w-16 h-16 rounded-full bg-dark-700 flex items-center justify-center text-xl font-bold text-brand-500 uppercase">
-                      {guest.first_name?.charAt(0) || 'G'}
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-white">{guest.first_name} {guest.last_name}</h3>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs bg-dark-700 text-gray-300 px-2 py-0.5 rounded capitalize">{guest.segment}</span>
-                        {guest.loyalty_points > 0 && <span className="text-xs text-brand-500 font-medium">{guest.loyalty_points} pts</span>}
+                    <div className="flex items-center gap-4 mb-6">
+                      <div className="w-16 h-16 rounded-full bg-dark-700 flex items-center justify-center text-xl font-bold text-brand-500 uppercase">
+                        {guest.first_name?.charAt(0) || 'G'}
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-white">{guest.first_name} {guest.last_name}</h3>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs bg-dark-700 text-gray-300 px-2 py-0.5 rounded capitalize">{guest.segment}</span>
+                          {guest.loyalty_points > 0 && <span className="text-xs text-brand-500 font-medium">{guest.loyalty_points} pts</span>}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="space-y-3 mb-6">
-                    <div className="flex items-center gap-3 text-sm text-gray-400">
-                      <Mail size={16} className="text-gray-500"/> {guest.email || 'No email'}
+                    <div className="space-y-3 mb-6">
+                      <div className="flex items-center gap-3 text-sm text-gray-400">
+                        <Mail size={16} className="text-gray-500"/> {guest.email || 'No email'}
+                      </div>
+                      <div className="flex items-center gap-3 text-sm text-gray-400">
+                        <Phone size={16} className="text-gray-500"/> {guest.phone || 'No phone'}
+                      </div>
+                      <div className="flex items-center gap-3 text-sm text-gray-400">
+                        <MapPin size={16} className="text-gray-500"/> {guest.nationality || 'Unspecified'}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 text-sm text-gray-400">
-                      <Phone size={16} className="text-gray-500"/> {guest.phone || 'No phone'}
-                    </div>
-                    <div className="flex items-center gap-3 text-sm text-gray-400">
-                      <MapPin size={16} className="text-gray-500"/> {guest.nationality || 'Unspecified'}
-                    </div>
-                  </div>
 
-                  <div className="pt-4 border-t border-dark-700/50 flex justify-between items-center">
-                    <div className="flex items-center gap-2 text-sm text-gray-400">
-                      <Wallet size={16} className="text-gray-500"/> 
-                      {guest.wallet_balance !== null && guest.wallet_balance !== undefined ? (
-                        <span>₦{Number(guest.wallet_balance || 0).toLocaleString()}</span>
-                      ) : (
-                        <span className="text-gray-500 text-xs italic">Inactive</span>
-                      )}
+                    <div className="pt-4 border-t border-dark-700/50 flex justify-between items-center">
+                      <div className="flex items-center gap-2 text-sm text-gray-400">
+                        <Wallet size={16} className="text-gray-500"/> 
+                        {guest.wallet_balance !== null && guest.wallet_balance !== undefined ? (
+                          <span>₦{Number(guest.wallet_balance || 0).toLocaleString()}</span>
+                        ) : (
+                          <span className="text-gray-500 text-xs italic">Inactive</span>
+                        )}
+                      </div>
+                      <span className="text-brand-500 text-sm font-medium group-hover:underline">View 360° Profile →</span>
                     </div>
-                    <span className="text-brand-500 text-sm font-medium group-hover:underline">View 360° Profile →</span>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <PaginationControl
+                currentPage={currentPageGuests}
+                totalItems={filteredGuests.length}
+                pageSize={pageSize}
+                onPageChange={setCurrentPageGuests}
+              />
             </div>
           ) : (
-            <div className="bg-dark-800 border border-dark-700 rounded-lg overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm border-collapse">
-                  <thead className="bg-dark-900/80 text-gray-400 border-b border-dark-700">
-                    <tr>
-                      <th className="p-4 font-semibold text-xs uppercase tracking-wider">Guest Profile</th>
-                      <th className="p-4 font-semibold text-xs uppercase tracking-wider">Segment & Loyalty</th>
-                      <th className="p-4 font-semibold text-xs uppercase tracking-wider">Contact</th>
-                      <th className="p-4 font-semibold text-xs uppercase tracking-wider">Nationality</th>
-                      <th className="p-4 font-semibold text-xs uppercase tracking-wider">Wallet Balance</th>
-                      <th className="p-4 font-semibold text-xs uppercase tracking-wider text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-dark-700/50">
-                    {filteredGuests.map((guest) => (
-                      <tr 
-                        key={guest.id} 
-                        onClick={() => { setSelectedGuest(guest); setActiveTab('overview'); }} 
-                        className="hover:bg-dark-700/35 cursor-pointer transition-all duration-200 group"
-                      >
-                        <td className="p-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-dark-700 flex items-center justify-center text-sm font-bold text-brand-500 uppercase border border-dark-600">
-                              {guest.first_name?.charAt(0) || 'G'}
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold text-white group-hover:text-brand-400 transition-colors">
-                                  {guest.first_name} {guest.last_name}
-                                </span>
-                                {guest.vip_status && (
-                                  <span className="bg-brand-500/10 text-brand-500 p-0.5 rounded-full" title="VIP Guest">
-                                    <Crown size={12} />
+            <div>
+              <div className="bg-dark-800 border border-dark-700 rounded-lg overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm border-collapse">
+                    <thead className="bg-dark-900/80 text-gray-400 border-b border-dark-700">
+                      <tr>
+                        <th className="p-4 font-semibold text-xs uppercase tracking-wider">Guest Profile</th>
+                        <th className="p-4 font-semibold text-xs uppercase tracking-wider">Segment & Loyalty</th>
+                        <th className="p-4 font-semibold text-xs uppercase tracking-wider">Contact</th>
+                        <th className="p-4 font-semibold text-xs uppercase tracking-wider">Nationality</th>
+                        <th className="p-4 font-semibold text-xs uppercase tracking-wider">Wallet Balance</th>
+                        <th className="p-4 font-semibold text-xs uppercase tracking-wider text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-dark-700/50">
+                      {paginatedGuests.map((guest) => (
+                        <tr 
+                          key={guest.id} 
+                          onClick={() => { setSelectedGuest(guest); setActiveTab('overview'); }} 
+                          className="hover:bg-dark-700/35 cursor-pointer transition-all duration-200 group"
+                        >
+                          <td className="p-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-dark-700 flex items-center justify-center text-sm font-bold text-brand-500 uppercase border border-dark-600">
+                                {guest.first_name?.charAt(0) || 'G'}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-white group-hover:text-brand-400 transition-colors">
+                                    {guest.first_name} {guest.last_name}
                                   </span>
-                                )}
+                                  {guest.vip_status && (
+                                    <span className="bg-brand-500/10 text-brand-500 p-0.5 rounded-full" title="VIP Guest">
+                                      <Crown size={12} />
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <div className="flex flex-col gap-1">
-                            <span className="text-xs bg-dark-700 text-gray-300 px-2 py-0.5 rounded capitalize w-fit">
-                              {guest.segment}
+                          </td>
+                          <td className="p-4">
+                            <div className="flex flex-col gap-1">
+                              <span className="text-xs bg-dark-700 text-gray-300 px-2 py-0.5 rounded capitalize w-fit">
+                                {guest.segment}
+                              </span>
+                              {guest.loyalty_points > 0 ? (
+                                <span className="text-xs text-brand-500 font-medium">{guest.loyalty_points} pts</span>
+                              ) : (
+                                <span className="text-xs text-gray-500">-</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex flex-col gap-1 text-gray-400 text-xs">
+                              <span className="flex items-center gap-1.5"><Mail size={12} className="text-gray-500"/> {guest.email || 'No email'}</span>
+                              <span className="flex items-center gap-1.5"><Phone size={12} className="text-gray-500"/> {guest.phone || 'No phone'}</span>
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <span className="flex items-center gap-1.5 text-gray-400 text-xs">
+                              <MapPin size={12} className="text-gray-500"/> {guest.nationality || 'Unspecified'}
                             </span>
-                            {guest.loyalty_points > 0 ? (
-                              <span className="text-xs text-brand-500 font-medium">{guest.loyalty_points} pts</span>
+                          </td>
+                          <td className="p-4">
+                            {guest.wallet_balance !== null && guest.wallet_balance !== undefined ? (
+                              <span className="flex items-center gap-1.5 text-white font-medium text-xs">
+                                <Wallet size={12} className="text-brand-500"/> ₦{Number(guest.wallet_balance || 0).toLocaleString()}
+                              </span>
                             ) : (
-                              <span className="text-xs text-gray-500">-</span>
+                              <span className="text-gray-500 text-xs italic">Inactive</span>
                             )}
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <div className="flex flex-col gap-1 text-gray-400 text-xs">
-                            <span className="flex items-center gap-1.5"><Mail size={12} className="text-gray-500"/> {guest.email || 'No email'}</span>
-                            <span className="flex items-center gap-1.5"><Phone size={12} className="text-gray-500"/> {guest.phone || 'No phone'}</span>
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <span className="flex items-center gap-1.5 text-gray-400 text-xs">
-                            <MapPin size={12} className="text-gray-500"/> {guest.nationality || 'Unspecified'}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          {guest.wallet_balance !== null && guest.wallet_balance !== undefined ? (
-                            <span className="flex items-center gap-1.5 text-white font-medium text-xs">
-                              <Wallet size={12} className="text-brand-500"/> ₦{Number(guest.wallet_balance || 0).toLocaleString()}
+                          </td>
+                          <td className="p-4 text-right">
+                            <span className="text-brand-500 text-xs font-semibold group-hover:underline inline-flex items-center gap-1">
+                              View 360° Profile →
                             </span>
-                          ) : (
-                            <span className="text-gray-500 text-xs italic">Inactive</span>
-                          )}
-                        </td>
-                        <td className="p-4 text-right">
-                          <span className="text-brand-500 text-xs font-semibold group-hover:underline inline-flex items-center gap-1">
-                            View 360° Profile →
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
+              <PaginationControl
+                currentPage={currentPageGuests}
+                totalItems={filteredGuests.length}
+                pageSize={pageSize}
+                onPageChange={setCurrentPageGuests}
+              />
             </div>
           )}
 
@@ -1585,7 +1848,7 @@ const AdminGuests = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-dark-700/50">
-                    {filteredGroups.map((group) => {
+                    {paginatedGroups.map((group) => {
                       const availableCredit = Number(group.credit_limit || 0) - Number(group.outstanding_balance || 0);
                       const isExhausted = availableCredit <= 0;
                       const isClosed = closedGroupAccounts.includes(group.id);
@@ -1714,6 +1977,12 @@ const AdminGuests = () => {
                   </tbody>
                 </table>
               </div>
+              <PaginationControl
+                currentPage={currentPageGroups}
+                totalItems={filteredGroups.length}
+                pageSize={pageSize}
+                onPageChange={setCurrentPageGroups}
+              />
             </div>
           )}
 
@@ -1825,6 +2094,218 @@ const AdminGuests = () => {
             </div>
           )}
         </>
+      ) : parentTab === 'broadcast' ? (
+        <div className="bg-dark-800 border border-dark-700 p-8 rounded-lg animate-in fade-in duration-300">
+          <div className="mb-6 pb-4 border-b border-dark-700">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <MessageSquare className="text-brand-500" size={22} />
+              <span>Customer Broadcast Dispatch Console</span>
+            </h2>
+            <p className="text-xs text-gray-400 mt-1">Send bulk personalized Email (via Resend API) or SMS announcements to your targeted guest segments.</p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+            {/* Composition Panel */}
+            <form onSubmit={handleStartBroadcast} className="lg:col-span-3 space-y-6">
+              <div className="bg-dark-900 p-5 border border-dark-750 rounded-xl space-y-4">
+                <h3 className="font-bold text-white text-xs uppercase tracking-wider text-brand-400">1. Target Audience</h3>
+                
+                <div>
+                  <label className="block text-xs text-gray-450 mb-1.5 font-semibold">Select Target Segment</label>
+                  <select 
+                    value={broadcastSegment} 
+                    onChange={e => setBroadcastSegment(e.target.value)}
+                    disabled={broadcastSending}
+                    className="w-full bg-dark-800 border border-dark-700 p-3 rounded-lg text-white text-sm outline-none focus:border-brand-500 font-semibold"
+                  >
+                    <option value="all">All Registered Guests ({guests.length} matches)</option>
+                    <option value="standard">Standard Segment Only ({guests.filter(g => g.segment === 'standard').length} matches)</option>
+                    <option value="corporate">Corporate CRM Contacts ({guests.filter(g => g.segment === 'corporate').length} matches)</option>
+                    <option value="vip">VIP Guest List ({guests.filter(g => g.vip_status || g.segment === 'vip').length} matches)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="bg-dark-900 p-5 border border-dark-750 rounded-xl space-y-4">
+                <h3 className="font-bold text-white text-xs uppercase tracking-wider text-brand-400">2. Delivery Channel</h3>
+                
+                <div className="flex gap-4">
+                  <button
+                    type="button"
+                    disabled={broadcastSending}
+                    onClick={() => setBroadcastChannel('email')}
+                    className={`flex-1 py-3 px-4 rounded-xl border text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
+                      broadcastChannel === 'email'
+                        ? 'bg-blue-600/20 text-blue-400 border-blue-500/50 shadow-md'
+                        : 'bg-dark-800 text-gray-400 border-dark-700 hover:text-white'
+                    }`}
+                  >
+                    <Mail size={16} /> Email via Resend
+                  </button>
+                  <button
+                    type="button"
+                    disabled={broadcastSending}
+                    onClick={() => setBroadcastChannel('sms')}
+                    className={`flex-1 py-3 px-4 rounded-xl border text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
+                      broadcastChannel === 'sms'
+                        ? 'bg-brand-500/10 text-brand-500 border-brand-500/30 shadow-md'
+                        : 'bg-dark-800 text-gray-400 border-dark-700 hover:text-white'
+                    }`}
+                  >
+                    <Phone size={16} /> SMS via Gateway
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-dark-900 p-5 border border-dark-750 rounded-xl space-y-4">
+                <h3 className="font-bold text-white text-xs uppercase tracking-wider text-brand-400">3. Template Content</h3>
+                
+                {broadcastChannel === 'email' && (
+                  <div>
+                    <label className="block text-xs text-gray-455 mb-1.5 font-semibold">Email Subject Line *</label>
+                    <input
+                      type="text"
+                      required
+                      disabled={broadcastSending}
+                      value={broadcastSubject}
+                      onChange={e => setBroadcastSubject(e.target.value)}
+                      placeholder="e.g. Exclusive Weekend Treat at Sparkles Apartments"
+                      className="w-full bg-dark-800 border border-dark-700 p-3 rounded-lg text-white text-sm outline-none focus:border-brand-500"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-xs text-gray-455 font-semibold">Message Body *</label>
+                    <span className="text-[10px] text-gray-555 font-bold uppercase">Variable: {"{{guest_name}}"}</span>
+                  </div>
+                  <textarea
+                    required
+                    rows="6"
+                    disabled={broadcastSending}
+                    value={broadcastBody}
+                    onChange={e => setBroadcastBody(e.target.value)}
+                    placeholder={
+                      broadcastChannel === 'email'
+                        ? "Dear {{guest_name}},\n\nWrite your email newsletter content here..."
+                        : "Hello {{guest_name}}, write your SMS broadcast update here..."
+                    }
+                    className="w-full bg-dark-800 border border-dark-700 p-3 rounded-lg text-white text-sm outline-none focus:border-brand-500 font-sans resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <button
+                  type="submit"
+                  disabled={broadcastSending || !broadcastBody.trim() || (broadcastChannel === 'email' && !broadcastSubject.trim())}
+                  className={`flex-1 py-3.5 rounded-xl font-extrabold uppercase text-xs tracking-wider transition-all flex items-center justify-center gap-2 ${
+                    broadcastSending
+                      ? 'bg-dark-700 text-gray-550 cursor-not-allowed border border-dark-650'
+                      : 'bg-brand-500 hover:bg-brand-400 text-dark-950 font-black cursor-pointer shadow-lg active:scale-95'
+                  }`}
+                >
+                  {broadcastSending ? (
+                    <>
+                      <RefreshCcw size={16} className="animate-spin" /> Dispatching Broadcast...
+                    </>
+                  ) : (
+                    <>
+                      <Send size={16} /> Send Broadcast to {
+                        (() => {
+                          if (broadcastSegment === 'all') return guests.length;
+                          if (broadcastSegment === 'vip') return guests.filter(g => g.vip_status || g.segment === 'vip').length;
+                          return guests.filter(g => g.segment === broadcastSegment).length;
+                        })()
+                      } Guests
+                    </>
+                  )}
+                </button>
+
+                {broadcastSending && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      broadcastActiveRef.current = false;
+                      setBroadcastSending(false);
+                      setBroadcastConsoleLogs(prev => [...prev, "⚠️ Dispatch process aborted manually by operator."]);
+                      toast.error("Broadcast transmission cancelled.");
+                    }}
+                    className="bg-red-500/10 hover:bg-red-500 hover:text-white text-red-500 font-bold px-6 rounded-xl border border-red-500/30 transition-all text-xs uppercase"
+                  >
+                    Abort
+                  </button>
+                )}
+              </div>
+            </form>
+
+            {/* Tracker Panel */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Progress Card */}
+              <div className="bg-dark-900 p-5 border border-dark-750 rounded-xl space-y-4">
+                <h3 className="font-bold text-white text-xs uppercase tracking-wider text-brand-400">Transmission Progress</h3>
+                
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-gray-400">Sent Rate:</span>
+                    <span className="font-mono font-bold text-white">
+                      {broadcastProgress.current} / {broadcastProgress.total} processed
+                    </span>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div className="w-full h-3 bg-dark-800 rounded-full overflow-hidden border border-dark-700">
+                    <div 
+                      className="h-full bg-brand-500 transition-all duration-300"
+                      style={{ 
+                        width: `${broadcastProgress.total > 0 ? Math.round((broadcastProgress.current / broadcastProgress.total) * 100) : 0}%` 
+                      }}
+                    />
+                  </div>
+
+                  <div className="flex justify-between text-[10px] text-gray-500 font-bold">
+                    <span>0%</span>
+                    <span className="text-brand-450 font-black">
+                      {broadcastProgress.total > 0 ? Math.round((broadcastProgress.current / broadcastProgress.total) * 100) : 0}% Complete
+                    </span>
+                    <span>100%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Console Logs Card */}
+              <div className="bg-dark-900 p-5 border border-dark-750 rounded-xl space-y-3 flex flex-col h-[325px]">
+                <h3 className="font-bold text-white text-xs uppercase tracking-wider text-brand-400">Live Delivery Console</h3>
+                
+                <div className="flex-1 bg-dark-950 font-mono text-[10px] p-4 rounded-lg border border-dark-750 overflow-y-auto space-y-1 text-gray-400 leading-relaxed scrollbar-thin scrollbar-thumb-dark-700">
+                  {broadcastConsoleLogs.length === 0 ? (
+                    <div className="text-center text-gray-600 py-16">
+                      Waiting for broadcast trigger...
+                    </div>
+                  ) : (
+                    broadcastConsoleLogs.map((log, index) => (
+                      <div 
+                        key={index}
+                        className={
+                          log.includes('❌') 
+                            ? 'text-red-400' 
+                            : log.includes('✓') 
+                              ? 'text-green-400' 
+                              : log.includes('completed') || log.includes('finished')
+                                ? 'text-brand-500 font-bold'
+                                : 'text-gray-400'
+                        }
+                      >
+                        {log}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : (
         /* Loyalty Rewards Program Configuration Settings */
         <div className="bg-dark-800 border border-dark-700 p-8 rounded-lg animate-in fade-in duration-300">
@@ -2568,47 +3049,55 @@ const AdminGuests = () => {
                           No prepayment transactions logged for this guest yet.
                         </div>
                       ) : (
-                        <div className="overflow-x-auto rounded border border-dark-700/60">
-                          <table className="w-full text-left text-xs border-collapse">
-                            <thead className="bg-dark-950 text-gray-400 border-b border-dark-700">
-                              <tr>
-                                <th className="p-3 font-semibold uppercase tracking-wider">Date / Time</th>
-                                <th className="p-3 font-semibold uppercase tracking-wider">Description</th>
-                                <th className="p-3 font-semibold uppercase tracking-wider">Method</th>
-                                <th className="p-3 font-semibold uppercase tracking-wider">Type</th>
-                                <th className="p-3 font-semibold uppercase tracking-wider text-right">Amount</th>
-                                <th className="p-3 font-semibold uppercase tracking-wider text-right">Running Balance</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-dark-750">
-                              {arStatement.map(rec => (
-                                <tr key={rec.id} className="hover:bg-dark-800/40">
-                                  <td className="p-3 text-gray-400 font-mono text-[10px]">
-                                    {new Date(rec.date).toLocaleString()}
-                                  </td>
-                                  <td className="p-3">
-                                    <span className="font-semibold text-white block">{rec.description}</span>
-                                    {rec.notes && <span className="text-[10px] text-gray-500 font-mono block mt-0.5">{rec.notes}</span>}
-                                  </td>
-                                  <td className="p-3 text-gray-400 uppercase font-mono text-[10px]">
-                                    {rec.method?.replace('_', ' ')}
-                                  </td>
-                                  <td className="p-3">
-                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase ${rec.type === 'credit' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
-                                      {rec.type === 'credit' ? 'DEPOSIT' : 'CHARGE'}
-                                    </span>
-                                  </td>
-                                  <td className={`p-3 font-mono font-bold text-right text-[11px] ${rec.type === 'credit' ? 'text-green-400' : 'text-red-400'}`}>
-                                    {rec.type === 'credit' ? '+' : '-'}₦{rec.amount.toLocaleString()}
-                                  </td>
-                                  <td className="p-3 font-mono font-bold text-white text-right text-[11px]">
-                                    ₦{rec.running_balance.toLocaleString()}
-                                  </td>
+                        <>
+                          <div className="overflow-x-auto rounded border border-dark-700/60">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead className="bg-dark-950 text-gray-400 border-b border-dark-700">
+                                <tr>
+                                  <th className="p-3 font-semibold uppercase tracking-wider">Date / Time</th>
+                                  <th className="p-3 font-semibold uppercase tracking-wider">Description</th>
+                                  <th className="p-3 font-semibold uppercase tracking-wider">Method</th>
+                                  <th className="p-3 font-semibold uppercase tracking-wider">Type</th>
+                                  <th className="p-3 font-semibold uppercase tracking-wider text-right">Amount</th>
+                                  <th className="p-3 font-semibold uppercase tracking-wider text-right">Running Balance</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                              </thead>
+                              <tbody className="divide-y divide-dark-750">
+                                {paginatedARStatement.map(rec => (
+                                  <tr key={rec.id} className="hover:bg-dark-800/40">
+                                    <td className="p-3 text-gray-400 font-mono text-[10px]">
+                                      {new Date(rec.date).toLocaleString()}
+                                    </td>
+                                    <td className="p-3">
+                                      <span className="font-semibold text-white block">{rec.description}</span>
+                                      {rec.notes && <span className="text-[10px] text-gray-500 font-mono block mt-0.5">{rec.notes}</span>}
+                                    </td>
+                                    <td className="p-3 text-gray-400 uppercase font-mono text-[10px]">
+                                      {rec.method?.replace('_', ' ')}
+                                    </td>
+                                    <td className="p-3">
+                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase ${rec.type === 'credit' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                                        {rec.type === 'credit' ? 'DEPOSIT' : 'CHARGE'}
+                                      </span>
+                                    </td>
+                                    <td className={`p-3 font-mono font-bold text-right text-[11px] ${rec.type === 'credit' ? 'text-green-400' : 'text-red-400'}`}>
+                                      {rec.type === 'credit' ? '+' : '-'}₦{rec.amount.toLocaleString()}
+                                    </td>
+                                    <td className="p-3 font-mono font-bold text-white text-right text-[11px]">
+                                      ₦{rec.running_balance.toLocaleString()}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <PaginationControl
+                            currentPage={currentPageAR}
+                            totalItems={arStatement.length}
+                            pageSize={pageSize}
+                            onPageChange={setCurrentPageAR}
+                          />
+                        </>
                       )}
                     </div>
                   )}

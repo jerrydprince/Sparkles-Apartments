@@ -28,8 +28,15 @@ const InternalMessages = () => {
   const [loading, setLoading] = useState(true);
   
   // Selection states
-  const [sidebarTab, setSidebarTab] = useState('channels'); // 'channels' or 'users'
-  const [activeTarget, setActiveTarget] = useState({ type: 'channel', role: 'all', label: '🛎️ General Broadcast' });
+  const [sidebarTab, setSidebarTab] = useState(() => {
+    return hasAccess('Internal Messaging - Broadcast Announcements') ? 'channels' : 'users';
+  }); // 'channels' or 'users'
+  const [activeTarget, setActiveTarget] = useState(() => {
+    if (hasAccess('Internal Messaging - Broadcast Announcements')) {
+      return { type: 'channel', role: 'all', label: '🛎️ General Broadcast', description: 'Global updates visible to all logged-in staff.' };
+    }
+    return { type: 'user', id: '', name: 'Select a colleague', role: '', is_on_shift: false };
+  });
   const [filterQuery, setFilterQuery] = useState('');
   
   // Chat Input States
@@ -42,6 +49,26 @@ const InternalMessages = () => {
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
+  const hasBroadcastAccess = hasAccess('Internal Messaging - Broadcast Announcements');
+  const isBroadcastDisabled = activeTarget.type === 'channel' && !hasBroadcastAccess;
+  const isNoUserSelected = activeTarget.type === 'user' && !activeTarget.id;
+  const isChatDisabled = isBroadcastDisabled || isNoUserSelected;
+
+  useEffect(() => {
+    if (profile) {
+      const hasBroadcast = hasAccess('Internal Messaging - Broadcast Announcements');
+      if (!hasBroadcast) {
+        setSidebarTab('users');
+        setActiveTarget(prev => {
+          if (prev.type === 'channel') {
+            return { type: 'user', id: '', name: 'Select a colleague', role: '', is_on_shift: false };
+          }
+          return prev;
+        });
+      }
+    }
+  }, [profile]);
+
   useEffect(() => {
     fetchMessages();
     fetchStaff();
@@ -52,6 +79,9 @@ const InternalMessages = () => {
         fetchMessages();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+        fetchStaff();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_active_sessions' }, () => {
         fetchStaff();
       })
       .subscribe();
@@ -107,14 +137,35 @@ const InternalMessages = () => {
 
   const fetchStaff = async () => {
     try {
-      const { data, error } = await supabase
+      const { data: profiles, error: profileErr } = await supabase
         .from('profiles')
         .select('id, first_name, last_name, role, email, is_on_shift')
         .neq('role', 'guest')
         .order('first_name');
 
-      if (error) throw error;
-      setStaff(data || []);
+      if (profileErr) throw profileErr;
+
+      // Fetch active sessions to verify login state
+      const { data: sessions, error: sessionsErr } = await supabase
+        .from('user_active_sessions')
+        .select('user_id, last_active_at');
+
+      if (sessionsErr) {
+        console.warn("Failed to fetch user active sessions: ", sessionsErr);
+      }
+
+      const mappedStaff = (profiles || []).map(st => {
+        const isOnline = (sessions || []).some(s => 
+          s.user_id === st.id && 
+          (Date.now() - new Date(s.last_active_at).getTime()) < 15 * 60 * 1000 // 15 mins active threshold
+        );
+        return {
+          ...st,
+          is_online: isOnline
+        };
+      });
+
+      setStaff(mappedStaff);
     } catch (err) {
       console.error(err);
     }
@@ -186,6 +237,9 @@ const InternalMessages = () => {
 
   const handleSendChat = async (e) => {
     e.preventDefault();
+    if (isChatDisabled) {
+      return toast.error('Sending messages is disabled in the current selection.');
+    }
     if (!chatInput.trim() && !attachment) {
       return toast.error('Please enter a message or attach a file.');
     }
@@ -299,7 +353,7 @@ const InternalMessages = () => {
     return messages.filter(m => m.recipient_role === role && m.recipient_id === null && m.sender_id !== profile?.id && m.priority !== 'normal').length;
   };
 
-  if (!hasAccess('Internal Messaging')) {
+  if (!hasAccess('Internal Messaging') && !hasAccess('Internal Messaging - Send Direct Messages') && !hasAccess('Internal Messaging - Broadcast Announcements')) {
     return <div className="p-8 text-center text-gray-500">You do not have permission to view Internal Communications.</div>;
   }
 
@@ -421,7 +475,7 @@ const InternalMessages = () => {
                     return (
                       <button
                         key={st.id}
-                        onClick={() => setActiveTarget({ type: 'user', id: st.id, name: `${st.first_name} ${st.last_name}`, role: st.role, is_on_shift: st.is_on_shift })}
+                        onClick={() => setActiveTarget({ type: 'user', id: st.id, name: `${st.first_name} ${st.last_name}`, role: st.role, is_online: st.is_online })}
                         className={`w-full text-left p-3 rounded-2xl transition-all duration-300 flex items-center justify-between border ${
                           isActive 
                             ? 'bg-gradient-to-r from-brand-900/40 to-brand-850/20 border-brand-500/80 shadow-lg translate-x-1' 
@@ -435,7 +489,7 @@ const InternalMessages = () => {
                               {st.first_name.charAt(0)}{st.last_name.charAt(0)}
                             </div>
                             <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border border-dark-800 ring-2 ${
-                              st.is_on_shift 
+                              st.is_online 
                                 ? 'bg-green-500 ring-green-500/20 animate-pulse' 
                                 : 'bg-gray-600 ring-transparent'
                             }`} />
@@ -485,13 +539,13 @@ const InternalMessages = () => {
                 <h3 className="font-extrabold text-white font-serif text-sm tracking-tight flex items-center gap-2">
                   {activeTarget.type === 'channel' ? activeTarget.label : activeTarget.name}
                   {activeTarget.type === 'user' && (
-                    <span className={`h-2 w-2 rounded-full ${activeTarget.is_on_shift ? 'bg-green-500 animate-pulse' : 'bg-gray-600'}`} />
+                    <span className={`h-2 w-2 rounded-full ${activeTarget.is_online ? 'bg-green-500 animate-pulse' : 'bg-gray-600'}`} />
                   )}
                 </h3>
                 <span className="text-[10px] text-gray-400 block font-medium mt-0.5">
                   {activeTarget.type === 'channel' 
                     ? activeTarget.description 
-                    : `Active Direct Message | Role: ${activeTarget.role.replace(/_/g, ' ').toUpperCase()} (${activeTarget.is_on_shift ? 'Active on Shift' : 'Off-Duty'})`}
+                    : `Active Direct Message | Role: ${activeTarget.role.replace(/_/g, ' ').toUpperCase()} (${activeTarget.is_online ? 'Online' : 'Offline'})`}
                 </span>
               </div>
             </div>
@@ -652,7 +706,8 @@ const InternalMessages = () => {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="p-3 bg-dark-900 hover:bg-dark-750 border border-dark-750/70 text-gray-400 hover:text-white rounded-2xl transition-all shadow-inner"
+                  disabled={isChatDisabled}
+                  className="p-3 bg-dark-900 hover:bg-dark-750 border border-dark-750/70 text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed rounded-2xl transition-all shadow-inner"
                   title="Attach file / report"
                 >
                   <Paperclip size={16} />
@@ -662,7 +717,8 @@ const InternalMessages = () => {
                 <select
                   value={chatPriority}
                   onChange={e => setChatPriority(e.target.value)}
-                  className={`px-3 py-3 bg-dark-900 hover:bg-dark-750 border border-dark-750/70 text-xs font-bold rounded-2xl outline-none focus:border-brand-500 transition-all ${
+                  disabled={isChatDisabled}
+                  className={`px-3 py-3 bg-dark-900 hover:bg-dark-750 border border-dark-750/70 text-xs font-bold rounded-2xl outline-none focus:border-brand-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                     chatPriority === 'urgent' ? 'text-red-400' : chatPriority === 'high' ? 'text-amber-400' : 'text-gray-400'
                   }`}
                   title="Select message significance priority"
@@ -678,21 +734,26 @@ const InternalMessages = () => {
                 <input 
                   type="text"
                   placeholder={
-                    activeTarget.type === 'channel'
+                    isBroadcastDisabled 
+                      ? "You do not have permission to post broadcast announcements in this channel." 
+                      : isNoUserSelected 
+                      ? "Select a colleague from the list to start messaging..." 
+                      : activeTarget.type === 'channel'
                       ? `Broadcast operational message in ${activeTarget.label}...`
                       : `DM text message to ${activeTarget.name}...`
                   }
                   value={chatInput}
                   onChange={e => setChatInput(e.target.value)}
-                  className="w-full bg-dark-900 border border-dark-750/70 px-4 py-3 rounded-2xl text-xs font-semibold text-white outline-none focus:border-brand-500 transition-all font-sans"
+                  disabled={isChatDisabled}
+                  className="w-full bg-dark-900 border border-dark-750/70 px-4 py-3 rounded-2xl text-xs font-semibold text-white outline-none focus:border-brand-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed font-sans"
                 />
               </div>
 
               {/* Submit Dispatch */}
               <button
                 type="submit"
-                disabled={isSubmitting || (!chatInput.trim() && !attachment)}
-                className="bg-brand-500 hover:bg-brand-600 disabled:opacity-40 text-dark-950 font-black text-xs py-3 px-6 rounded-2xl transition-all shadow-[0_4px_15px_rgba(223,104,83,0.2)] hover:shadow-[0_4px_20px_rgba(223,104,83,0.3)] flex items-center justify-center gap-1.5 self-stretch sm:self-auto flex-shrink-0"
+                disabled={isSubmitting || isChatDisabled || (!chatInput.trim() && !attachment)}
+                className="bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-dark-950 font-black text-xs py-3 px-6 rounded-2xl transition-all shadow-[0_4px_15px_rgba(223,104,83,0.2)] hover:shadow-[0_4px_20px_rgba(223,104,83,0.3)] flex items-center justify-center gap-1.5 self-stretch sm:self-auto flex-shrink-0"
               >
                 {isSubmitting ? 'Sending...' : 'Send'} <Send size={12} />
               </button>

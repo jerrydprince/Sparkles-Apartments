@@ -115,82 +115,165 @@ const ROLES = [
 import { useMemo } from 'react';
 
 const DEFAULT_MODULES = [
-  // General Module Access
-  'Dashboard', 'Reservations', 'Front Desk', 'Housekeeping', 
-  'CRM & Guests', 'Finance & Billing', 'Channel Manager', 
-  'Reports & Analytics', 'Staff & Roles', 'Website CMS', 'Settings', 'Accounting', 'Store Keeping', 'POS',
-  'Guest Services', 'Laundry', 'Duty Logs', 'Lost & Found', 'Reminders', 'Internal Messaging', 'Monthly Reports',
-  'Leave & Absences',
-  
-  // Housekeeping breakdown
+  // Dashboard
+  'Dashboard',
+  'Dashboard - View Room Grid Matrix',
+  'Dashboard - View Operations Statistics',
+
+  // Reservations
+  'Reservations',
+  'Reservations - Manage Bookings',
+  'Reservations - Handle Room Assignments',
+
+  // Front Desk
+  'Front Desk',
+  'Front Desk - Create Booking & Check-in',
+  'Front Desk - Override Room Rates & Invoicing',
+
+  // Housekeeping
+  'Housekeeping',
   'Housekeeping - Perform Room Cleaning',
   'Housekeeping - Assign Tasks to Staff',
   'Housekeeping - Inspect & Approve Clean Rooms',
-  
-  // POS breakdown
-  'POS - Process Sales & Suite Charging',
-  'POS - Manage Menu Items & Custom Pricing',
-  
-  // Store Keeping breakdown
+
+  // CRM & Guests
+  'CRM & Guests',
+  'CRM & Guests - Manage Profiles',
+  'CRM & Guests - View Guest History',
+
+  // Finance & Billing
+  'Finance & Billing',
+  'Finance - Manage General Ledgers & Payroll',
+  'Finance - Process Refunds & Adjustments',
+
+  // Accounting
+  'Accounting',
+  'Accounting - Settle Ledger',
+  'Accounting - View General Ledger Logs',
+
+  // Channel Manager
+  'Channel Manager',
+  'Channel Manager - Sync Channels',
+  'Channel Manager - Adjust External Rates',
+
+  // Reports & Analytics
+  'Reports & Analytics',
+  'Reports & Analytics - View Revenue Reports',
+  'Reports & Analytics - Export Financial Sheets',
+
+  // Staff & Roles
+  'Staff & Roles',
+  'Staff & Roles - Onboard Staff',
+  'Staff & Roles - Modify Access Policies',
+
+  // Website CMS
+  'Website CMS',
+  'Website CMS - Edit General Pages',
+  'Website CMS - Update Banner Announcements',
+
+  // Settings
+  'Settings',
+  'Settings - Update System Profile',
+  'Automations & Alerts',
+  'Security & Privacy',
+
+  // Store Keeping
+  'Store Keeping',
   'Store Keeping - Log Requisitions',
   'Store Keeping - Register & Restock Items',
   'Store Keeping - Approve Outgoing Material Releases',
-  
-  // Front Desk breakdown
-  'Front Desk - Create Booking & Check-in',
-  'Front Desk - Override Room Rates & Invoicing',
-  
-  // Finance breakdown
-  'Finance - Manage General Ledgers & Payroll',
-  'Finance - Process Refunds & Adjustments',
-  
-  // Laundry breakdown
+
+  // POS
+  'POS',
+  'POS - Process Sales & Suite Charging',
+  'POS - Manage Menu Items & Custom Pricing',
+
+  // Guest Services
+  'Guest Services',
+  'Guest Services - Request Amenities',
+  'Guest Services - Verify Active Orders',
+
+  // Laundry
+  'Laundry',
   'Laundry - Process Laundry Orders',
   'Laundry - Post Folio Charges',
   'Laundry - Register Walk-in Sales',
 
-  // Leave & Absences breakdown
-  'Leave & Absences - Request Leave of Absence',
-  'Leave & Absences - Review Leave Applications',
-
-  // Duty Logs breakdown
+  // Duty Logs
+  'Duty Logs',
   'Duty Logs - Submit Shift Handover',
   'Duty Logs - Review Historical Logs',
 
-  // Lost & Found breakdown
+  // Lost & Found
+  'Lost & Found',
   'Lost & Found - Register Found Items',
   'Lost & Found - Notify Guest & Settle Claims',
   'Lost & Found - Dispose Items',
 
-  // Reminders breakdown
+  // Reminders
+  'Reminders',
   'Reminders - Create & Edit Schedules',
   'Reminders - Settle Payments & Sync Ledger',
 
-  // Internal Messaging breakdown
+  // Internal Messaging
+  'Internal Messaging',
   'Internal Messaging - Broadcast Announcements',
   'Internal Messaging - Send Direct Messages',
 
-  // Monthly Reports breakdown
+  // Monthly Reports
+  'Monthly Reports',
   'Monthly Reports - Submit Departmental Report',
   'Monthly Reports - View Performance Analytics',
 
-  // Maintenance breakdown
+  // Leave & Absences
+  'Leave & Absences',
+  'Leave & Absences - Request Leave of Absence',
+  'Leave & Absences - Review Leave Applications',
+
+  // Maintenance
   'Maintenance',
   'Maintenance - Manage Tickets & Fixes',
   'Maintenance - Manage Professionals',
-  'Maintenance - Manage Purchases & Payments'
+  'Maintenance - Manage Purchases & Payments',
+
+  // Restaurant & Kitchen
+  'Restaurant & Kitchen',
+  'Restaurant Desk',
+  'Kitchen Desk',
+  'Order History',
+
+  // Service Portals
+  'Service Portals',
+  'Service Portals - Airport Pickup Service',
+  'Service Portals - Spa & Massage',
+  'Service Portals - Swimming Pool',
+  'Service Portals - Walk-in Direct Register',
+  'Service Portals - Close of Day Compiler',
+
+  // Halls & Catering
+  'Halls & Catering',
+  'Halls & Catering - Manage Halls',
+  'Halls & Catering - Book Halls',
+  'Halls & Catering - Setup Meals Menu'
 ];
 
 const getRolePermissionDefault = (roleId, permissionName) => {
+  roleId = roleId ? roleId.toLowerCase().trim().replace(/[-\s]+/g, '_') : '';
   // Global override bypass roles
   if (['super_admin', 'hotel_owner', 'hotel_manager', 'admin', 'manager'].includes(roleId)) return true;
   
   switch (permissionName) {
     case 'Dashboard':
+    case 'Dashboard - View Room Grid Matrix':
+    case 'Dashboard - View Operations Statistics':
     case 'CRM & Guests':
+    case 'CRM & Guests - Manage Profiles':
+    case 'CRM & Guests - View Guest History':
       return ['front_desk_lead', 'receptionist_manager', 'receptionist', 'finance_manager', 'accountant', 'customer_support', 'laundry_manager', 'laundry_staff'].includes(roleId);
     
     case 'Reservations':
+    case 'Reservations - Manage Bookings':
+    case 'Reservations - Handle Room Assignments':
       return ['front_desk_lead', 'receptionist_manager', 'receptionist', 'finance_manager', 'accountant', 'customer_support'].includes(roleId);
     
     case 'Front Desk':
@@ -215,7 +298,19 @@ const getRolePermissionDefault = (roleId, permissionName) => {
     case 'POS - Manage Menu Items & Custom Pricing':
       return ['receptionist_manager', 'kitchen_manager', 'bar_manager', 'restaurant_manager'].includes(roleId);
     
+    case 'Restaurant & Kitchen':
+    case 'Restaurant Desk':
+      return ['restaurant_manager', 'restaurant_staff', 'front_desk_lead', 'receptionist_manager', 'pos_operator'].includes(roleId);
+    
+    case 'Kitchen Desk':
+      return ['head_chef', 'kitchen_manager', 'kitchen_staff'].includes(roleId);
+    
+    case 'Order History':
+      return ['restaurant_manager', 'restaurant_staff', 'head_chef', 'kitchen_manager', 'kitchen_staff', 'pos_operator', 'front_desk_lead', 'receptionist_manager'].includes(roleId);
+    
     case 'Guest Services':
+    case 'Guest Services - Request Amenities':
+    case 'Guest Services - Verify Active Orders':
       return ['front_desk_lead', 'receptionist_manager', 'receptionist', 'finance_manager', 'accountant'].includes(roleId);
     
     case 'Laundry':
@@ -251,6 +346,8 @@ const getRolePermissionDefault = (roleId, permissionName) => {
     
     case 'Finance & Billing':
     case 'Accounting':
+    case 'Accounting - Settle Ledger':
+    case 'Accounting - View General Ledger Logs':
     case 'Finance - Manage General Ledgers & Payroll':
       return ['finance_manager', 'accountant'].includes(roleId);
     
@@ -262,8 +359,6 @@ const getRolePermissionDefault = (roleId, permissionName) => {
       return ['front_desk_lead', 'receptionist_manager', 'finance_manager', 'laundry_manager', 'housekeeping_manager', 'maintenance_manager', 'kitchen_manager', 'bar_manager', 'restaurant_manager'].includes(roleId);
 
     case 'Duty Logs':
-      return ['front_desk_lead', 'receptionist_manager', 'receptionist', 'laundry_manager', 'housekeeping_manager', 'maintenance_manager', 'finance_manager', 'accountant'].includes(roleId);
-    
     case 'Duty Logs - Submit Shift Handover':
       return ['front_desk_lead', 'receptionist_manager', 'receptionist', 'laundry_manager', 'housekeeping_manager', 'maintenance_manager', 'finance_manager', 'accountant'].includes(roleId);
 
@@ -295,13 +390,11 @@ const getRolePermissionDefault = (roleId, permissionName) => {
       return ['finance_manager', 'accountant'].includes(roleId);
 
     case 'Internal Messaging':
+    case 'Internal Messaging - Send Direct Messages':
       return !['guest'].includes(roleId);
     
     case 'Internal Messaging - Broadcast Announcements':
       return ['front_desk_lead', 'receptionist_manager', 'laundry_manager', 'housekeeping_manager', 'maintenance_manager', 'finance_manager', 'kitchen_manager', 'bar_manager', 'restaurant_manager'].includes(roleId);
-
-    case 'Internal Messaging - Send Direct Messages':
-      return !['guest'].includes(roleId);
 
     case 'Monthly Reports':
       return ['receptionist_manager', 'front_desk_lead', 'finance_manager', 'accountant', 'laundry_manager', 'housekeeping_manager', 'maintenance_manager', 'kitchen_manager'].includes(roleId);
@@ -320,6 +413,14 @@ const getRolePermissionDefault = (roleId, permissionName) => {
       return ['maintenance_manager', 'head_maintenance'].includes(roleId);
     case 'Maintenance - Manage Purchases & Payments':
       return ['maintenance_manager', 'finance_manager', 'accountant'].includes(roleId);
+
+    case 'Service Portals':
+    case 'Service Portals - Airport Pickup Service':
+    case 'Service Portals - Spa & Massage':
+    case 'Service Portals - Swimming Pool':
+    case 'Service Portals - Walk-in Direct Register':
+    case 'Service Portals - Close of Day Compiler':
+      return ['front_desk_lead', 'receptionist_manager', 'receptionist', 'finance_manager', 'accountant', 'customer_support'].includes(roleId);
 
     default:
       return false;
@@ -390,28 +491,107 @@ const getRoleDescription = (roleId) => {
 };
 
 const getPermissionGroup = (permissionName) => {
-  if (permissionName.startsWith('Housekeeping -')) return 'Housekeeping Operations';
-  if (permissionName.startsWith('POS -')) return 'Point of Sale (POS) Terminals';
-  if (permissionName.startsWith('Store Keeping -')) return 'Store Keeping & Inventory';
-  if (permissionName.startsWith('Front Desk -')) return 'Front Desk Operations';
-  if (permissionName.startsWith('Finance -')) return 'Finance & Accounting';
-  if (permissionName.startsWith('Laundry -')) return 'Laundry Operations';
-  if (permissionName.startsWith('Leave & Absences -')) return 'Leave & Absences';
-  if (permissionName.startsWith('Duty Logs -')) return 'Duty Logs';
-  if (permissionName.startsWith('Lost & Found -')) return 'Lost & Found';
-  if (permissionName.startsWith('Reminders -')) return 'Reminders';
-  if (permissionName.startsWith('Internal Messaging -')) return 'Internal Messaging';
-  if (permissionName.startsWith('Monthly Reports -')) return 'Monthly Reports';
-  if (permissionName.startsWith('Maintenance -')) return 'Maintenance Operations';
-  return 'Core PMS Modules';
+  if (permissionName.startsWith('Finance -')) return 'Finance & Billing';
+  if (permissionName === 'Automations & Alerts' || permissionName === 'Security & Privacy' || permissionName.startsWith('Settings -')) return 'Settings';
+  if (permissionName === 'Restaurant Desk' || permissionName === 'Kitchen Desk' || permissionName === 'Order History') return 'Restaurant & Kitchen';
+  if (permissionName.includes(' - ')) {
+    return permissionName.split(' - ')[0];
+  }
+  return permissionName;
+};
+
+const PaginationControl = ({ currentPage, totalItems, pageSize, onPageChange }) => {
+  const totalPages = Math.ceil(totalItems / pageSize);
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className="flex items-center justify-between border-t border-dark-700 bg-dark-900/30 px-4 py-3 sm:px-6 mt-4 rounded-b-lg">
+      <div className="flex flex-1 justify-between sm:hidden">
+        <button
+          type="button"
+          disabled={currentPage === 1}
+          onClick={() => onPageChange(currentPage - 1)}
+          className="relative inline-flex items-center rounded-md border border-dark-750 bg-dark-800 px-4 py-2 text-xs font-bold text-gray-300 hover:bg-dark-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          disabled={currentPage === totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+          className="relative ml-3 inline-flex items-center rounded-md border border-dark-750 bg-dark-800 px-4 py-2 text-xs font-bold text-gray-300 hover:bg-dark-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
+      </div>
+      <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs text-gray-400">
+            Showing <span className="font-semibold text-white">{((currentPage - 1) * pageSize) + 1}</span> to{' '}
+            <span className="font-semibold text-white">
+              {Math.min(currentPage * pageSize, totalItems)}
+            </span>{' '}
+            of <span className="font-semibold text-white">{totalItems}</span> results
+          </p>
+        </div>
+        <div>
+          <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+            <button
+              type="button"
+              disabled={currentPage === 1}
+              onClick={() => onPageChange(currentPage - 1)}
+              className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-dark-750 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <span className="sr-only">Previous</span>
+              &larr;
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                type="button"
+                key={page}
+                onClick={() => onPageChange(page)}
+                className={`relative inline-flex items-center px-3 py-2 text-xs font-bold ring-1 ring-inset ring-dark-750 cursor-pointer ${
+                  page === currentPage
+                    ? 'z-10 bg-brand-500 text-dark-950 focus:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 font-extrabold'
+                    : 'text-gray-300 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <button
+              type="button"
+              disabled={currentPage === totalPages}
+              onClick={() => onPageChange(currentPage + 1)}
+              className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-dark-750 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <span className="sr-only">Next</span>
+              &rarr;
+            </button>
+          </nav>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 const AdminStaffManagement = () => {
   const { user, profile, hasAccess } = useAuth();
-  const [activeTab, setActiveTab] = useState('directory'); 
+  const [activeTab, setActiveTab] = useState(() => {
+    return hasAccess('Staff & Roles') ? 'directory' : 'leave';
+  }); 
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (user && !hasAccess('Staff & Roles')) {
+      setActiveTab('leave');
+    }
+  }, [user]);
   
   const [staff, setStaff] = useState([]);
+  const [currentPageStaff, setCurrentPageStaff] = useState(1);
+  const [currentPageSalary, setCurrentPageSalary] = useState(1);
+  const pageSize = 10;
   const [attendance, setAttendance] = useState([]);
   const [logs, setLogs] = useState([]);
   const [permissionsMap, setPermissionsMap] = useState({});
@@ -502,16 +682,7 @@ const AdminStaffManagement = () => {
   }, [customModules]);
 
   const groupedPermissions = useMemo(() => {
-    const groups = {
-      'Core PMS Modules': [],
-      'Front Desk Operations': [],
-      'Housekeeping Operations': [],
-      'Point of Sale (POS) Terminals': [],
-      'Store Keeping & Inventory': [],
-      'Finance & Accounting': [],
-      'Laundry Operations': [],
-      'Maintenance Operations': []
-    };
+    const groups = {};
     allModules.forEach(m => {
       const group = getPermissionGroup(m);
       if (!groups[group]) groups[group] = [];
@@ -753,7 +924,13 @@ const AdminStaffManagement = () => {
       (systemSettingsData || []).forEach(s => {
         if (s.setting_key.startsWith('salary_deductions_staff_')) {
           const staffId = s.setting_key.replace('salary_deductions_staff_', '');
-          staffDedsMap[staffId] = s.setting_value;
+          let val = s.setting_value;
+          try {
+            val = typeof s.setting_value === 'string' ? JSON.parse(s.setting_value) : s.setting_value;
+          } catch (e) {
+            console.warn("Failed to parse deductions list for staff " + staffId, e);
+          }
+          staffDedsMap[staffId] = val;
         } else if (s.setting_key === 'nigerian_banks' && s.setting_value) {
           try {
             const parsed = typeof s.setting_value === 'string' ? JSON.parse(s.setting_value) : s.setting_value;
@@ -778,20 +955,40 @@ const AdminStaffManagement = () => {
       if (activeTab === 'directory') {
         const { data, error } = await supabase.from('profiles').select('*').neq('role', 'guest').order('first_name');
         if (error) throw error;
-        const resolved = (data || []).map(p => ({
-          ...p,
-          deductions_list: staffDedsMap[p.id] || p.deductions_list || [],
-          allowances_list: p.allowances_list || []
-        }));
+        const resolved = (data || []).map(p => {
+          let deds = staffDedsMap[p.id] || p.deductions_list || [];
+          if (typeof deds === 'string') {
+            try { deds = JSON.parse(deds); } catch { deds = []; }
+          }
+          let allows = p.allowances_list || [];
+          if (typeof allows === 'string') {
+            try { allows = JSON.parse(allows); } catch { allows = []; }
+          }
+          return {
+            ...p,
+            deductions_list: Array.isArray(deds) ? deds : [],
+            allowances_list: Array.isArray(allows) ? allows : []
+          };
+        });
         setStaff(resolved);
       } else if (activeTab === 'attendance' || activeTab === 'shift_audits') {
         const { data: profilesData } = await supabase.from('profiles').select('*').neq('role', 'guest').order('first_name');
         if (profilesData) {
-          const resolved = (profilesData || []).map(p => ({
-            ...p,
-            deductions_list: staffDedsMap[p.id] || p.deductions_list || [],
-            allowances_list: p.allowances_list || []
-          }));
+          const resolved = (profilesData || []).map(p => {
+            let deds = staffDedsMap[p.id] || p.deductions_list || [];
+            if (typeof deds === 'string') {
+              try { deds = JSON.parse(deds); } catch { deds = []; }
+            }
+            let allows = p.allowances_list || [];
+            if (typeof allows === 'string') {
+              try { allows = JSON.parse(allows); } catch { allows = []; }
+            }
+            return {
+              ...p,
+              deductions_list: Array.isArray(deds) ? deds : [],
+              allowances_list: Array.isArray(allows) ? allows : []
+            };
+          });
           setStaff(resolved);
         }
 
@@ -879,6 +1076,16 @@ const AdminStaffManagement = () => {
   const [salaryStructuresTab, setSalaryStructuresTab] = useState('roles');
   const [roleStructures, setRoleStructures] = useState([]);
   const [loadingStructures, setLoadingStructures] = useState(false);
+
+  const paginatedStaff = useMemo(() => {
+    const start = (currentPageStaff - 1) * pageSize;
+    return staff.slice(start, start + pageSize);
+  }, [staff, currentPageStaff]);
+
+  const paginatedRoleStructures = useMemo(() => {
+    const start = (currentPageSalary - 1) * pageSize;
+    return roleStructures.slice(start, start + pageSize);
+  }, [roleStructures, currentPageSalary]);
   const [activeRoleDeductions, setActiveRoleDeductions] = useState(null);
   const [globalAllowances, setGlobalAllowances] = useState([]);
 
@@ -991,6 +1198,24 @@ const AdminStaffManagement = () => {
 
       if (error) throw error;
 
+      // 1. Fetch custom roles directly to prevent race conditions
+      let fetchedCustomRoles = [];
+      try {
+        const { data: crData } = await supabase
+          .from('custom_roles')
+          .select('*')
+          .order('created_at', { ascending: true });
+        if (crData) fetchedCustomRoles = crData;
+      } catch (err) {
+        console.warn("custom_roles table not found in fetchSalaryStructures, falling back to LocalStorage:", err);
+        const localRoles = localStorage.getItem('pms_custom_roles');
+        if (localRoles) {
+          try { fetchedCustomRoles = JSON.parse(localRoles); } catch {}
+        }
+      }
+
+      const currentAllRoles = [...ROLES, ...fetchedCustomRoles];
+
       // Fetch standard role deductions lists and salary_allowances_list from system_settings
       const { data: settingsData } = await supabase
         .from('system_settings')
@@ -1001,7 +1226,13 @@ const AdminStaffManagement = () => {
       (settingsData || []).forEach(s => {
         if (s.setting_key.startsWith('salary_deductions_role_')) {
           const roleId = s.setting_key.replace('salary_deductions_role_', '');
-          roleDedsMap[roleId] = s.setting_value;
+          let val = s.setting_value;
+          try {
+            val = typeof s.setting_value === 'string' ? JSON.parse(s.setting_value) : s.setting_value;
+          } catch (e) {
+            console.warn("Failed to parse deductions list for role " + roleId, e);
+          }
+          roleDedsMap[roleId] = val;
         } else if (s.setting_key === 'salary_allowances_list' && s.setting_value) {
           try {
             const parsed = typeof s.setting_value === 'string' ? JSON.parse(s.setting_value) : s.setting_value;
@@ -1014,9 +1245,12 @@ const AdminStaffManagement = () => {
         }
       });
       
-      const seededRoles = ROLES.map(role => {
+      const seededRoles = currentAllRoles.map(role => {
         const dbMatch = (data || []).find(d => d.role === role.id);
-        const list = roleDedsMap[role.id] || [];
+        let list = roleDedsMap[role.id] || [];
+        if (typeof list === 'string') {
+          try { list = JSON.parse(list); } catch { list = []; }
+        }
         return {
           role: role.id,
           label: role.label,
@@ -1024,7 +1258,7 @@ const AdminStaffManagement = () => {
           allowances: dbMatch ? parseFloat(dbMatch.allowances) : 0,
           deductions: dbMatch ? parseFloat(dbMatch.deductions) : 0,
           deduction_type: dbMatch ? dbMatch.deduction_type : 'amount',
-          deductions_list: list
+          deductions_list: Array.isArray(list) ? list : []
         };
       });
 
@@ -1254,6 +1488,7 @@ const AdminStaffManagement = () => {
         phone: editingStaffForm.phone,
         residential_address: editingStaffForm.residential_address,
         role: editingStaffForm.role,
+        status: editingStaffForm.status || (editingStaffForm.is_active ? 'active' : 'inactive'),
         pos_outlets: editingStaffForm.pos_outlets || [],
         biometric_key: editingStaffForm.biometric_key || null,
         base_salary: parseFloat(editingStaffForm.base_salary) || 0,
@@ -2304,31 +2539,41 @@ const AdminStaffManagement = () => {
       </div>
 
       <div className="flex gap-4 border-b border-dark-700 mb-6 overflow-x-auto">
-        <button onClick={() => setActiveTab('directory')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'directory' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
-          <Users size={18} /> Staff Directory
-        </button>
-        <button onClick={() => setActiveTab('attendance')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'attendance' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
-          <Clock size={18} /> Attendance
-        </button>
-        <button onClick={() => { setActiveTab('shift_audits'); setSelectedShiftAudit(null); }} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'shift_audits' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
-          <Fingerprint size={18} /> Shift Audits
-        </button>
-        <button onClick={() => setActiveTab('leave')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'leave' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
-          <CalendarClock size={18} /> Leave & Absences
-        </button>
-        <button onClick={() => setActiveTab('logs')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'logs' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
-          <Activity size={18} /> Activity Logs
-        </button>
-        <button onClick={() => setActiveTab('matrix')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'matrix' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
-          <Shield size={18} /> Permission Matrix
-        </button>
+        {hasAccess('Staff & Roles') && (
+          <>
+            <button onClick={() => setActiveTab('directory')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'directory' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
+              <Users size={18} /> Staff Directory
+            </button>
+            <button onClick={() => setActiveTab('attendance')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'attendance' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
+              <Clock size={18} /> Attendance
+            </button>
+            <button onClick={() => { setActiveTab('shift_audits'); setSelectedShiftAudit(null); }} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'shift_audits' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
+              <Fingerprint size={18} /> Shift Audits
+            </button>
+          </>
+        )}
+        {(hasAccess('Staff & Roles') || hasAccess('Leave & Absences - Request Leave of Absence') || hasAccess('Leave & Absences - Review Leave Applications')) && (
+          <button onClick={() => setActiveTab('leave')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'leave' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
+            <CalendarClock size={18} /> Leave & Absences
+          </button>
+        )}
+        {hasAccess('Staff & Roles') && (
+          <>
+            <button onClick={() => setActiveTab('logs')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'logs' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
+              <Activity size={18} /> Activity Logs
+            </button>
+            <button onClick={() => setActiveTab('matrix')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'matrix' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
+              <Shield size={18} /> Permission Matrix
+            </button>
+          </>
+        )}
       </div>
 
       {loading ? (
         <div className="py-20 text-center text-gray-500">Loading module data...</div>
       ) : (
         <>
-          {activeTab === 'shift_audits' && (
+          {activeTab === 'shift_audits' && hasAccess('Staff & Roles') && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in zoom-in-95 duration-200">
               
               {/* LHS: Historical Shifts List */}
@@ -2612,7 +2857,7 @@ const AdminStaffManagement = () => {
             </div>
           )}
 
-          {activeTab === 'directory' && (
+          {activeTab === 'directory' && hasAccess('Staff & Roles') && (
             <div className="bg-dark-800 border border-dark-700 rounded-lg overflow-hidden shadow-sm">
               <div className="p-4 border-b border-dark-700 bg-dark-900 flex justify-between items-center">
                 <h3 className="font-bold text-white text-base">Active Personnel</h3>
@@ -2638,7 +2883,7 @@ const AdminStaffManagement = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-dark-700">
-                    {staff.map(s => (
+                    {paginatedStaff.map(s => (
                       <tr key={s.id} className="hover:bg-dark-700/30 transition-colors">
                         <td className="p-4">
                           <div className="font-semibold text-white text-sm sm:text-base">{s.first_name} {s.last_name}</div>
@@ -2660,7 +2905,9 @@ const AdminStaffManagement = () => {
                         <td className="p-4">
                           <div className="flex flex-col gap-1.5 items-start">
                             {getRoleBadge(s.role)}
-                            {s.is_active === false && <span className="bg-red-500/10 text-red-500 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Deactivated</span>}
+                            {s.status === 'suspended' && <span className="bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Suspended</span>}
+                            {s.status === 'sacked' && <span className="bg-red-500/10 text-red-500 border border-red-500/20 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Sacked</span>}
+                            {s.is_active === false && s.status !== 'suspended' && s.status !== 'sacked' && <span className="bg-gray-500/10 text-gray-500 border border-gray-500/20 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider">Deactivated</span>}
                           </div>
                         </td>
                         <td className="p-4 text-gray-300">
@@ -2720,6 +2967,7 @@ const AdminStaffManagement = () => {
                           <button onClick={() => { 
                             setEditingStaffForm({
                               ...s,
+                              status: s.status || (s.is_active ? 'active' : 'inactive'),
                               pos_outlets: s.pos_outlets || [],
                               password: '', // Don't prefill password
                               base_salary: s.base_salary !== undefined && s.base_salary !== null ? s.base_salary : '',
@@ -2747,10 +2995,16 @@ const AdminStaffManagement = () => {
                   </tbody>
                 </table>
               </div>
+              <PaginationControl
+                currentPage={currentPageStaff}
+                totalItems={staff.length}
+                pageSize={pageSize}
+                onPageChange={setCurrentPageStaff}
+              />
             </div>
           )}
 
-          {activeTab === 'attendance' && (
+          {activeTab === 'attendance' && hasAccess('Staff & Roles') && (
             <div className="space-y-6">
               
               {/* Telemetry Metrics Header Row */}
@@ -3351,7 +3605,7 @@ const AdminStaffManagement = () => {
             </div>
           )}
 
-          {activeTab === 'leave' && (
+          {activeTab === 'leave' && (hasAccess('Staff & Roles') || hasAccess('Leave & Absences - Request Leave of Absence') || hasAccess('Leave & Absences - Review Leave Applications')) && (
             <div className="space-y-6">
               
               {/* Leave & Absences Telemetry Row */}
@@ -3432,7 +3686,7 @@ const AdminStaffManagement = () => {
                         <option value="sick">🩺 Sick Leave (Paid)</option>
                         <option value="casual">🏡 Casual/Family Leave (Paid)</option>
                         <option value="maternity">🍼 Maternity/Paternity Leave (Paid)</option>
-                        <option value="unpaid">⏳ Unpaid Study/Personal Leave</option>
+                        <option value="unpaid">⏳ Leave Without Pay (Unpaid)</option>
                       </select>
                     </div>
 
@@ -3538,9 +3792,10 @@ const AdminStaffManagement = () => {
                                     l.leave_type === 'annual' ? 'bg-green-500/10 text-green-400 border-green-500/10' :
                                     l.leave_type === 'casual' ? 'bg-amber-500/10 text-amber-400 border-amber-500/10' :
                                     l.leave_type === 'maternity' ? 'bg-purple-500/10 text-purple-400 border-purple-500/10' :
+                                    (l.leave_type === 'unpaid' || l.leave_type === 'leave_without_pay') ? 'bg-orange-500/10 text-orange-400 border-orange-500/10' :
                                     'bg-gray-700 text-gray-400 border-transparent'
                                   }`}>
-                                    {l.leave_type}
+                                    {(l.leave_type === 'unpaid' || l.leave_type === 'leave_without_pay') ? 'leave without pay' : l.leave_type}
                                   </span>
                                   <span className="text-[10px] text-gray-400 block mt-1.5 font-medium max-w-[200px] truncate select-all" title={l.reason}>
                                     "{l.reason || 'No description'}"
@@ -3627,7 +3882,7 @@ const AdminStaffManagement = () => {
             </div>
           )}
 
-          {activeTab === 'logs' && (
+          {activeTab === 'logs' && hasAccess('Staff & Roles') && (
             <div className="bg-dark-800 border border-dark-700 rounded-lg overflow-hidden shadow-sm">
               <div className="p-4 border-b border-dark-700 bg-dark-900">
                 <h3 className="font-bold text-white flex items-center gap-2"><Activity size={18} className="text-brand-500"/> System Activity Audit Trail</h3>
@@ -3660,7 +3915,7 @@ const AdminStaffManagement = () => {
             </div>
           )}
 
-          {activeTab === 'matrix' && (
+          {activeTab === 'matrix' && hasAccess('Staff & Roles') && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in">
               {/* Left Sidebar - Role Selector (4 columns) */}
               <div className="lg:col-span-4 flex flex-col space-y-4 max-h-[85vh] overflow-y-auto pr-2 custom-scrollbar select-none">
@@ -4081,15 +4336,21 @@ const AdminStaffManagement = () => {
                   <div className="bg-dark-950/60 border border-dark-750/50 p-4 rounded-xl flex flex-col justify-center select-all">
                     <span className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Deductions (Total: ₦{calculateTotalDeductions(newStaffForm.base_salary, newStaffForm.deductions_list).toLocaleString()})</span>
                     <div className="flex flex-wrap gap-1 mt-1.5">
-                      {(!newStaffForm.deductions_list || newStaffForm.deductions_list.length === 0) ? (
-                        <span className="text-xs text-gray-400 font-bold font-mono">₦0.00</span>
-                      ) : (
-                        newStaffForm.deductions_list.map((ded, idx) => (
+                      {(() => {
+                        let list = newStaffForm.deductions_list || [];
+                        if (typeof list === 'string') {
+                          try { list = JSON.parse(list); } catch { list = []; }
+                        }
+                        if (!Array.isArray(list)) list = [];
+                        if (list.length === 0) {
+                          return <span className="text-xs text-gray-400 font-bold font-mono">₦0.00</span>;
+                        }
+                        return list.map((ded, idx) => (
                           <span key={idx} className="text-[9px] text-rose-450 font-bold bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.5 rounded">
                             {ded.name}: {ded.type === 'percentage' ? `${ded.amount}%` : `₦${parseFloat(ded.amount).toLocaleString()}`}
                           </span>
-                        ))
-                      )}
+                        ));
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -4383,18 +4644,23 @@ const AdminStaffManagement = () => {
                   </div>
                   <div className="flex-1">
                     <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Account Status</label>
-                    <div className="flex items-center justify-between bg-dark-950/60 border border-dark-750 p-3 rounded-xl min-h-[46px]">
-                      <span className={`text-xs font-extrabold uppercase tracking-wider ${editingStaffForm.is_active ? 'text-green-500' : 'text-red-500'}`}>
-                        {editingStaffForm.is_active ? 'Active Profile' : 'Deactivated Profile'}
-                      </span>
-                      <button 
-                        type="button"
-                        onClick={() => setEditingStaffForm({...editingStaffForm, is_active: !editingStaffForm.is_active})}
-                        className={`transition-colors flex-shrink-0 hover:scale-105 active:scale-95 ${editingStaffForm.is_active ? 'text-green-500 hover:text-green-400' : 'text-red-500 hover:text-red-400'}`}
-                      >
-                        {editingStaffForm.is_active ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
-                      </button>
-                    </div>
+                    <select
+                      value={editingStaffForm.status || (editingStaffForm.is_active ? 'active' : 'inactive')}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setEditingStaffForm({
+                          ...editingStaffForm,
+                          status: val,
+                          is_active: val === 'active'
+                        });
+                      }}
+                      className="w-full bg-dark-950/60 border border-dark-750 p-3 rounded-xl text-white outline-none focus:border-brand-500/80 focus:ring-1 focus:ring-brand-500/30 transition-all duration-300 text-sm font-semibold cursor-pointer"
+                    >
+                      <option value="active">🟢 Active Profile</option>
+                      <option value="suspended">🟡 Suspended (Login Blocked)</option>
+                      <option value="sacked">🔴 Sacked (Withdrawn - Login Blocked)</option>
+                      <option value="inactive">⚪ Inactive / Deactivated</option>
+                    </select>
                   </div>
                 </div>
               </div>
@@ -4681,9 +4947,15 @@ const AdminStaffManagement = () => {
                   <label className="block text-xs font-bold text-gray-400 mb-2 uppercase tracking-wider">
                     {(() => {
                       const matchingStructure = roleStructures.find(struct => struct.role === editingStaffForm.role);
-                      const listToRender = (editingStaffForm.deductions_list && editingStaffForm.deductions_list.length > 0) 
+                      let listToRender = (editingStaffForm.deductions_list && editingStaffForm.deductions_list.length > 0) 
                         ? editingStaffForm.deductions_list 
                         : (matchingStructure ? matchingStructure.deductions_list : []);
+                      if (typeof listToRender === 'string') {
+                        try { listToRender = JSON.parse(listToRender); } catch { listToRender = []; }
+                      }
+                      if (!Array.isArray(listToRender)) {
+                        listToRender = [];
+                      }
                       const baseSalaryVal = Number(editingStaffForm.base_salary) || (matchingStructure ? matchingStructure.base_salary : 150000);
                       const evaluatedDedsTotal = calculateTotalDeductions(baseSalaryVal, listToRender);
                       return `Named Deductions Breakdown (Total Evaluated: ₦${evaluatedDedsTotal.toLocaleString()})`;
@@ -4693,11 +4965,17 @@ const AdminStaffManagement = () => {
                     <div className="flex flex-wrap gap-1.5">
                       {(() => {
                         const matchingStructure = roleStructures.find(struct => struct.role === editingStaffForm.role);
-                        const listToRender = (editingStaffForm.deductions_list && editingStaffForm.deductions_list.length > 0) 
+                        let listToRender = (editingStaffForm.deductions_list && editingStaffForm.deductions_list.length > 0) 
                           ? editingStaffForm.deductions_list 
                           : (matchingStructure ? matchingStructure.deductions_list : []);
+                        if (typeof listToRender === 'string') {
+                          try { listToRender = JSON.parse(listToRender); } catch { listToRender = []; }
+                        }
+                        if (!Array.isArray(listToRender)) {
+                          listToRender = [];
+                        }
 
-                        if (!listToRender || listToRender.length === 0) {
+                        if (listToRender.length === 0) {
                           return <span className="text-xs text-gray-400">No deductions configured for this profile.</span>;
                         }
                         return listToRender.map((ded, idx) => (
@@ -4880,7 +5158,8 @@ const AdminStaffManagement = () => {
                   {loadingStructures ? (
                     <div className="text-center py-10 text-gray-500 text-sm">Loading baseline parameters...</div>
                   ) : (
-                    <div className="bg-dark-950/40 border border-dark-750/70 rounded-2xl overflow-hidden shadow-inner">
+                    <>
+                      <div className="bg-dark-950/40 border border-dark-750/70 rounded-2xl overflow-hidden shadow-inner">
                       <table className="w-full text-left text-xs">
                         <thead className="bg-dark-900 border-b border-dark-750 text-gray-400 uppercase tracking-widest font-black text-[10px]">
                           <tr>
@@ -4892,44 +5171,52 @@ const AdminStaffManagement = () => {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-dark-750">
-                          {roleStructures.map((rs, index) => (
-                            <tr key={rs.role} className="hover:bg-dark-900/35 transition-colors">
-                              <td className="p-4 font-bold text-white">{rs.label}</td>
-                              <td className="p-3">
-                                <input 
-                                  type="number" 
-                                  min="0" 
-                                  step="0.01" 
-                                  value={rs.base_salary}
-                                  onChange={e => {
-                                    const list = [...roleStructures];
-                                    list[index].base_salary = e.target.value;
-                                    setRoleStructures(list);
-                                  }}
-                                  className="w-full max-w-[150px] bg-dark-900 border border-dark-700/60 p-2 rounded-xl text-white outline-none focus:border-brand-500 font-mono"
-                                />
-                              </td>
-                              <td className="p-3">
-                                <input 
-                                  type="number" 
-                                  min="0" 
-                                  step="0.01" 
-                                  value={rs.allowances}
-                                  onChange={e => {
-                                    const list = [...roleStructures];
-                                    list[index].allowances = e.target.value;
-                                    setRoleStructures(list);
-                                  }}
-                                  className="w-full max-w-[150px] bg-dark-900 border border-dark-700/60 p-2 rounded-xl text-white outline-none focus:border-brand-500 font-mono"
-                                />
-                              </td>
+                          {paginatedRoleStructures.map((rs) => {
+                            const absIndex = roleStructures.findIndex(item => item.role === rs.role);
+                            return (
+                              <tr key={rs.role} className="hover:bg-dark-900/35 transition-colors">
+                                <td className="p-4 font-bold text-white">{rs.label}</td>
+                                <td className="p-3">
+                                  <input 
+                                    type="number" 
+                                    min="0" 
+                                    step="0.01" 
+                                    value={rs.base_salary}
+                                    onChange={e => {
+                                      const list = [...roleStructures];
+                                      list[absIndex].base_salary = e.target.value;
+                                      setRoleStructures(list);
+                                    }}
+                                    className="w-full max-w-[150px] bg-dark-900 border border-dark-700/60 p-2 rounded-xl text-white outline-none focus:border-brand-500 font-mono"
+                                  />
+                                </td>
+                                <td className="p-3">
+                                  <input 
+                                    type="number" 
+                                    min="0" 
+                                    step="0.01" 
+                                    value={rs.allowances}
+                                    onChange={e => {
+                                      const list = [...roleStructures];
+                                      list[absIndex].allowances = e.target.value;
+                                      setRoleStructures(list);
+                                    }}
+                                    className="w-full max-w-[150px] bg-dark-900 border border-dark-700/60 p-2 rounded-xl text-white outline-none focus:border-brand-500 font-mono"
+                                  />
+                                </td>
                               <td className="p-3 max-w-[280px]">
                                 <div className="flex flex-col gap-1.5">
                                   <div className="flex flex-wrap gap-1">
-                                    {(!rs.deductions_list || rs.deductions_list.length === 0) ? (
-                                      <span className="text-[10px] text-gray-500 font-bold bg-dark-900 border border-dark-750 px-2 py-0.5 rounded">None</span>
-                                    ) : (
-                                      rs.deductions_list.map((ded, idx) => (
+                                    {(() => {
+                                      let list = rs.deductions_list || [];
+                                      if (typeof list === 'string') {
+                                        try { list = JSON.parse(list); } catch { list = []; }
+                                      }
+                                      if (!Array.isArray(list)) list = [];
+                                      if (list.length === 0) {
+                                        return <span className="text-[10px] text-gray-500 font-bold bg-dark-900 border border-dark-750 px-2 py-0.5 rounded">None</span>;
+                                      }
+                                      return list.map((ded, idx) => (
                                         <span key={idx} className="text-[10px] text-rose-450 font-bold bg-rose-500/10 border border-rose-500/25 px-2 py-0.5 rounded flex items-center gap-1">
                                           {ded.name}: {ded.type === 'percentage' ? `${ded.amount}%` : `₦${parseFloat(ded.amount).toLocaleString()}`}
                                           <button 
@@ -4940,8 +5227,8 @@ const AdminStaffManagement = () => {
                                             ×
                                           </button>
                                         </span>
-                                      ))
-                                    )}
+                                      ));
+                                    })()}
                                   </div>
                                   <button
                                     type="button"
@@ -5002,10 +5289,18 @@ const AdminStaffManagement = () => {
                                 ₦{calculateTotalDeductions(rs.base_salary, rs.deductions_list).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
+                    <PaginationControl
+                      currentPage={currentPageSalary}
+                      totalItems={roleStructures.length}
+                      pageSize={pageSize}
+                      onPageChange={setCurrentPageSalary}
+                    />
+                    </>
                   )}
 
                   <div className="flex justify-end gap-3 pt-4 border-t border-dark-700">
@@ -5124,10 +5419,16 @@ const AdminStaffManagement = () => {
                                   </label>
                                   <div className="flex flex-col gap-2 bg-dark-900 p-3 rounded-xl border border-dark-750">
                                     <div className="flex flex-wrap gap-1.5">
-                                      {(!s.deductions_list || s.deductions_list.length === 0) ? (
-                                        <span className="text-[10px] text-gray-500 font-bold">No custom deductions configured.</span>
-                                      ) : (
-                                        s.deductions_list.map((ded, idx) => (
+                                      {(() => {
+                                        let list = s.deductions_list || [];
+                                        if (typeof list === 'string') {
+                                          try { list = JSON.parse(list); } catch { list = []; }
+                                        }
+                                        if (!Array.isArray(list)) list = [];
+                                        if (list.length === 0) {
+                                          return <span className="text-[10px] text-gray-500 font-bold">No custom deductions configured.</span>;
+                                        }
+                                        return list.map((ded, idx) => (
                                           <span key={idx} className="text-[10px] text-rose-450 font-bold bg-rose-500/10 border border-rose-500/25 px-2.5 py-1 rounded-xl flex items-center gap-1.5">
                                             {ded.name}: {ded.type === 'percentage' ? `${ded.amount}%` : `₦${parseFloat(ded.amount).toLocaleString()}`}
                                             <button 
@@ -5138,8 +5439,8 @@ const AdminStaffManagement = () => {
                                               ×
                                             </button>
                                           </span>
-                                        ))
-                                      )}
+                                        ));
+                                      })()}
                                     </div>
                                     <div className="flex gap-2 pt-2 border-t border-dark-750 mt-1">
                                       <input 
