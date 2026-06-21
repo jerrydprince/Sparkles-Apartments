@@ -175,7 +175,7 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
         num_days: bookingSummary.days,
         num_hours: bookingForm.booking_type === 'hourly' ? bookingSummary.hours : null,
         number_of_participants: Number(bookingForm.number_of_participants),
-        status: 'confirmed',
+        status: 'pending',
         booking_source: 'front_office',
         total_hall_price_ngn: bookingSummary.hallPrice,
         total_meals_price_ngn: bookingSummary.mealsPrice,

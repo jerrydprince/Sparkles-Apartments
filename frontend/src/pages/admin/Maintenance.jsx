@@ -196,6 +196,26 @@ const Maintenance = () => {
     account_name: ''
   });
 
+  const [nigerianBanks, setNigerianBanks] = useState([]);
+
+  const fetchNigerianBanks = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('setting_value')
+        .eq('setting_key', 'nigerian_banks')
+        .maybeSingle();
+      if (!error && data?.setting_value) {
+        const parsed = typeof data.setting_value === 'string' ? JSON.parse(data.setting_value) : data.setting_value;
+        if (Array.isArray(parsed)) {
+          setNigerianBanks(parsed);
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch nigerian banks in Maintenance.jsx:", err);
+    }
+  };
+
   const [ticketViewMode, setTicketViewMode] = useState('list');
   const [specialistViewMode, setSpecialistViewMode] = useState('list');
   const [isStoreRequisitionOpen, setIsStoreRequisitionOpen] = useState(false);
@@ -263,6 +283,7 @@ const Maintenance = () => {
 
   useEffect(() => {
     fetchInitialData();
+    fetchNigerianBanks();
   }, [activeTab]);
 
   const syncDataBackground = async () => {
@@ -793,66 +814,68 @@ const Maintenance = () => {
     }
   };
 
-  // Swing disbursement to paid -> triggers accounting general ledger sync!
-  const handleProcessDisbursementPaid = async (payment) => {
-    if (!window.confirm(`Disburse ₦${Number(payment.amount_ngn).toLocaleString()} and close payment ledger? This will auto-post a Maintenance Expense transaction.`)) return;
+  // Approve disbursement to 'approved' status → appears in Folios & Billings for final confirmation
+  const handleApproveDisbursement = async (payment) => {
+    if (!window.confirm(`Submit ₦${Number(payment.amount_ngn).toLocaleString()} disbursement to Accounts for approval? This will appear in Folios & Billings for payment confirmation.`)) return;
     
-    const toastId = toast.loading("Disbursing funds and updating accounting ledgers...");
+    const toastId = toast.loading('Submitting disbursement for accounts approval...');
     try {
-      const txRef = `TX-MAINT-${Date.now().toString().slice(-4)}`;
+      // 1. Update payment status to 'approved'
       const { error } = await supabase.from('maintenance_payments').update({
-        payment_status: 'paid',
-        paid_at: new Date().toISOString(),
-        transaction_reference: txRef
+        payment_status: 'approved'
       }).eq('id', payment.id);
 
       if (error) throw error;
-      
-      // The Supabase trigger auto_sync_maintenance_to_expense automatically handles
-      // inserting this payment into the expenses table to guarantee general ledger syncing.
 
-      toast.success("✓ Payment completed & General Ledger synced reactively!", { id: toastId });
-      fetchPayments();
-    } catch (err) {
-      // Local fallback sync simulator
-      const local = JSON.parse(localStorage.getItem('pms_maintenance_payments') || '[]');
-      const txRef = `TX-SANDBOX-${Date.now().toString().slice(-4)}`;
-      const updated = local.map(p => p.id === payment.id ? { ...p, payment_status: 'paid', paid_at: new Date().toISOString(), transaction_reference: txRef } : p);
-      localStorage.setItem('pms_maintenance_payments', JSON.stringify(updated));
-
-      // Post dynamic fallback to ledger expenses inside LocalStorage fallback
+      // 2. Create a PENDING expense entry in the Expense Tracker
+      let propertyId = null;
       try {
-        let recipient = 'Maintenance Specialist';
-        if (payment.professional_id) {
-          const prof = professionals.find(p => p.id === payment.professional_id);
-          if (prof) recipient = prof.name;
-        } else if (payment.purchase_id) {
-          const pur = purchases.find(p => p.id === payment.purchase_id);
-          if (pur) recipient = `Procurement: ${pur.item_name}`;
-        }
-
-        const expensePayload = {
-          id: `exp-maint-${Date.now()}`,
-          amount: Number(payment.amount_ngn),
-          category: 'Maintenance',
-          description: `Disbursed maintenance fix payout. Ref: ${txRef}. Notes: ${payment.notes || 'None'}`,
-          expense_date: new Date().toISOString().split('T')[0],
-          paid_to: recipient,
-          payment_method: payment.payment_method,
-          status: 'paid',
-          created_at: new Date().toISOString()
-        };
-
-        const currentLocal = JSON.parse(localStorage.getItem('luxe_expenses') || '[]');
-        localStorage.setItem('luxe_expenses', JSON.stringify([expensePayload, ...currentLocal]));
-      } catch (localErr) {
-        console.error("Local accounts synchronization error:", localErr);
+        const { data: propData } = await supabase.from('properties').select('id').limit(1);
+        if (propData && propData.length > 0) propertyId = propData[0].id;
+      } catch (propErr) {
+        console.warn('Failed to retrieve property_id:', propErr);
       }
 
-      toast.success("✓ Disbursement paid & Local Expenses Ledger synced!", { id: toastId });
+      let recipientName = 'Maintenance Vendor';
+      if (payment.professional_id) {
+        const prof = professionals.find(p => p.id === payment.professional_id);
+        if (prof) recipientName = prof.name;
+      } else if (payment.purchase_id) {
+        const pur = purchases.find(p => p.id === payment.purchase_id);
+        if (pur) recipientName = `Procurement: ${pur.item_name}`;
+      }
+
+      const expensePayload = {
+        property_id: propertyId,
+        amount: Number(payment.amount_ngn),
+        category: 'Maintenance',
+        description: `[PENDING CONFIRMATION] Maintenance disbursement: ${recipientName}. Notes: ${payment.notes || 'None'}`,
+        expense_date: format(new Date(), 'yyyy-MM-dd'),
+        paid_to: recipientName,
+        payment_method: payment.payment_method || 'bank_transfer',
+        status: 'pending',
+        maintenance_payment_id: payment.id
+      };
+
+      try {
+        const { error: expErr } = await supabase.from('expenses').insert([expensePayload]);
+        if (expErr) console.error('Failed to insert pending expense:', expErr);
+      } catch (expInsertErr) {
+        console.error('Failed to write pending expense:', expInsertErr);
+      }
+
+      toast.success('✓ Disbursement approved and sent to Folios & Billings for payment confirmation!', { id: toastId });
+      fetchPayments();
+    } catch (err) {
+      // Local fallback
+      const local = JSON.parse(localStorage.getItem('pms_maintenance_payments') || '[]');
+      const updated = local.map(p => p.id === payment.id ? { ...p, payment_status: 'approved' } : p);
+      localStorage.setItem('pms_maintenance_payments', JSON.stringify(updated));
+      toast.success('✓ Disbursement marked as approved (local sandbox)!', { id: toastId });
       fetchPayments();
     }
   };
+
 
   // 5. Tech Repair Ticket Resolution & Contractor Assignment Panel
   const handleOpenResolutionModal = async (ticket) => {
@@ -1961,19 +1984,24 @@ const Maintenance = () => {
                           <td className="p-4">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
                               pay.payment_status === 'paid' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
+                              pay.payment_status === 'approved' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
                               'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                             }`}>
-                              {pay.payment_status}
+                              {pay.payment_status === 'approved' ? 'Awaiting Accounts' : pay.payment_status}
                             </span>
                           </td>
                           <td className="p-4 text-right">
                             {pay.payment_status === 'pending' && canManageFinances ? (
                               <button 
-                                onClick={() => handleProcessDisbursementPaid(pay)}
+                                onClick={() => handleApproveDisbursement(pay)}
                                 className="bg-brand-500 hover:bg-brand-400 text-dark-950 font-bold text-[10px] px-3.5 py-1.5 rounded-lg flex items-center gap-1 ml-auto"
                               >
-                                <ArrowUpRight size={12} /> Pay & Sync Ledger
+                                <ArrowUpRight size={12} /> Approve to Pay
                               </button>
+                            ) : pay.payment_status === 'approved' ? (
+                              <span className="text-blue-400 text-[10px] font-bold flex items-center gap-1 justify-end">
+                                <Clock size={12} /> Awaiting Accounts Confirmation
+                              </span>
                             ) : pay.payment_status === 'paid' ? (
                               <span className="text-green-400 text-[10px] font-bold flex items-center gap-1 justify-end">
                                 <Check size={12} className="text-green-500" /> Synced to Expenses
@@ -2093,7 +2121,20 @@ const Maintenance = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-gray-400 mb-1">Bank Name</label>
-                  <input type="text" value={newProfessional.bank_name || ''} onChange={e => setNewProfessional({...newProfessional, bank_name: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-lg p-2 text-xs text-white outline-none focus:border-brand-500 transition-colors" placeholder="Access Bank" />
+                  <select 
+                    value={newProfessional.bank_name || ''} 
+                    onChange={e => setNewProfessional({...newProfessional, bank_name: e.target.value})} 
+                    className="w-full bg-dark-900 border border-dark-700 rounded-lg p-2 text-xs text-white outline-none focus:border-brand-500 transition-colors cursor-pointer"
+                  >
+                    <option value="">Select Bank</option>
+                    {(nigerianBanks.length > 0 ? nigerianBanks : [
+                      "Access Bank", "First Bank", "GTBank", "Zenith Bank", "UBA", "Opay", "Kuda Bank", "Sterling Bank", "Polaris Bank", "Stanbic IBTC"
+                    ]).map(bank => (
+                      <option key={typeof bank === 'string' ? bank : bank.name} value={typeof bank === 'string' ? bank : bank.name}>
+                        {typeof bank === 'string' ? bank : bank.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-400 mb-1">Account Number</label>
@@ -2167,7 +2208,20 @@ const Maintenance = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-gray-400 mb-1">Bank Name</label>
-                  <input type="text" value={editingProfessional.bank_name || ''} onChange={e => setEditingProfessional({...editingProfessional, bank_name: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-lg p-2 text-xs text-white outline-none focus:border-brand-500 transition-colors" placeholder="Access Bank" />
+                  <select 
+                    value={editingProfessional.bank_name || ''} 
+                    onChange={e => setEditingProfessional({...editingProfessional, bank_name: e.target.value})} 
+                    className="w-full bg-dark-900 border border-dark-700 rounded-lg p-2 text-xs text-white outline-none focus:border-brand-500 transition-colors cursor-pointer"
+                  >
+                    <option value="">Select Bank</option>
+                    {(nigerianBanks.length > 0 ? nigerianBanks : [
+                      "Access Bank", "First Bank", "GTBank", "Zenith Bank", "UBA", "Opay", "Kuda Bank", "Sterling Bank", "Polaris Bank", "Stanbic IBTC"
+                    ]).map(bank => (
+                      <option key={typeof bank === 'string' ? bank : bank.name} value={typeof bank === 'string' ? bank : bank.name}>
+                        {typeof bank === 'string' ? bank : bank.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-400 mb-1">Account Number</label>

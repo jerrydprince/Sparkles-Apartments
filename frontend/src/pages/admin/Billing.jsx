@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeSync } from '../../lib/useRealtimeSync';
 import toast from 'react-hot-toast';
-import { FileText, CreditCard, Download, Search, CheckCircle, RefreshCcw, DollarSign, Wallet, ArrowRightLeft, Printer, Eye, X, AlertTriangle, Wrench } from 'lucide-react';
-import { format } from 'date-fns';
+import { FileText, CreditCard, Download, Search, CheckCircle, RefreshCcw, DollarSign, Wallet, ArrowRightLeft, Printer, Eye, X, AlertTriangle, Wrench, CalendarClock, Landmark } from 'lucide-react';
+import { format, addMonths, addYears } from 'date-fns';
 import { useAuth } from '../../context/AuthContext';
 import Accounting from './Accounting';
 import { triggerAutomationRules, sendResendEmail, sendSMSNotification } from '../../lib/emailService';
@@ -118,6 +118,10 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
   const [pendingServicePayments, setPendingServicePayments] = useState([]);
   const [pendingCheckoutPayments, setPendingCheckoutPayments] = useState([]);
   const [specialistPayouts, setSpecialistPayouts] = useState([]);
+  const [reminderPayouts, setReminderPayouts] = useState([]);
+  const [nigerianBanks, setNigerianBanks] = useState([]);
+  const [hallPayouts, setHallPayouts] = useState([]);
+  const [hallBookingMeals, setHallBookingMeals] = useState([]);
   const [fetchError, setFetchError] = useState(null);
   const [printType, setPrintType] = useState('a4'); // a4 or thermal
   const [contactInfo, setContactInfo] = useState({
@@ -167,13 +171,17 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
     fetchInvoices();
     fetchContactSettings();
     fetchSpecialistPayouts();
+    fetchReminderPayouts();
+    fetchHallPayouts();
     fetchRefundSettlements();
   }, []);
 
-  // Real-time synchronization for invoices, bookings, booking_services, payments, and refund_settlements
-  useRealtimeSync(['invoices', 'bookings', 'booking_services', 'payments', 'maintenance_payments', 'refund_settlements'], () => {
+  // Real-time synchronization for invoices, bookings, booking_services, payments, maintenance_payments, reminders, refund_settlements, hall_bookings
+  useRealtimeSync(['invoices', 'bookings', 'booking_services', 'payments', 'maintenance_payments', 'reminders', 'refund_settlements', 'hall_bookings'], () => {
     fetchInvoices(false);
     fetchSpecialistPayouts();
+    fetchReminderPayouts();
+    fetchHallPayouts();
     fetchRefundSettlements();
   });
 
@@ -201,7 +209,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
       const { data, error } = await supabase
         .from('system_settings')
         .select('setting_key, setting_value')
-        .in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo', 'paystack_public']);
+        .in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo', 'paystack_public', 'nigerian_banks']);
         
       if (!error && data) {
         const settingsMap = data.reduce((acc, curr) => {
@@ -217,6 +225,17 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
         }));
 
         setPaystackPublicKey(settingsMap.paystack_public || '');
+
+        // Load Nigerian banks list from settings
+        try {
+          const banksRaw = settingsMap.nigerian_banks;
+          if (banksRaw) {
+            const parsed = typeof banksRaw === 'string' ? JSON.parse(banksRaw) : banksRaw;
+            if (Array.isArray(parsed)) setNigerianBanks(parsed);
+          }
+        } catch (banksErr) {
+          console.warn('Failed to parse nigerian_banks from settings:', banksErr);
+        }
       }
     } catch (e) {
       console.error("Failed to load contact settings:", e);
@@ -254,6 +273,27 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
               status,
               services (name, tax_inclusive)
             )
+          ),
+          hall_bookings (
+            id,
+            status,
+            guest_email,
+            booking_reference,
+            guest_name,
+            guest_phone,
+            booking_date,
+            booking_type,
+            start_time,
+            end_time,
+            num_days,
+            num_hours,
+            number_of_participants,
+            total_hall_price_ngn,
+            total_meals_price_ngn,
+            total_amount_ngn,
+            amount_paid_ngn,
+            payment_status,
+            halls (name, capacity)
           )
         `)
         .order('created_at', { ascending: false });
@@ -341,19 +381,18 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
             account_name
           )
         `)
-        .eq('payment_status', 'pending')
+        .eq('payment_status', 'approved')
         .not('professional_id', 'is', null);
 
       if (error) throw error;
       setSpecialistPayouts(data || []);
     } catch (err) {
       console.warn("Failed to fetch specialist payouts from database, checking local storage:", err);
-      // Fallback from localStorage
       const localPayments = JSON.parse(localStorage.getItem('pms_maintenance_payments') || '[]');
       const localProfs = JSON.parse(localStorage.getItem('pms_maintenance_professionals') || '[]');
       
-      const pendingSpecialistPayments = localPayments
-        .filter(p => p.payment_status === 'pending' && p.professional_id)
+      const approvedSpecialistPayments = localPayments
+        .filter(p => p.payment_status === 'approved' && p.professional_id)
         .map(p => {
           const prof = localProfs.find(pr => pr.id === p.professional_id);
           return {
@@ -361,11 +400,369 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
             professional: prof || { name: 'Unknown Specialist', email: '', bank_name: '', account_number: '', account_name: '' }
           };
         });
-      setSpecialistPayouts(pendingSpecialistPayments);
+      setSpecialistPayouts(approvedSpecialistPayments);
+    }
+  };
+
+  const fetchReminderPayouts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('reminders')
+        .select('*')
+        .eq('status', 'approved')
+        .order('due_date', { ascending: true });
+
+      if (error) throw error;
+      setReminderPayouts(data || []);
+    } catch (err) {
+      console.warn('Failed to fetch reminder payouts:', err);
+      setReminderPayouts([]);
+    }
+  };
+
+  const fetchHallPayouts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('hall_bookings')
+        .select('*, halls(*)')
+        .eq('status', 'pending')
+        .order('booking_date', { ascending: true });
+
+      if (error) throw error;
+      setHallPayouts(data || []);
+    } catch (err) {
+      console.warn('Failed to fetch pending hall bookings for payouts:', err);
+      setHallPayouts([]);
+    }
+  };
+
+  const fetchHallBookingMeals = async (hallBookingId) => {
+    try {
+      const { data, error } = await supabase
+        .from('hall_booking_meals')
+        .select('*, hall_meal_options(name)')
+        .eq('hall_booking_id', hallBookingId)
+        .order('serving_date', { ascending: true });
+      if (error) throw error;
+      setHallBookingMeals(data || []);
+    } catch (err) {
+      console.warn("Failed to fetch hall booking meals:", err);
+      setHallBookingMeals([]);
+    }
+  };
+
+  useEffect(() => {
+    if (activeInvoiceModal && activeInvoiceModal.hall_bookings) {
+      fetchHallBookingMeals(activeInvoiceModal.hall_bookings.id);
+    } else {
+      setHallBookingMeals([]);
+    }
+  }, [activeInvoiceModal]);
+
+  const handleConfirmHallPayout = async (hallBooking) => {
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
+    const totalAmount = Number(hallBooking.total_amount_ngn || 0);
+    if (!window.confirm(`Confirm payment of ₦${totalAmount.toLocaleString()} for Hall Booking Ref: "${hallBooking.booking_reference}"?`)) return;
+
+    const toastId = toast.loading('Confirming hall booking payment...');
+    try {
+      // 1. Update hall_bookings status to 'confirmed', payment_status to 'paid', amount_paid_ngn to totalAmount
+      const { error: hbErr } = await supabase
+        .from('hall_bookings')
+        .update({ 
+          status: 'confirmed',
+          payment_status: 'paid',
+          amount_paid_ngn: totalAmount
+        })
+        .eq('id', hallBooking.id);
+      
+      if (hbErr) throw hbErr;
+
+      // 2. Update invoice status to 'paid', amount_paid to totalAmount if invoice exists
+      try {
+        const { data: invData } = await supabase
+          .from('invoices')
+          .select('id')
+          .eq('hall_booking_id', hallBooking.id)
+          .maybeSingle();
+
+        if (invData) {
+          await supabase
+            .from('invoices')
+            .update({ 
+              status: 'paid',
+              amount_paid: totalAmount
+            })
+            .eq('id', invData.id);
+        }
+      } catch (invSyncErr) {
+        console.warn("Invoice status update failed in hall payout confirmation:", invSyncErr);
+      }
+
+      // 3. Record Payment inflow in payments table so it reflects in Accounting
+      const txnRef = `PAY-HALL-CONF-${Date.now()}`;
+      const { error: payErr } = await supabase
+        .from('payments')
+        .insert([{
+          hall_booking_id: hallBooking.id,
+          amount: totalAmount,
+          method: 'bank_transfer',
+          status: 'completed',
+          transaction_ref: txnRef,
+          notes: `Hall Booking payment confirmed by finance: Ref: ${hallBooking.booking_reference} | Guest: ${hallBooking.guest_name}`
+        }]);
+
+      if (payErr) throw payErr;
+
+      // Print receipt in new window
+      try {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          const formattedDate = format(new Date(), 'MMM dd, yyyy, HH:mm');
+          printWindow.document.write(`
+            <html>
+              <head>
+                <title>Payment Receipt - Hall Booking ${hallBooking.booking_reference}</title>
+                <style>
+                  @page { size: A5; margin: 20mm; }
+                  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #111827; }
+                  .header { text-align: center; border-bottom: 2px solid #374151; padding-bottom: 15px; margin-bottom: 20px; }
+                  .header h1 { font-size: 22px; margin: 0; font-weight: 900; }
+                  .header p { margin: 2px 0; font-size: 12px; color: #6b7280; }
+                  .title { font-size: 16px; font-weight: 800; text-align: center; text-transform: uppercase; color: #059669; margin: 0 0 20px 0; letter-spacing: 0.05em; }
+                  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                  td { padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
+                  td:first-child { font-weight: 700; width: 45%; }
+                  .amount { font-size: 22px; font-weight: 900; color: #059669; text-align: center; padding: 15px 0; border-top: 2px solid #374151; margin-top: 10px; }
+                  .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 15px; }
+                </style>
+              </head>
+              <body>
+                <div class="header">
+                  <h1>SPARKLES APARTMENTS</h1>
+                  <p>Premium Luxury Shortlets</p>
+                </div>
+                <p class="title">Hall Booking Receipt</p>
+                <table>
+                  <tr><td>Booking Ref:</td><td>${hallBooking.booking_reference}</td></tr>
+                  <tr><td>Guest Name:</td><td>${hallBooking.guest_name}</td></tr>
+                  <tr><td>Event Hall:</td><td>${hallBooking.halls?.name || 'Event Space'}</td></tr>
+                  <tr><td>Event Date:</td><td>${hallBooking.booking_date}</td></tr>
+                  <tr><td>Duration:</td><td>${hallBooking.booking_type === 'daily' ? `${hallBooking.num_days} Day(s)` : `${hallBooking.num_hours} Hour(s)`}</td></tr>
+                  <tr><td>Payment Date:</td><td>${formattedDate}</td></tr>
+                  <tr><td>Transaction Ref:</td><td style="font-family: monospace; font-weight: bold;">${txnRef}</td></tr>
+                  <tr><td>Status:</td><td style="color: #059669; font-weight: bold;">PAID / CONFIRMED</td></tr>
+                </table>
+                <div class="amount">₦${totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                <div class="footer">
+                  <p>Authorized and confirmed by Sparkles Apartments Finance Department.</p>
+                </div>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+          printWindow.print();
+          printWindow.close();
+        }
+      } catch (printErr) { console.warn('Receipt print failed:', printErr); }
+      
+      toast.success('Hall Booking payment confirmed successfully!', { id: toastId });
+      fetchHallPayouts();
+      fetchInvoices();
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to confirm hall booking payment: ' + err.message, { id: toastId });
+    }
+  };
+
+  const handleCancelHallBookingPayment = async (invoiceId, hallBookingId) => {
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
+    if (!window.confirm("Are you sure you want to cancel / decline this hall booking due to failed payment?")) return;
+    
+    const toastId = toast.loading('Cancelling hall booking and invoice...');
+    try {
+      // 1. Update hall_bookings status to cancelled
+      const { error: hbErr } = await supabase
+        .from('hall_bookings')
+        .update({ status: 'cancelled' })
+        .eq('id', hallBookingId);
+      if (hbErr) throw hbErr;
+
+      // 2. Update invoice status to cancelled
+      const { error: invoiceErr } = await supabase
+        .from('invoices')
+        .update({ status: 'cancelled' })
+        .eq('id', invoiceId);
+      if (invoiceErr) throw invoiceErr;
+
+      // 3. Update hall_booking_meals status to cancelled
+      try {
+        await supabase
+          .from('hall_booking_meals')
+          .update({ status: 'cancelled' })
+          .eq('hall_booking_id', hallBookingId);
+      } catch (srvErr) {
+        console.warn("Failed to cancel kitchen catering items:", srvErr);
+      }
+
+      // 4. Update payments status to cancelled (if any exist)
+      try {
+        await supabase
+          .from('payments')
+          .update({ status: 'cancelled' })
+          .eq('hall_booking_id', hallBookingId);
+      } catch (payErr) {
+        console.warn("Failed to cancel payments:", payErr);
+      }
+
+      toast.success('Hall booking and invoice successfully cancelled!', { id: toastId });
+      fetchHallPayouts();
+      fetchInvoices();
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to cancel: ' + err.message, { id: toastId });
+    }
+  };
+
+  // Confirm payment of a Reminder/Subscription payout → marks reminder as 'paid', updates expense to 'paid', rollover recurrence
+  const handleConfirmReminderPayout = async (reminder) => {
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
+    if (!window.confirm(`Confirm payment of ₦${Number(reminder.amount_ngn || 0).toLocaleString()} for "${reminder.title}"? This will finalize the expense ledger entry and print a receipt.`)) return;
+
+    const toastId = toast.loading('Confirming reminder payment...');
+    const txRef = `TX-REM-${Date.now().toString().slice(-6)}`;
+    const paidDate = new Date().toISOString();
+
+    try {
+      // 1. Mark reminder as 'paid'
+      const { error: remErr } = await supabase
+        .from('reminders')
+        .update({ status: 'paid' })
+        .eq('id', reminder.id);
+      if (remErr) throw remErr;
+
+      // 2. Update related pending expense to 'paid'
+      try {
+        await supabase
+          .from('expenses')
+          .update({ status: 'paid', payment_method: 'bank_transfer' })
+          .eq('reminder_id', reminder.id)
+          .eq('status', 'pending');
+      } catch (expErr) {
+        console.warn('Could not update pending expense to paid for reminder:', expErr);
+        // Fallback: insert a paid expense
+        try {
+          const categoryMapping = {
+            'Subscription': 'Utilities', 'Utility': 'Utilities',
+            'Maintenance': 'Maintenance', 'Tax': 'Taxes', 'License': 'Utilities'
+          };
+          await supabase.from('expenses').insert([{
+            amount: Number(reminder.amount_ngn || 0),
+            category: categoryMapping[reminder.category] || 'Other',
+            description: `Settled: ${reminder.title}. Tx Ref: ${txRef}`,
+            expense_date: paidDate.split('T')[0],
+            paid_to: reminder.title,
+            payment_method: 'bank_transfer',
+            status: 'paid'
+          }]);
+        } catch (expInsertErr) { console.warn('Expense fallback insert failed:', expInsertErr); }
+      }
+
+      // 3. Rollover recurrence — create next pending reminder
+      if (reminder.recurrence && reminder.recurrence !== 'none') {
+        try {
+          const currentDate = new Date(reminder.due_date);
+          let nextDueDate;
+          if (reminder.recurrence === 'monthly') nextDueDate = addMonths(currentDate, 1);
+          else if (reminder.recurrence === 'yearly') nextDueDate = addYears(currentDate, 1);
+          
+          if (nextDueDate) {
+            await supabase.from('reminders').insert([{
+              title: reminder.title,
+              description: reminder.description,
+              due_date: format(nextDueDate, 'yyyy-MM-dd'),
+              amount_ngn: reminder.amount_ngn,
+              recurrence: reminder.recurrence,
+              category: reminder.category,
+              status: 'pending',
+              assigned_to: reminder.assigned_to
+            }]);
+          }
+        } catch (rolloverErr) {
+          console.warn('Failed to rollover recurrence:', rolloverErr);
+        }
+      }
+
+      // 4. Print receipt in new window
+      try {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(`
+            <html>
+              <head>
+                <title>Payment Receipt - ${reminder.title}</title>
+                <style>
+                  @page { size: A5; margin: 20mm; }
+                  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #111827; }
+                  .header { text-align: center; border-bottom: 2px solid #374151; padding-bottom: 15px; margin-bottom: 20px; }
+                  .header h1 { font-size: 22px; margin: 0; font-weight: 900; }
+                  .header p { margin: 2px 0; font-size: 12px; color: #6b7280; }
+                  .title { font-size: 16px; font-weight: 800; text-align: center; text-transform: uppercase; color: #059669; margin: 0 0 20px 0; letter-spacing: 0.05em; }
+                  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                  td { padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
+                  td:first-child { font-weight: 700; width: 45%; }
+                  .amount { font-size: 22px; font-weight: 900; color: #059669; text-align: center; padding: 15px 0; border-top: 2px solid #374151; margin-top: 10px; }
+                  .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 15px; }
+                </style>
+              </head>
+              <body>
+                <div class="header">
+                  <h1>SPARKLES APARTMENTS</h1>
+                  <p>Premium Luxury Shortlets</p>
+                </div>
+                <p class="title">Payment Receipt</p>
+                <table>
+                  <tr><td>Description:</td><td>${reminder.title}</td></tr>
+                  <tr><td>Category:</td><td>${reminder.category}</td></tr>
+                  <tr><td>Payment Date:</td><td>${format(new Date(paidDate), 'MMM dd, yyyy, HH:mm')}</td></tr>
+                  <tr><td>Transaction Ref:</td><td style="font-family: monospace; font-weight: bold;">${txRef}</td></tr>
+                  <tr><td>Recurrence:</td><td>${reminder.recurrence === 'none' ? 'One-time payment' : reminder.recurrence}</td></tr>
+                  <tr><td>Status:</td><td style="color: #059669; font-weight: bold;">PAID</td></tr>
+                </table>
+                <div class="amount">₦${Number(reminder.amount_ngn || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                <div class="footer">
+                  <p>Authorized and confirmed by Sparkles Apartments Finance Department.</p>
+                  ${reminder.recurrence !== 'none' ? '<p style="color: #f59e0b; font-weight: bold;">Next recurrence reminder has been automatically scheduled.</p>' : ''}
+                </div>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+          printWindow.print();
+          printWindow.close();
+        }
+      } catch (printErr) { console.warn('Receipt print failed:', printErr); }
+
+      toast.success(`✓ Payment of ₦${Number(reminder.amount_ngn || 0).toLocaleString()} confirmed and receipt printed!${reminder.recurrence !== 'none' ? ' Next recurrence scheduled.' : ''}`, { id: toastId });
+      fetchReminderPayouts();
+      fetchInvoices();
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to confirm reminder payment', { id: toastId });
     }
   };
 
   const handleProcessSpecialistPayout = async (payout, payoutMethod = 'bank_transfer') => {
+
     if (isFrontOfficeClosed) {
       toast.error("Front Office operations are locked due to daily ledger closure.");
       return;
@@ -388,8 +785,28 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
 
       if (payErr) throw payErr;
 
-      // 2. Direct ledger expense insertion is skipped since the DB trigger trigger_sync_maintenance_expense auto-generates the expense.
-
+      // 2. Update the related pending expense to 'paid'
+      try {
+        await supabase
+          .from('expenses')
+          .update({ status: 'paid', payment_method: payoutMethod, description: `Maintenance disbursement: ${payout.professional?.name || 'Specialist'}. Tx Ref: ${txRef}. Notes: ${payout.notes || 'None'}` })
+          .eq('maintenance_payment_id', payout.id)
+          .eq('status', 'pending');
+      } catch (expUpdateErr) {
+        console.warn('Could not update pending expense to paid:', expUpdateErr);
+        // Fallback: insert new paid expense record
+        try {
+          await supabase.from('expenses').insert([{
+            amount: Number(payout.amount_ngn),
+            category: 'Maintenance',
+            description: `Maintenance disbursement paid: ${payout.professional?.name || 'Specialist'}. Ref: ${txRef}`,
+            expense_date: paidDate.split('T')[0],
+            paid_to: payout.professional?.name || 'Maintenance Specialist',
+            payment_method: payoutMethod,
+            status: 'paid'
+          }]);
+        } catch (expInsertErr) { console.warn('Expense insert fallback failed:', expInsertErr); }
+      }
 
       // 3. Send email receipt automatically to specialist's email!
       let emailSent = false;
@@ -1472,8 +1889,8 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
     
     const guestName = inv.bookings?.profiles 
       ? `${inv.bookings.profiles.first_name} ${inv.bookings.profiles.last_name}` 
-      : inv.bookings?.guest_name || '';
-    const bookingRef = inv.bookings?.booking_reference || '';
+      : (inv.bookings?.guest_name || inv.hall_bookings?.guest_name || '');
+    const bookingRef = inv.bookings?.booking_reference || inv.hall_bookings?.booking_reference || '';
     const searchLower = searchTerm.toLowerCase();
     
     return inv.invoice_number.toLowerCase().includes(searchLower) || 
@@ -1815,7 +2232,9 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
               {!loading && sortedInvoices.length === 0 && <tr><td colSpan="8" className="p-8 text-center text-gray-500">No invoices found.</td></tr>}
               
               {paginatedInvoices.map(inv => {
-                const guestName = inv.bookings?.profiles ? `${inv.bookings.profiles.first_name} ${inv.bookings.profiles.last_name}` : inv.bookings?.guest_name || 'Walk-in Guest';
+                const guestName = inv.bookings?.profiles 
+                  ? `${inv.bookings.profiles.first_name} ${inv.bookings.profiles.last_name}` 
+                  : (inv.bookings?.guest_name || inv.hall_bookings?.guest_name || 'Walk-in Guest');
                 const balanceDue = Number(inv.total_amount) - Number(inv.amount_paid);
                 const discount = Number(inv.bookings?.discount_amount_ngn || 0);
 
@@ -1825,7 +2244,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                       <p className="font-bold text-white flex items-center gap-2"><FileText size={14} className="text-gray-500"/> {inv.invoice_number}</p>
                       <p className="text-xs text-gray-500">Due: {format(new Date(inv.due_date), 'MMM dd, yyyy')}</p>
                     </td>
-                    <td className="p-4 font-medium text-brand-500">{inv.bookings?.booking_reference || 'N/A'}</td>
+                    <td className="p-4 font-medium text-brand-500">{inv.bookings?.booking_reference || inv.hall_bookings?.booking_reference || 'N/A'}</td>
                     <td className="p-4 font-medium text-gray-300">{guestName}</td>
                     <td className="p-4 font-bold text-white">₦{Number(inv.total_amount).toLocaleString()}</td>
                     <td className="p-4">
@@ -1864,6 +2283,24 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                         <button 
                           disabled={isFrontOfficeClosed}
                           onClick={() => handleCancelBookingPayment(inv.id, inv.bookings.id)} 
+                          className="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded font-bold text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          Decline / Cancel
+                        </button>
+                      )}
+                      {inv.hall_bookings?.status === 'pending' && (
+                        <button 
+                          disabled={isFrontOfficeClosed}
+                          onClick={() => handleConfirmHallPayout(inv.hall_bookings)} 
+                          className="bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded font-bold text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          Confirm Payment
+                        </button>
+                      )}
+                      {inv.hall_bookings?.status === 'pending' && (
+                        <button 
+                          disabled={isFrontOfficeClosed}
+                          onClick={() => handleCancelHallBookingPayment(inv.id, inv.hall_bookings.id)} 
                           className="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded font-bold text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           Decline / Cancel
@@ -1930,10 +2367,10 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
         <div className="space-y-6 animate-in fade-in duration-300">
           <div className="bg-dark-800 border border-dark-700 p-6 rounded-lg shadow-sm space-y-4">
             <h2 className="text-lg font-bold text-brand-500 flex items-center gap-2">
-              <Wrench className="text-brand-500" /> Specialist Maintenance Payouts & Disbursements ({specialistPayouts.length})
+              <Wrench className="text-brand-500" /> Specialist Maintenance Payouts — Awaiting Accounts Confirmation ({specialistPayouts.length})
             </h2>
             <p className="text-gray-400 text-xs">
-              Process payouts directly to specialists for carried out maintenance services. Once paid, the general ledger will be automatically updated with a maintenance expense entry and a receipt will be emailed to the specialist.
+              These disbursements were approved from the Maintenance module. Confirm payout here to mark as paid, update the general ledger expense entry, and email a receipt to the specialist.
             </p>
             
             <div className="overflow-x-auto border border-dark-700 rounded bg-dark-900/50">
@@ -1951,7 +2388,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                   {paginatedPayouts.length === 0 ? (
                     <tr>
                       <td colSpan="5" className="py-8 px-4 text-center text-gray-500 italic text-xs">
-                        No pending specialist payout requests at this time.
+                        No approved disbursements awaiting confirmation.
                       </td>
                     </tr>
                   ) : (
@@ -2016,8 +2453,133 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
               onPageChange={setCurrentPagePayouts}
             />
           </div>
+
+          {/* Reminder / Subscription Payouts */}
+          <div className="bg-dark-800 border border-dark-700 p-6 rounded-lg shadow-sm space-y-4">
+            <h2 className="text-lg font-bold text-orange-400 flex items-center gap-2">
+              <CalendarClock className="text-orange-400" /> Subscriptions & Utility Schedule Payouts ({reminderPayouts.length})
+            </h2>
+            <p className="text-gray-400 text-xs">
+              These are subscription and utility payments approved by scheduling. Confirm payment to finalize the expense ledger, print a receipt, and auto-schedule the next recurrence.
+            </p>
+
+            <div className="overflow-x-auto border border-dark-700 rounded bg-dark-900/50">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-dark-700 bg-dark-900 text-gray-500 text-xs uppercase tracking-wider">
+                    <th className="py-3 px-4">Schedule / Description</th>
+                    <th className="py-3 px-4">Category</th>
+                    <th className="py-3 px-4">Amount</th>
+                    <th className="py-3 px-4">Due Date</th>
+                    <th className="py-3 px-4">Recurrence</th>
+                    <th className="py-3 px-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-700/50">
+                  {reminderPayouts.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="py-8 px-4 text-center text-gray-500 italic text-xs">
+                        No pending subscription/utility payment approvals at this time.
+                      </td>
+                    </tr>
+                  ) : (
+                    reminderPayouts.map(rem => (
+                      <tr key={rem.id} className="hover:bg-dark-700/30 transition-colors">
+                        <td className="py-3.5 px-4">
+                          <p className="font-bold text-white">{rem.title}</p>
+                          {rem.description && (
+                            <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-1">{rem.description}</p>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="bg-orange-500/10 text-orange-400 text-[9px] font-black uppercase px-2 py-0.5 rounded-full">{rem.category}</span>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono font-bold text-white text-base">
+                          ₦{Number(rem.amount_ngn || 0).toLocaleString()}
+                        </td>
+                        <td className="py-3.5 px-4 text-xs text-gray-400 font-mono">{rem.due_date}</td>
+                        <td className="py-3.5 px-4 text-xs text-gray-400 capitalize">{rem.recurrence}</td>
+                        <td className="py-3.5 px-4 text-right">
+                          <button
+                            disabled={isFrontOfficeClosed}
+                            onClick={() => handleConfirmReminderPayout(rem)}
+                            className="bg-orange-500 hover:bg-orange-400 text-dark-900 font-bold text-xs py-2 px-4 rounded-lg shadow-md transition-all inline-flex items-center gap-1 hover:scale-102 active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                          >
+                            <CheckCircle size={13} /> Confirm Payment
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Hall & Catering Booking Payouts */}
+          <div className="bg-dark-800 border border-dark-700 p-6 rounded-lg shadow-sm space-y-4">
+            <h2 className="text-lg font-bold text-emerald-450 flex items-center gap-2">
+              <Landmark className="text-emerald-450" /> Hall & Catering Booking Payouts ({hallPayouts.length})
+            </h2>
+            <p className="text-gray-400 text-xs">
+              These are event hall and catering bookings awaiting payment confirmation. Confirm payment here to mark the booking as confirmed, record payment inflow, and print the receipt.
+            </p>
+
+            <div className="overflow-x-auto border border-dark-700 rounded bg-dark-900/50">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-dark-700 bg-dark-900 text-gray-500 text-xs uppercase tracking-wider">
+                    <th className="py-3 px-4">Booking Ref / Guest</th>
+                    <th className="py-3 px-4">Event Hall</th>
+                    <th className="py-3 px-4">Event Date / Type</th>
+                    <th className="py-3 px-4">Amount</th>
+                    <th className="py-3 px-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-700/50">
+                  {hallPayouts.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="py-8 px-4 text-center text-gray-500 italic text-xs">
+                        No pending hall booking payment confirmations at this time.
+                      </td>
+                    </tr>
+                  ) : (
+                    hallPayouts.map(hb => (
+                      <tr key={hb.id} className="hover:bg-dark-700/30 transition-colors">
+                        <td className="py-3.5 px-4">
+                          <p className="font-bold text-white">{hb.booking_reference}</p>
+                          <p className="text-[10px] text-gray-500 mt-0.5">{hb.guest_name}</p>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="font-semibold text-white">{hb.halls?.name || 'Event Space'}</span>
+                        </td>
+                        <td className="py-3.5 px-4 text-xs text-gray-400">
+                          <p className="font-medium">{hb.booking_date}</p>
+                          <span className="text-[10px] text-gray-500 mt-0.5 capitalize">{hb.booking_type}</span>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono font-bold text-white text-base">
+                          ₦{Number(hb.total_amount_ngn || 0).toLocaleString()}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <button
+                            disabled={isFrontOfficeClosed}
+                            onClick={() => handleConfirmHallPayout(hb)}
+                            className="bg-brand-500 hover:bg-brand-400 text-dark-900 font-bold text-xs py-2 px-4 rounded-lg shadow-md transition-all inline-flex items-center gap-1 hover:scale-102 active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                          >
+                            <CheckCircle size={13} /> Confirm Payment
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
+
+
 
       {activeTab === 'settlements' && hasAccess('Accounting') && (
         <div className="space-y-6 animate-in fade-in duration-300">
@@ -2242,63 +2804,84 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                 </p>
               </div>
 
-              {/* Guest Bank Details */}
-              <div className="bg-dark-900/60 p-4 border border-dark-700/60 rounded-xl space-y-3">
-                <span className="text-xs uppercase font-bold text-red-400 tracking-wider">Guest Settlement Bank Details</span>
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Bank Name *</label>
-                  <input
-                    required
-                    disabled={isProcessing}
-                    type="text"
-                    placeholder="e.g. GTBank"
-                    value={refundBankName}
-                    onChange={e => setRefundBankName(e.target.value)}
-                    className="w-full bg-dark-800 border border-dark-700 rounded p-2 text-white text-xs outline-none focus:border-red-500"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
+              {/* Guest Bank Details — only shown for bank_transfer */}
+              {paymentMethod === 'bank_transfer' && (
+                <div className="bg-dark-900/60 p-4 border border-dark-700/60 rounded-xl space-y-3">
+                  <span className="text-xs uppercase font-bold text-red-400 tracking-wider">Guest Settlement Bank Details</span>
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Account Number *</label>
-                    <input
-                      required
+                    <label className="block text-xs text-gray-400 mb-1">Bank Name *</label>
+                    <select
+                      required={paymentMethod === 'bank_transfer'}
                       disabled={isProcessing}
-                      type="text"
-                      maxLength={10}
-                      placeholder="10-digit number"
-                      value={refundAccountNumber}
-                      onChange={e => setRefundAccountNumber(e.target.value.replace(/\D/g, ''))}
-                      className="w-full bg-dark-800 border border-dark-700 rounded p-2 text-white text-xs outline-none focus:border-red-500 font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">Account Name *</label>
-                    <input
-                      required
-                      disabled={isProcessing}
-                      type="text"
-                      placeholder="Account Holder"
-                      value={refundAccountName}
-                      onChange={e => setRefundAccountName(e.target.value)}
+                      value={refundBankName}
+                      onChange={e => setRefundBankName(e.target.value)}
                       className="w-full bg-dark-800 border border-dark-700 rounded p-2 text-white text-xs outline-none focus:border-red-500"
-                    />
+                    >
+                      <option value="">Select Bank</option>
+                      {nigerianBanks.length > 0 ? nigerianBanks.map(bank => (
+                        <option key={typeof bank === 'string' ? bank : bank.name} value={typeof bank === 'string' ? bank : bank.name}>
+                          {typeof bank === 'string' ? bank : bank.name}
+                        </option>
+                      )) : (
+                        <>
+                          <option value="Access Bank">Access Bank</option>
+                          <option value="First Bank">First Bank</option>
+                          <option value="GTBank">GTBank</option>
+                          <option value="Zenith Bank">Zenith Bank</option>
+                          <option value="UBA">UBA</option>
+                          <option value="Opay">Opay</option>
+                          <option value="Kuda Bank">Kuda Bank</option>
+                          <option value="Sterling Bank">Sterling Bank</option>
+                          <option value="Polaris Bank">Polaris Bank</option>
+                          <option value="Stanbic IBTC">Stanbic IBTC</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Account Number *</label>
+                      <input
+                        required={paymentMethod === 'bank_transfer'}
+                        disabled={isProcessing}
+                        type="text"
+                        maxLength={10}
+                        placeholder="10-digit number"
+                        value={refundAccountNumber}
+                        onChange={e => setRefundAccountNumber(e.target.value.replace(/\D/g, ''))}
+                        className="w-full bg-dark-800 border border-dark-700 rounded p-2 text-white text-xs outline-none focus:border-red-500 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Account Name *</label>
+                      <input
+                        required={paymentMethod === 'bank_transfer'}
+                        disabled={isProcessing}
+                        type="text"
+                        placeholder="Account Holder"
+                        value={refundAccountName}
+                        onChange={e => setRefundAccountName(e.target.value)}
+                        className="w-full bg-dark-800 border border-dark-700 rounded p-2 text-white text-xs outline-none focus:border-red-500"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              {/* OTP Security Verification */}
+              {/* OTP Security Verification — required for ALL refund methods */}
               <div className="bg-red-500/5 border border-red-500/15 p-4 rounded-xl space-y-3">
                 <span className="text-xs uppercase font-bold text-red-500 tracking-wider">Manager Authorization Code</span>
                 
                 {!otpSent ? (
                   <button
                     type="button"
-                    disabled={isProcessing || !refundBankName || !refundAccountNumber || !refundAccountName}
+                    disabled={isProcessing || (paymentMethod === 'bank_transfer' && (!refundBankName || !refundAccountNumber || !refundAccountName))}
                     onClick={requestRefundOTP}
                     className="w-full bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-600/30 py-2.5 rounded text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Request Manager Security OTP
                   </button>
+
                 ) : (
                   <div className="space-y-2">
                     <p className="text-[10px] text-gray-400">
@@ -2391,8 +2974,16 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
             <div className="flex justify-between mb-8">
               <div>
                 <p className="text-sm text-gray-500 font-bold uppercase mb-1">Billed To:</p>
-                <p className="font-bold text-lg text-white print:text-black">{activeInvoiceModal.bookings?.profiles ? `${activeInvoiceModal.bookings.profiles.first_name} ${activeInvoiceModal.bookings.profiles.last_name}` : activeInvoiceModal.bookings?.guest_name || 'Walk-in Guest'}</p>
-                {activeInvoiceModal.bookings?.profiles?.phone && <p className="text-sm text-gray-400 print:text-gray-650">{activeInvoiceModal.bookings.profiles.phone}</p>}
+                <p className="font-bold text-lg text-white print:text-black">
+                  {activeInvoiceModal.bookings 
+                    ? (activeInvoiceModal.bookings.profiles ? `${activeInvoiceModal.bookings.profiles.first_name} ${activeInvoiceModal.bookings.profiles.last_name}` : activeInvoiceModal.bookings.guest_name) 
+                    : (activeInvoiceModal.hall_bookings?.guest_name || 'Walk-in Guest')}
+                </p>
+                {(activeInvoiceModal.bookings?.profiles?.phone || activeInvoiceModal.hall_bookings?.guest_phone) && (
+                  <p className="text-sm text-gray-400 print:text-gray-650 font-medium">
+                    {activeInvoiceModal.bookings?.profiles?.phone || activeInvoiceModal.hall_bookings?.guest_phone}
+                  </p>
+                )}
               </div>
               <div className="text-right">
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-left">
@@ -2401,9 +2992,9 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                   <span className="text-gray-400 print:text-gray-500 font-bold">Due Date:</span>
                   <span className="font-medium text-white print:text-black">{format(new Date(activeInvoiceModal.due_date), 'MMM dd, yyyy')}</span>
                   <span className="text-gray-400 print:text-gray-500 font-bold">Booking Ref:</span>
-                  <span className="font-medium text-white print:text-black">{activeInvoiceModal.bookings?.booking_reference}</span>
+                  <span className="font-medium text-white print:text-black">{activeInvoiceModal.bookings?.booking_reference || activeInvoiceModal.hall_bookings?.booking_reference || 'N/A'}</span>
                   <span className="text-gray-400 print:text-gray-500 font-bold">Status:</span>
-                  <span className={`font-bold uppercase ${activeInvoiceModal.status === 'paid' ? 'text-green-400 print:text-green-600' : activeInvoiceModal.status === 'partial' ? 'text-yellow-400 print:text-yellow-600' : 'text-red-400 print:text-red-650'}`}>
+                  <span className={`font-bold uppercase ${activeInvoiceModal.status === 'paid' ? 'text-green-400 print:text-green-600' : activeInvoiceModal.status === 'partial' ? 'text-yellow-400 print:text-yellow-600' : 'text-red-400 print:text-red-655'}`}>
                     {activeInvoiceModal.status === 'paid' ? 'paid' : 
                      activeInvoiceModal.status === 'partial' ? 'partial' : 
                      activeInvoiceModal.status === 'cancelled' ? 'cancelled' : 'not paid'}
@@ -2423,26 +3014,6 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
               </thead>
               <tbody className="divide-y divide-dark-700/50 print:divide-gray-100">
                 {(() => {
-                  const booking = activeInvoiceModal.bookings || {};
-                  const roomPrice = Number(booking.total_room_price_ngn || activeInvoiceModal.subtotal || 0);
-                  const discount = Number(booking.discount_amount_ngn || 0);
-                  const roomBase = Math.max(0, roomPrice - discount);
-                  const roomTax = roomBase * 0.075;
-                  const roomTotalWithTax = roomBase + roomTax;
-
-                  const amountPaidTotal = Number(activeInvoiceModal.amount_paid || 0);
-                  let remainingPaid = amountPaidTotal;
-
-                  // Pay room first
-                  let roomPaymentStatus = 'unpaid';
-                  if (activeInvoiceModal.status === 'paid' || remainingPaid >= roomTotalWithTax) {
-                    roomPaymentStatus = 'paid';
-                    remainingPaid -= roomTotalWithTax;
-                  } else if (remainingPaid > 0) {
-                    roomPaymentStatus = 'partial';
-                    remainingPaid = 0;
-                  }
-
                   const renderStatusBadge = (status) => {
                     const normalized = (status || 'unpaid').toLowerCase();
                     let colorClasses = '';
@@ -2466,6 +3037,74 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                       </span>
                     );
                   };
+
+                  if (activeInvoiceModal.hall_bookings) {
+                    const hb = activeInvoiceModal.hall_bookings;
+                    return (
+                      <>
+                        <tr>
+                          <td className="py-4 px-4">
+                            <p className="font-bold text-white print:text-black">
+                              Hall Space Rental: {hb.halls?.name || 'Event Space'}
+                            </p>
+                            <p className="text-gray-400 print:text-gray-500 text-xs mt-0.5">
+                              Booking Date: {hb.booking_date} | Type: {hb.booking_type === 'daily' ? 'Daily Rental' : 'Hourly Rental'}
+                            </p>
+                            <p className="text-[10px] text-gray-500 mt-1">
+                              Duration: {hb.booking_type === 'daily' ? `${hb.num_days} Day(s)` : `${hb.num_hours} Hour(s)`} | Capacity: {hb.halls?.capacity || 'N/A'} Guests
+                            </p>
+                          </td>
+                          <td className="py-4 px-4 text-center">
+                            {renderStatusBadge(hb.payment_status)}
+                          </td>
+                          <td className="py-4 px-4 text-right font-medium text-white print:text-black font-mono">
+                            ₦{Number(hb.total_hall_price_ngn || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                        {hallBookingMeals.map((meal) => (
+                          <tr key={meal.id}>
+                            <td className="py-4 px-4">
+                              <p className="font-bold text-white print:text-black">
+                                Catering: {meal.hall_meal_options?.name || meal.course_type}
+                              </p>
+                              <p className="text-gray-400 print:text-gray-500 text-xs mt-0.5">
+                                Serving Date: {meal.serving_date} | Course: {meal.course_type}
+                              </p>
+                              <p className="text-[10px] text-gray-500 mt-1">
+                                Rate: ₦{Number(meal.price_per_participant_ngn || 0).toLocaleString()} per pax | Participants: {meal.number_of_participants}
+                              </p>
+                            </td>
+                            <td className="py-4 px-4 text-center">
+                              {renderStatusBadge(hb.payment_status)}
+                            </td>
+                            <td className="py-4 px-4 text-right font-medium text-white print:text-black font-mono">
+                              ₦{Number(meal.total_price_ngn || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        ))}
+                      </>
+                    );
+                  }
+
+                  const booking = activeInvoiceModal.bookings || {};
+                  const roomPrice = Number(booking.total_room_price_ngn || activeInvoiceModal.subtotal || 0);
+                  const discount = Number(booking.discount_amount_ngn || 0);
+                  const roomBase = Math.max(0, roomPrice - discount);
+                  const roomTax = roomBase * 0.075;
+                  const roomTotalWithTax = roomBase + roomTax;
+
+                  const amountPaidTotal = Number(activeInvoiceModal.amount_paid || 0);
+                  let remainingPaid = amountPaidTotal;
+
+                  // Pay room first
+                  let roomPaymentStatus = 'unpaid';
+                  if (activeInvoiceModal.status === 'paid' || remainingPaid >= roomTotalWithTax) {
+                    roomPaymentStatus = 'paid';
+                    remainingPaid -= roomTotalWithTax;
+                  } else if (remainingPaid > 0) {
+                    roomPaymentStatus = 'partial';
+                    remainingPaid = 0;
+                  }
 
                   const rawServices = booking.booking_services || [];
                   const activeServices = rawServices.filter(s => s.status !== 'cancelled') || [];

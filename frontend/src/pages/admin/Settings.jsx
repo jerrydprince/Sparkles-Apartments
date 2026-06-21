@@ -1344,13 +1344,20 @@ const AdminSettings = () => {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Bank Name</label>
-                          <input 
-                            type="text" 
+                          <select 
                             value={settings.hotel_bank_name || ''} 
                             onChange={e => setSettings({...settings, hotel_bank_name: e.target.value})} 
-                            className="w-full bg-dark-950 text-white border border-dark-800 rounded-xl p-2.5 focus:border-gold-500 outline-none text-sm" 
-                            placeholder="e.g. Access Bank Plc" 
-                          />
+                            className="w-full bg-dark-950 text-white border border-dark-800 rounded-xl p-2.5 focus:border-gold-500 outline-none text-sm cursor-pointer"
+                          >
+                            <option value="">Select Bank</option>
+                            {((settings.nigerian_banks && settings.nigerian_banks.length > 0) ? settings.nigerian_banks : [
+                              "Access Bank", "First Bank", "GTBank", "Zenith Bank", "UBA", "Opay", "Kuda Bank", "Sterling Bank", "Polaris Bank", "Stanbic IBTC"
+                            ]).map(bank => (
+                              <option key={typeof bank === 'string' ? bank : bank.name} value={typeof bank === 'string' ? bank : bank.name}>
+                                {typeof bank === 'string' ? bank : bank.name}
+                              </option>
+                            ))}
+                          </select>
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Account Number</label>
@@ -2006,13 +2013,20 @@ const AdminSettings = () => {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Hotel Bank Name</label>
-                          <input 
-                            type="text" 
+                          <select 
                             value={settings.hotel_bank_name || ''} 
                             onChange={e => setSettings({...settings, hotel_bank_name: e.target.value})} 
-                            className="w-full bg-dark-900 border border-dark-700 rounded-xl p-3 text-white outline-none focus:border-gold-500 text-sm font-semibold" 
-                            placeholder="e.g. Access Bank Plc" 
-                          />
+                            className="w-full bg-dark-900 border border-dark-700 rounded-xl p-3 text-white outline-none focus:border-gold-500 text-sm font-semibold cursor-pointer"
+                          >
+                            <option value="">Select Bank</option>
+                            {((settings.nigerian_banks && settings.nigerian_banks.length > 0) ? settings.nigerian_banks : [
+                              "Access Bank", "First Bank", "GTBank", "Zenith Bank", "UBA", "Opay", "Kuda Bank", "Sterling Bank", "Polaris Bank", "Stanbic IBTC"
+                            ]).map(bank => (
+                              <option key={typeof bank === 'string' ? bank : bank.name} value={typeof bank === 'string' ? bank : bank.name}>
+                                {typeof bank === 'string' ? bank : bank.name}
+                              </option>
+                            ))}
+                          </select>
                         </div>
                         <div>
                           <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Hotel Account Name</label>

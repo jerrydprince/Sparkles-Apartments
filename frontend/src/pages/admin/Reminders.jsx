@@ -3,11 +3,11 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import { 
-  CalendarClock, Plus, BellRing, Sparkles, CreditCard, 
-  Trash2, X, Calendar, RefreshCw, DollarSign, Clock, ShieldCheck,
-  LayoutGrid, List
+  CalendarClock, Plus, BellRing, CreditCard, 
+  Trash2, X, Calendar, RefreshCw, Clock, ShieldCheck,
+  LayoutGrid, List, SendHorizonal
 } from 'lucide-react';
-import { format, addMonths, addYears } from 'date-fns';
+import { format } from 'date-fns';
 
 const Reminders = () => {
   const { profile, hasAccess } = useAuth();
@@ -22,12 +22,12 @@ const Reminders = () => {
     due_date: '',
     amount_ngn: '',
     recurrence: 'none',
-    category: 'Subscription' // Subscription, Utility, Maintenance, Tax, License
+    category: 'Subscription'
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [filterCategory, setFilterCategory] = useState('all');
-  const [viewMode, setViewMode] = useState('list'); // grid or list
-  const [filterStatus, setFilterStatus] = useState('pending'); // pending, paid, or all
+  const [viewMode, setViewMode] = useState('list');
+  const [filterStatus, setFilterStatus] = useState('pending');
 
   useEffect(() => {
     fetchReminders();
@@ -39,7 +39,6 @@ const Reminders = () => {
       const { data, error } = await supabase
         .from('reminders')
         .select('*')
-        .order('status', { ascending: false }) // pending first
         .order('due_date', { ascending: true });
 
       if (error) throw error;
@@ -77,28 +76,18 @@ const Reminders = () => {
       const { error } = await supabase.from('reminders').insert([payload]);
       if (error) throw error;
 
-      // Log system audit log
       try {
         await supabase.from('system_logs').insert({
           user_id: profile?.id,
           log_type: 'activity',
           action: `Registered utility subscription schedule reminder: ${formData.title} due on ${formData.due_date}`,
-          module: 'Settings'
+          module: 'Reminders'
         });
-      } catch (lErr) {
-        console.error(lErr);
-      }
+      } catch (lErr) { console.error(lErr); }
 
       toast.success('✓ Reminder registered successfully!', { id: toastId });
       setShowAddForm(false);
-      setFormData({
-        title: '',
-        description: '',
-        due_date: '',
-        amount_ngn: '',
-        recurrence: 'none',
-        category: 'Subscription'
-      });
+      setFormData({ title: '', description: '', due_date: '', amount_ngn: '', recurrence: 'none', category: 'Subscription' });
       fetchReminders();
     } catch (err) {
       console.error(err);
@@ -108,135 +97,82 @@ const Reminders = () => {
     }
   };
 
+  // Settle Pay: marks reminder as 'approved' → routes to Folios & Billings for final confirmation
   const handleSettlePayment = async (reminder) => {
-    if (!window.confirm(`Are you sure you want to mark "${reminder.title}" as settled and paid?`)) return;
+    if (!window.confirm(`Submit "${reminder.title}" to Accounts for payment approval?`)) return;
 
-    const toastId = toast.loading('Processing payment settlement...');
+    const toastId = toast.loading('Submitting for accounts approval...');
     try {
-      // 1. Mark current reminder as paid
+      // 1. Mark reminder as 'approved' — pending billing confirmation
       const { error: payErr } = await supabase
         .from('reminders')
-        .update({ status: 'paid' })
+        .update({ status: 'approved' })
         .eq('id', reminder.id);
 
       if (payErr) throw payErr;
 
-      // 1b. Log this paid reminder as a settled expense in the accounting system
+      // 2. Log a PENDING expense entry for the Expense Tracker
       let propertyId = null;
       try {
         const { data: propData } = await supabase.from('properties').select('id').limit(1);
-        if (propData && propData.length > 0) {
-          propertyId = propData[0].id;
-        }
+        if (propData && propData.length > 0) propertyId = propData[0].id;
       } catch (propErr) {
-        console.warn("Failed to retrieve property_id for expense booking:", propErr);
+        console.warn('Failed to retrieve property_id:', propErr);
       }
 
       const categoryMapping = {
-        'Subscription': 'Utilities',
-        'Utility': 'Utilities',
-        'Maintenance': 'Maintenance',
-        'Tax': 'Taxes',
-        'License': 'Utilities'
+        'Subscription': 'Utilities', 'Utility': 'Utilities',
+        'Maintenance': 'Maintenance', 'Tax': 'Taxes', 'License': 'Utilities'
       };
-      const expenseCategory = categoryMapping[reminder.category] || 'Other';
 
       const expensePayload = {
         property_id: propertyId,
         amount: Number(reminder.amount_ngn || 0),
-        category: expenseCategory,
-        description: `Settled Reminder: ${reminder.title}${reminder.description ? ` - ${reminder.description}` : ''}`,
+        category: categoryMapping[reminder.category] || 'Other',
+        description: `[PENDING CONFIRMATION] Schedule: ${reminder.title}${reminder.description ? ` - ${reminder.description}` : ''}`,
         expense_date: format(new Date(), 'yyyy-MM-dd'),
         paid_to: reminder.title,
         payment_method: 'bank_transfer',
-        status: 'paid'
+        status: 'pending',
+        reminder_id: reminder.id
       };
 
       try {
         const { error: expInsertErr } = await supabase.from('expenses').insert([expensePayload]);
-        if (expInsertErr) {
-          console.error("Failed to register expense entry in accounting database:", expInsertErr);
-        }
+        if (expInsertErr) console.error('Failed to register pending expense:', expInsertErr);
       } catch (dbExpErr) {
-        console.error("Failed to write settled expense to DB:", dbExpErr);
+        console.error('Failed to write pending expense:', dbExpErr);
       }
 
-      try {
-        const currentLocal = JSON.parse(localStorage.getItem('luxe_expenses') || '[]');
-        const newRecord = {
-          id: `exp-rem-${reminder.id}-${Date.now()}`,
-          ...expensePayload,
-          created_at: new Date().toISOString()
-        };
-        const updated = [newRecord, ...currentLocal];
-        localStorage.setItem('luxe_expenses', JSON.stringify(updated));
-      } catch (lsErr) {
-        console.warn("Failed to synchronize local storage expense history:", lsErr);
-      }
-
-      // 2. If it is recurrent, automatically calculate and register the NEXT due date reminder!
-      if (reminder.recurrence !== 'none') {
-        const currentDate = new Date(reminder.due_date);
-        let nextDueDate;
-        
-        if (reminder.recurrence === 'monthly') {
-          nextDueDate = addMonths(currentDate, 1);
-        } else if (reminder.recurrence === 'yearly') {
-          nextDueDate = addYears(currentDate, 1);
-        }
-
-        const formattedNextDate = format(nextDueDate, 'yyyy-MM-dd');
-
-        const nextPayload = {
-          title: reminder.title,
-          description: reminder.description,
-          due_date: formattedNextDate,
-          amount_ngn: reminder.amount_ngn,
-          recurrence: reminder.recurrence,
-          category: reminder.category,
-          status: 'pending',
-          assigned_to: reminder.assigned_to
-        };
-
-        const { error: nextErr } = await supabase.from('reminders').insert([nextPayload]);
-        if (nextErr) {
-          console.error("Failed to automatically spawn next recurrent reminder:", nextErr);
-        } else {
-          toast.success(`✓ Payment settled! Rolled over next recurrence schedule to ${formattedNextDate}.`);
-        }
-      }
-
-      // Log system audit log
+      // 3. Audit log
       try {
         await supabase.from('system_logs').insert({
           user_id: profile?.id,
           log_type: 'activity',
-          action: `Settled utility payment for schedule: ${reminder.title} (NGN ${Number(reminder.amount_ngn || 0).toLocaleString()})`,
-          module: 'Settings'
+          action: `Approved utility payment for: ${reminder.title} (NGN ${Number(reminder.amount_ngn || 0).toLocaleString()}) — awaiting accounts confirmation`,
+          module: 'Reminders'
         });
-      } catch (lErr) {
-        console.error(lErr);
-      }
+      } catch (lErr) { console.error(lErr); }
 
-      toast.success('✓ Subscription marked as PAID!', { id: toastId });
+      toast.success('✓ Payment submitted to Folios & Billings for accounts confirmation!', { id: toastId });
       fetchReminders();
     } catch (err) {
       console.error(err);
-      toast.error('Failed to settle payment', { id: toastId });
+      toast.error('Failed to approve payment', { id: toastId });
     }
   };
 
   const handleDeleteReminder = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this reminder? This cannot be undone.")) return;
+    if (!window.confirm('Are you sure you want to delete this reminder? This cannot be undone.')) return;
     
-    const loadingToast = toast.loading("Removing reminder...");
+    const loadingToast = toast.loading('Removing reminder...');
     try {
       const { error } = await supabase.from('reminders').delete().eq('id', id);
       if (error) throw error;
-      toast.success("Reminder removed successfully!", { id: loadingToast });
+      toast.success('Reminder removed successfully!', { id: loadingToast });
       fetchReminders();
     } catch (err) {
-      toast.error("Failed to delete", { id: loadingToast });
+      toast.error('Failed to delete', { id: loadingToast });
     }
   };
 
@@ -246,13 +182,18 @@ const Reminders = () => {
     if (filterCategory !== 'all') {
       result = result.filter(r => r.category === filterCategory);
     }
-    if (filterStatus !== 'all') {
-      result = result.filter(r => r.status === filterStatus);
+    if (filterStatus === 'pending') {
+      result = result.filter(r => r.status === 'pending');
+    } else if (filterStatus === 'approved') {
+      result = result.filter(r => r.status === 'approved');
+    } else if (filterStatus === 'paid') {
+      result = result.filter(r => r.status === 'paid');
     }
+    // 'all' returns all
     return result;
   }, [reminders, filterCategory, filterStatus]);
 
-  // Alert highlight reminders
+  // Urgent reminders (due within 7 days, still pending)
   const urgentReminders = useMemo(() => {
     const today = new Date();
     return reminders.filter(r => {
@@ -260,7 +201,7 @@ const Reminders = () => {
       const dueDate = new Date(r.due_date);
       const diffTime = dueDate - today;
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      return diffDays <= 7; // Due within 7 days
+      return diffDays <= 7;
     });
   }, [reminders]);
 
@@ -272,6 +213,13 @@ const Reminders = () => {
     const diffTime = due - today;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays <= 7;
+  };
+
+  const getStatusBadge = (status) => {
+    if (status === 'pending') return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
+    if (status === 'approved') return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+    if (status === 'paid') return 'bg-green-500/10 text-green-400 border-green-500/20';
+    return 'bg-gray-500/10 text-gray-400 border-gray-500/20';
   };
 
   if (!hasAccess('Reminders')) {
@@ -325,9 +273,9 @@ const Reminders = () => {
                 </div>
                 <button 
                   onClick={() => handleSettlePayment(rem)}
-                  className="bg-red-500 hover:bg-red-600 text-dark-950 font-black text-xs py-2 px-4 rounded shadow-lg transition-all"
+                  className="bg-red-500 hover:bg-red-600 text-white font-black text-xs py-2 px-4 rounded shadow-lg transition-all flex items-center gap-1.5"
                 >
-                  Pay NGN {Number(rem.amount_ngn || 0).toLocaleString()}
+                  <SendHorizonal size={13} /> Settle Pay
                 </button>
               </div>
             ))}
@@ -384,9 +332,10 @@ const Reminders = () => {
 
       {/* Status Selector Tab Bar */}
       <div className="flex justify-between items-center bg-dark-900/40 border border-dark-750/60 p-1.5 rounded-xl">
-        <div className="flex gap-1.5 select-none">
+        <div className="flex gap-1.5 select-none flex-wrap">
           {[
             { id: 'pending', label: 'Pending Schedules', count: reminders.filter(r => r.status === 'pending').length },
+            { id: 'approved', label: 'Awaiting Accounts', count: reminders.filter(r => r.status === 'approved').length },
             { id: 'paid', label: 'Settled Payments', count: reminders.filter(r => r.status === 'paid').length },
             { id: 'all', label: 'All Records', count: reminders.length }
           ].map(tab => (
@@ -433,7 +382,9 @@ const Reminders = () => {
                   className={`bg-dark-800 border rounded-xl p-5 shadow-lg flex flex-col justify-between space-y-4 hover:translate-y-[-4px] transition-all duration-300 ${
                     rem.status === 'pending' 
                       ? 'border-dark-700 border-t-4 border-t-orange-500' 
-                      : 'border-dark-700/60 border-t-4 border-t-emerald-500 opacity-60'
+                      : rem.status === 'approved'
+                        ? 'border-dark-700 border-t-4 border-t-blue-500'
+                        : 'border-dark-700/60 border-t-4 border-t-emerald-500 opacity-60'
                   }`}
                 >
                   <div className="space-y-2">
@@ -441,12 +392,8 @@ const Reminders = () => {
                       <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-dark-900 border border-dark-750 px-2 py-0.5 rounded">
                         {rem.category}
                       </span>
-                      <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded border ${
-                        rem.status === 'pending' 
-                          ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' 
-                          : 'bg-green-500/10 text-green-400 border-green-500/20'
-                      }`}>
-                        {rem.status}
+                      <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded border ${getStatusBadge(rem.status)}`}>
+                        {rem.status === 'approved' ? 'Awaiting Accounts' : rem.status}
                       </span>
                     </div>
 
@@ -479,13 +426,17 @@ const Reminders = () => {
                             ? 'bg-orange-500 hover:bg-orange-600 text-dark-950'
                             : 'bg-dark-900 border border-dark-750 text-gray-500 cursor-not-allowed opacity-50'
                         }`}
-                        title={isSettleAllowed(rem.due_date) ? "Mark Settle Paid" : "Settle locked (Active from 7 days to renewal)"}
+                        title={isSettleAllowed(rem.due_date) ? 'Settle Pay — Submit to Accounts' : 'Settle locked (Active from 7 days to renewal)'}
                       >
-                        <CreditCard size={14} /> Mark Settle Paid
+                        <SendHorizonal size={14} /> Settle Pay
                       </button>
+                    ) : rem.status === 'approved' ? (
+                      <div className="flex-1 bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs py-2 rounded-lg flex items-center justify-center gap-1 font-bold">
+                        <Clock size={14} /> Awaiting Accounts
+                      </div>
                     ) : (
                       <div className="flex-1 bg-dark-900 border border-dark-700 text-emerald-400 text-xs py-2 rounded-lg flex items-center justify-center gap-1 font-bold">
-                        <ShieldCheck size={14} /> Settled
+                        <ShieldCheck size={14} /> Settled & Paid
                       </div>
                     )}
                     <button 
@@ -507,7 +458,9 @@ const Reminders = () => {
                   className={`bg-dark-800 border rounded-xl p-4 shadow-md flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 hover:translate-x-1 transition-all duration-300 ${
                     rem.status === 'pending'
                       ? 'border-dark-700 border-l-4 border-l-orange-500'
-                      : 'border-dark-700/60 border-l-4 border-l-emerald-500 opacity-65'
+                      : rem.status === 'approved'
+                        ? 'border-dark-700 border-l-4 border-l-blue-500'
+                        : 'border-dark-700/60 border-l-4 border-l-emerald-500 opacity-65'
                   }`}
                 >
                   {/* Left: Details */}
@@ -516,12 +469,8 @@ const Reminders = () => {
                       <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest bg-dark-900 border border-dark-750 px-2 py-0.5 rounded">
                         {rem.category}
                       </span>
-                      <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded border ${
-                        rem.status === 'pending'
-                          ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
-                          : 'bg-green-500/10 text-green-400 border-green-500/20'
-                      }`}>
-                        {rem.status}
+                      <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded border ${getStatusBadge(rem.status)}`}>
+                        {rem.status === 'approved' ? 'Awaiting Accounts' : rem.status}
                       </span>
                     </div>
                     <h3 className="font-bold text-white text-base select-text">{rem.title}</h3>
@@ -557,13 +506,17 @@ const Reminders = () => {
                             ? 'bg-orange-500 hover:bg-orange-600 text-dark-950'
                             : 'bg-dark-900 border border-dark-750 text-gray-500 cursor-not-allowed opacity-50'
                         }`}
-                        title={isSettleAllowed(rem.due_date) ? "Settle Paid" : "Settle locked (Active from 7 days to renewal)"}
+                        title={isSettleAllowed(rem.due_date) ? 'Settle Pay — Submit to Accounts' : 'Settle locked (Active from 7 days to renewal)'}
                       >
-                        <CreditCard size={14} /> Settle Paid
+                        <SendHorizonal size={14} /> Settle Pay
                       </button>
+                    ) : rem.status === 'approved' ? (
+                      <div className="flex-grow lg:flex-grow-0 bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs py-2 px-4 rounded-lg flex items-center justify-center gap-1 font-bold whitespace-nowrap">
+                        <Clock size={14} /> Awaiting Accounts
+                      </div>
                     ) : (
                       <div className="flex-grow lg:flex-grow-0 bg-dark-900 border border-dark-700 text-emerald-400 text-xs py-2 px-4 rounded-lg flex items-center justify-center gap-1 font-bold whitespace-nowrap">
-                        <ShieldCheck size={14} /> Settled
+                        <ShieldCheck size={14} /> Settled & Paid
                       </div>
                     )}
                     <button
@@ -690,7 +643,7 @@ const Reminders = () => {
 
                 <div className="bg-orange-500/5 border border-orange-500/10 p-4 rounded-lg flex items-start gap-2.5 text-[11px] text-gray-400 leading-relaxed">
                   <ShieldCheck className="text-orange-400 w-5 h-5 flex-shrink-0" />
-                  <p>💡 Selecting "Every Month" will configure the PMS to automatically spawn a new pending reminder block with identical properties exactly one month in the future the moment this reminder is settled and paid.</p>
+                  <p>💡 When you click <strong>Settle Pay</strong>, the payment is routed to Folios & Billings for accounts confirmation. Upon confirmation, the general ledger is updated and a receipt is generated. Recurring reminders auto-rollover after accounts confirms payment.</p>
                 </div>
               </div>
 

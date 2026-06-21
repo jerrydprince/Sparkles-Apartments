@@ -1703,7 +1703,7 @@ const BookingEngine = () => {
         num_days: bookingSummary.days,
         num_hours: hallBookingType === 'hourly' ? bookingSummary.hours : null,
         number_of_participants: Number(hallParticipants),
-        status: 'confirmed',
+        status: 'pending',
         booking_source: 'online',
         total_hall_price_ngn: bookingSummary.hallPrice,
         total_meals_price_ngn: bookingSummary.mealsPrice,
