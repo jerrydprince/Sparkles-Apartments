@@ -732,87 +732,99 @@ const ServicesPortal = () => {
             </div>
           ) : (
             <>
-              {/* AIRPORT PICKUP & LOGISTICS */}
               {activeTab === 'transport' && (
                 filteredRequests.length === 0 ? (
                   <div className="glass-panel p-16 text-center rounded-3xl border border-dark-700/50">
                     <Car className="mx-auto mb-3 opacity-25 text-gray-400 animate-pulse" size={44} />
                     <h3 className="text-lg font-bold text-white mb-1">No Shuttle Requests</h3>
-                    <p className="text-gray-500 text-xs">Airport pickup reservations fromchecked-in stay logs will appear here.</p>
+                    <p className="text-gray-500 text-xs">Airport pickup reservations from checked-in stay logs will appear here.</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {filteredRequests.map(req => {
-                      const driver = parseAssignment(req.notes, 'driver');
-                      const noteText = parseNotes(req.notes);
-                      const isClosed = isDeptClosed('transportation');
-
-                      return (
-                        <div key={req.id} className="glass-panel border border-dark-700/50 p-5 rounded-2xl flex flex-col justify-between h-fit relative hover:border-dark-600 transition-all">
-                          <div className="flex justify-between items-start mb-4">
-                            <div>
-                              <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
-                                req.status === 'pending' ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-450' :
-                                req.status === 'confirmed' ? 'bg-orange-500/10 border-orange-500/20 text-orange-450' :
-                                req.status === 'scheduled' ? 'bg-blue-500/10 border-blue-500/20 text-blue-450' :
-                                req.status === 'in_progress' ? 'bg-teal-500/10 border-teal-500/20 text-teal-450' :
-                                'bg-green-500/10 border-green-500/20 text-green-450'
-                              }`}>
-                                {req.status}
-                              </span>
-                              <h4 className="text-base font-extrabold text-white mt-2.5 leading-tight">{req.services?.name}</h4>
-                              <p className="text-xs text-gray-400 mt-1">Schedule: <span className="font-semibold text-white">{req.scheduled_date || 'TBD'} @ {req.scheduled_time || 'TBD'}</span></p>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-xs text-gray-500 block font-mono">Room {req.bookings?.rooms?.room_number || 'N/A'}</span>
-                              <span className="text-[10px] text-gray-400 font-bold block truncate max-w-[130px]">{req.bookings?.guest_name}</span>
-                            </div>
-                          </div>
-
-                          <div className="bg-dark-900 border border-dark-750 p-3 rounded-xl text-xs space-y-1.5 mb-4">
-                            <p className="font-extrabold text-gray-300">Shuttle Details / Flight Information:</p>
-                            <p className="italic text-gray-400 leading-normal">"{noteText || 'No flight instructions provided.'}"</p>
-                          </div>
-
-                          <div className="border-t border-dark-750 pt-4 flex justify-between items-center">
-                            <div>
-                              <span className="text-[10px] text-gray-500 block font-bold uppercase tracking-wider">Assigned Driver</span>
-                              <span className="text-xs font-extrabold text-brand-400">{driver || 'Unassigned'}</span>
-                            </div>
-
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => openAssignModal(req)}
-                                disabled={isClosed}
-                                className="px-3 py-1.5 bg-dark-750 hover:bg-dark-700 text-white rounded-xl text-xs font-bold transition-all"
-                              >
-                                {driver ? 'Change Driver' : 'Assign Driver'}
-                              </button>
-                              
-                              {req.status === 'scheduled' && (
-                                <button
-                                  onClick={() => handleUpdateStatus(req.id, 'in_progress')}
-                                  disabled={isClosed}
-                                  className="px-3 py-1.5 bg-teal-500 hover:bg-teal-650 text-dark-950 rounded-xl text-xs font-bold transition-all"
-                                >
-                                  Start Transit
-                                </button>
-                              )}
-
-                              {req.status === 'in_progress' && (
-                                <button
-                                  onClick={() => handleUpdateStatus(req.id, 'completed')}
-                                  disabled={isClosed}
-                                  className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-dark-950 rounded-xl text-xs font-bold transition-all"
-                                >
-                                  Arrived/Complete
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <div className="bg-dark-800 border border-dark-700 rounded-2xl overflow-hidden shadow-md">
+                    <table className="w-full text-left border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-dark-900 border-b border-dark-700 text-xs text-gray-400 font-bold uppercase">
+                          <th className="p-4">Guest</th>
+                          <th className="p-4">Room #</th>
+                          <th className="p-4">Service</th>
+                          <th className="p-4">Schedule</th>
+                          <th className="p-4">Driver</th>
+                          <th className="p-4">Status</th>
+                          <th className="p-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-dark-700/50">
+                        {filteredRequests.map(req => {
+                          const driver = parseAssignment(req.notes, 'driver');
+                          const noteText = parseNotes(req.notes);
+                          const isClosed = isDeptClosed('transportation');
+                          return (
+                            <tr key={req.id} className="hover:bg-dark-750/30 transition-colors">
+                              <td className="p-4">
+                                <p className="font-bold text-white">{req.bookings?.guest_name}</p>
+                                {noteText && <p className="text-[10px] text-gray-500 mt-0.5 italic max-w-[160px] truncate" title={noteText}>{noteText}</p>}
+                              </td>
+                              <td className="p-4 font-mono text-gray-300">{req.bookings?.rooms?.room_number || 'N/A'}</td>
+                              <td className="p-4 font-medium text-white">{req.services?.name}</td>
+                              <td className="p-4 text-xs text-gray-400">
+                                <span className="block">{req.scheduled_date || 'TBD'}</span>
+                                <span className="font-semibold text-white">{req.scheduled_time || 'TBD'}</span>
+                              </td>
+                              <td className="p-4">
+                                <span className="text-xs font-extrabold text-brand-400">{driver || <span className="text-gray-600 italic font-normal">Unassigned</span>}</span>
+                              </td>
+                              <td className="p-4">
+                                <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-black uppercase border ${
+                                  req.status === 'pending' ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400' :
+                                  req.status === 'confirmed' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' :
+                                  req.status === 'scheduled' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
+                                  req.status === 'in_progress' ? 'bg-teal-500/10 border-teal-500/20 text-teal-400' :
+                                  'bg-green-500/10 border-green-500/20 text-green-400'
+                                }`}>{req.status}</span>
+                              </td>
+                              <td className="p-4 text-right">
+                                <div className="flex gap-2 justify-end flex-wrap">
+                                  <button
+                                    onClick={() => openAssignModal(req)}
+                                    disabled={isClosed}
+                                    className="px-3 py-1 bg-dark-700 hover:bg-dark-600 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-40"
+                                  >
+                                    {driver ? 'Change Driver' : 'Assign Driver'}
+                                  </button>
+                                  {req.status === 'scheduled' && (
+                                    <button
+                                      onClick={() => handleUpdateStatus(req.id, 'in_progress')}
+                                      disabled={isClosed}
+                                      className="px-3 py-1 bg-teal-500 hover:bg-teal-600 text-dark-950 rounded-lg text-xs font-bold transition-all disabled:opacity-40"
+                                    >
+                                      Start Transit
+                                    </button>
+                                  )}
+                                  {req.status === 'in_progress' && (
+                                    <button
+                                      onClick={() => handleUpdateStatus(req.id, 'completed')}
+                                      disabled={isClosed}
+                                      className="px-3 py-1 bg-green-500 hover:bg-green-600 text-dark-950 rounded-lg text-xs font-bold transition-all disabled:opacity-40"
+                                    >
+                                      Arrived/Complete
+                                    </button>
+                                  )}
+                                  {req.status === 'pending' && (
+                                    <button
+                                      onClick={() => handleUpdateStatus(req.id, 'confirmed')}
+                                      disabled={isClosed}
+                                      className="px-3 py-1 bg-brand-500 hover:bg-brand-600 text-dark-950 rounded-lg text-xs font-bold transition-all disabled:opacity-40"
+                                    >
+                                      Confirm
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )
               )}
@@ -826,78 +838,91 @@ const ServicesPortal = () => {
                     <p className="text-gray-500 text-xs">Wellness and therapist requests from checked-in guests will appear here.</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {filteredRequests.map(req => {
-                      const therapist = parseAssignment(req.notes, 'therapist');
-                      const noteText = parseNotes(req.notes);
-                      const isClosed = isDeptClosed('spa');
-
-                      return (
-                        <div key={req.id} className="glass-panel border border-dark-700/50 p-5 rounded-2xl flex flex-col justify-between h-fit relative hover:border-dark-600 transition-all">
-                          <div className="flex justify-between items-start mb-4">
-                            <div>
-                              <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
-                                req.status === 'pending' ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-450' :
-                                req.status === 'confirmed' ? 'bg-orange-500/10 border-orange-500/20 text-orange-450' :
-                                req.status === 'scheduled' ? 'bg-blue-500/10 border-blue-500/20 text-blue-450' :
-                                req.status === 'in_progress' ? 'bg-teal-500/10 border-teal-500/20 text-teal-450' :
-                                'bg-green-500/10 border-green-500/20 text-green-450'
-                              }`}>
-                                {req.status}
-                              </span>
-                              <h4 className="text-base font-extrabold text-white mt-2.5 leading-tight">{req.services?.name}</h4>
-                              <p className="text-xs text-gray-400 mt-1">Schedule: <span className="font-semibold text-white">{req.scheduled_date || 'TBD'} @ {req.scheduled_time || 'TBD'}</span></p>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-xs text-gray-500 block font-mono">Room {req.bookings?.rooms?.room_number || 'N/A'}</span>
-                              <span className="text-[10px] text-gray-400 font-bold block truncate max-w-[130px]">{req.bookings?.guest_name}</span>
-                            </div>
-                          </div>
-
-                          <div className="bg-dark-900 border border-dark-750 p-3 rounded-xl text-xs space-y-1.5 mb-4">
-                            <p className="font-extrabold text-gray-300">Preferences / Notes:</p>
-                            <p className="italic text-gray-400 leading-normal">"{noteText || 'No special requirements.'}"</p>
-                          </div>
-
-                          <div className="border-t border-dark-750 pt-4 flex justify-between items-center">
-                            <div>
-                              <span className="text-[10px] text-gray-500 block font-bold uppercase tracking-wider">Assigned Therapist</span>
-                              <span className="text-xs font-extrabold text-brand-400">{therapist || 'Unassigned'}</span>
-                            </div>
-
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => openAssignModal(req)}
-                                disabled={isClosed}
-                                className="px-3 py-1.5 bg-dark-750 hover:bg-dark-700 text-white rounded-xl text-xs font-bold transition-all"
-                              >
-                                {therapist ? 'Change Therapist' : 'Assign Therapist'}
-                              </button>
-                              
-                              {req.status === 'scheduled' && (
-                                <button
-                                  onClick={() => handleUpdateStatus(req.id, 'in_progress')}
-                                  disabled={isClosed}
-                                  className="px-3 py-1.5 bg-teal-500 hover:bg-teal-650 text-dark-950 rounded-xl text-xs font-bold transition-all"
-                                >
-                                  Begin Session
-                                </button>
-                              )}
-
-                              {req.status === 'in_progress' && (
-                                <button
-                                  onClick={() => handleUpdateStatus(req.id, 'completed')}
-                                  disabled={isClosed}
-                                  className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-dark-950 rounded-xl text-xs font-bold transition-all"
-                                >
-                                  Complete Session
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <div className="bg-dark-800 border border-dark-700 rounded-2xl overflow-hidden shadow-md">
+                    <table className="w-full text-left border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-dark-900 border-b border-dark-700 text-xs text-gray-400 font-bold uppercase">
+                          <th className="p-4">Guest</th>
+                          <th className="p-4">Room #</th>
+                          <th className="p-4">Service</th>
+                          <th className="p-4">Schedule</th>
+                          <th className="p-4">Therapist</th>
+                          <th className="p-4">Status</th>
+                          <th className="p-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-dark-700/50">
+                        {filteredRequests.map(req => {
+                          const therapist = parseAssignment(req.notes, 'therapist');
+                          const noteText = parseNotes(req.notes);
+                          const isClosed = isDeptClosed('spa');
+                          return (
+                            <tr key={req.id} className="hover:bg-dark-750/30 transition-colors">
+                              <td className="p-4">
+                                <p className="font-bold text-white">{req.bookings?.guest_name}</p>
+                                {noteText && <p className="text-[10px] text-gray-500 mt-0.5 italic max-w-[160px] truncate" title={noteText}>{noteText}</p>}
+                              </td>
+                              <td className="p-4 font-mono text-gray-300">{req.bookings?.rooms?.room_number || 'N/A'}</td>
+                              <td className="p-4 font-medium text-white">{req.services?.name}</td>
+                              <td className="p-4 text-xs text-gray-400">
+                                <span className="block">{req.scheduled_date || 'TBD'}</span>
+                                <span className="font-semibold text-white">{req.scheduled_time || 'TBD'}</span>
+                              </td>
+                              <td className="p-4">
+                                <span className="text-xs font-extrabold text-brand-400">{therapist || <span className="text-gray-600 italic font-normal">Unassigned</span>}</span>
+                              </td>
+                              <td className="p-4">
+                                <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-black uppercase border ${
+                                  req.status === 'pending' ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400' :
+                                  req.status === 'confirmed' ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' :
+                                  req.status === 'scheduled' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' :
+                                  req.status === 'in_progress' ? 'bg-teal-500/10 border-teal-500/20 text-teal-400' :
+                                  'bg-green-500/10 border-green-500/20 text-green-400'
+                                }`}>{req.status}</span>
+                              </td>
+                              <td className="p-4 text-right">
+                                <div className="flex gap-2 justify-end flex-wrap">
+                                  <button
+                                    onClick={() => openAssignModal(req)}
+                                    disabled={isClosed}
+                                    className="px-3 py-1 bg-dark-700 hover:bg-dark-600 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-40"
+                                  >
+                                    {therapist ? 'Change Therapist' : 'Assign Therapist'}
+                                  </button>
+                                  {req.status === 'scheduled' && (
+                                    <button
+                                      onClick={() => handleUpdateStatus(req.id, 'in_progress')}
+                                      disabled={isClosed}
+                                      className="px-3 py-1 bg-teal-500 hover:bg-teal-600 text-dark-950 rounded-lg text-xs font-bold transition-all disabled:opacity-40"
+                                    >
+                                      Begin Session
+                                    </button>
+                                  )}
+                                  {req.status === 'in_progress' && (
+                                    <button
+                                      onClick={() => handleUpdateStatus(req.id, 'completed')}
+                                      disabled={isClosed}
+                                      className="px-3 py-1 bg-green-500 hover:bg-green-600 text-dark-950 rounded-lg text-xs font-bold transition-all disabled:opacity-40"
+                                    >
+                                      Complete Session
+                                    </button>
+                                  )}
+                                  {req.status === 'pending' && (
+                                    <button
+                                      onClick={() => handleUpdateStatus(req.id, 'confirmed')}
+                                      disabled={isClosed}
+                                      className="px-3 py-1 bg-brand-500 hover:bg-brand-600 text-dark-950 rounded-lg text-xs font-bold transition-all disabled:opacity-40"
+                                    >
+                                      Confirm
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )
               )}
