@@ -138,6 +138,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
   const [activePaymentModal, setActivePaymentModal] = useState(null); // stores invoice obj
   const [activeRefundModal, setActiveRefundModal] = useState(null);
   const [activeInvoiceModal, setActiveInvoiceModal] = useState(null); // stores invoice obj for viewing/printing
+  const [activeHallPayoutModal, setActiveHallPayoutModal] = useState(null); // stores hallBooking for payment confirmation
 
   // Payment Form State
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -463,11 +464,16 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
     }
   }, [activeInvoiceModal]);
 
-  const handleConfirmHallPayout = async (hallBooking) => {
+  const handleConfirmHallPayoutSubmit = async (e) => {
+    e.preventDefault();
     if (isFrontOfficeClosed) {
       toast.error("Front Office operations are locked due to daily ledger closure.");
       return;
     }
+
+    const hallBooking = activeHallPayoutModal;
+    if (!hallBooking) return;
+
     const totalAmount = Number(hallBooking.total_amount_ngn || 0);
     const alreadyPaid = Number(hallBooking.amount_paid_ngn || 0);
     const outstanding = totalAmount - alreadyPaid;
@@ -477,11 +483,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
       return;
     }
 
-    const userInput = window.prompt(`Confirm payment for Hall Booking Ref: "${hallBooking.booking_reference}"\nGuest: ${hallBooking.guest_name}\n\nTotal: ₦${totalAmount.toLocaleString()}\nAlready Paid: ₦${alreadyPaid.toLocaleString()}\nOutstanding: ₦${outstanding.toLocaleString()}\n\nEnter amount being paid now:`, outstanding.toString());
-
-    if (userInput === null) return; // user cancelled
-
-    const amountToPay = Number(userInput);
+    const amountToPay = Number(paymentAmount);
     if (isNaN(amountToPay) || amountToPay <= 0) {
       toast.error("Invalid payment amount.");
       return;
@@ -601,6 +603,8 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
       } catch (printErr) { console.warn('Receipt print failed:', printErr); }
       
       toast.success('Hall Booking payment confirmed successfully!', { id: toastId });
+      setActiveHallPayoutModal(null);
+      setPaymentAmount('');
       fetchHallPayouts();
       fetchInvoices();
     } catch (err) {
@@ -2324,7 +2328,11 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                       {inv.hall_bookings?.status === 'pending' && (
                         <button 
                           disabled={isFrontOfficeClosed}
-                          onClick={() => handleConfirmHallPayout(inv.hall_bookings)} 
+                          onClick={() => {
+                            setActiveHallPayoutModal(inv.hall_bookings);
+                            setPaymentAmount(Math.max(0, Number(inv.hall_bookings.total_amount_ngn || 0) - Number(inv.hall_bookings.amount_paid_ngn || 0)).toString());
+                            setPaymentMethod('bank_transfer');
+                          }} 
                           className="bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded font-bold text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           Confirm Payment
@@ -2626,7 +2634,11 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                         <td className="py-3.5 px-4 text-right">
                           <button
                             disabled={isFrontOfficeClosed}
-                            onClick={() => handleConfirmHallPayout(hb)}
+                            onClick={() => {
+                              setActiveHallPayoutModal(hb);
+                              setPaymentAmount(Math.max(0, Number(hb.total_amount_ngn || 0) - Number(hb.amount_paid_ngn || 0)).toString());
+                              setPaymentMethod('bank_transfer');
+                            }}
                             className="bg-brand-500 hover:bg-brand-400 text-dark-900 font-bold text-xs py-2 px-4 rounded-lg shadow-md transition-all inline-flex items-center gap-1 hover:scale-102 active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                           >
                             <CheckCircle size={13} /> Confirm Payment
@@ -3311,6 +3323,82 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
               <p>Thank you for choosing Sparkles Apartments.</p>
               <p>Payment is due by the specified due date. Late payments may incur additional fees.</p>
             </div>
+          </div>
+        </div>
+      )}
+      {/* --- MODAL: Hall Payout Confirmation Modal --- */}
+      {activeHallPayoutModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-800 border border-dark-700 p-8 w-full max-w-lg shadow-2xl relative rounded-xl animate-in zoom-in-95">
+            <button onClick={() => { setActiveHallPayoutModal(null); setPaymentAmount(''); }} className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors">
+              <X size={24} />
+            </button>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="h-12 w-12 rounded-full bg-brand-500/10 flex items-center justify-center">
+                <Landmark className="text-brand-500" size={24} />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white">Confirm Hall Payment</h2>
+                <p className="text-sm text-gray-400">Ref: {activeHallPayoutModal.booking_reference}</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmHallPayoutSubmit} className="space-y-6">
+              <div className="bg-dark-900/50 p-4 rounded-lg border border-dark-700 space-y-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Guest Name</span>
+                  <span className="text-white font-medium">{activeHallPayoutModal.guest_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Total Amount</span>
+                  <span className="text-white font-bold">₦{Number(activeHallPayoutModal.total_amount_ngn || 0).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Already Paid</span>
+                  <span className="text-green-400 font-bold">₦{Number(activeHallPayoutModal.amount_paid_ngn || 0).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between border-t border-dark-700 pt-3">
+                  <span className="text-gray-400">Outstanding Balance</span>
+                  <span className="text-red-400 font-black text-lg">₦{Math.max(0, Number(activeHallPayoutModal.total_amount_ngn || 0) - Number(activeHallPayoutModal.amount_paid_ngn || 0)).toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Payment Amount (₦)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={Math.max(0, Number(activeHallPayoutModal.total_amount_ngn || 0) - Number(activeHallPayoutModal.amount_paid_ngn || 0))}
+                  required
+                  value={paymentAmount}
+                  onChange={e => setPaymentAmount(e.target.value)}
+                  className="w-full bg-dark-900 border border-dark-700 rounded-lg p-3.5 text-white outline-none focus:border-brand-500 text-lg font-bold font-mono transition-colors"
+                  placeholder="Enter amount"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Payment Method</label>
+                <select
+                  value={paymentMethod}
+                  onChange={e => setPaymentMethod(e.target.value)}
+                  className="w-full bg-dark-900 border border-dark-700 rounded-lg p-3 text-white outline-none focus:border-brand-500"
+                >
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="pos">POS Terminal</option>
+                  <option value="cash">Cash</option>
+                </select>
+              </div>
+
+              <div className="flex gap-4 pt-4 border-t border-dark-700">
+                <button type="submit" className="bg-brand-500 hover:bg-brand-400 text-dark-900 flex-1 py-3.5 text-sm font-bold rounded-lg shadow-lg transition-all">
+                  Confirm Payment & Print Receipt
+                </button>
+                <button type="button" onClick={() => { setActiveHallPayoutModal(null); setPaymentAmount(''); }} className="border border-dark-600 text-gray-300 flex-1 py-3.5 text-sm font-bold rounded-lg hover:bg-dark-700 transition-all">
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

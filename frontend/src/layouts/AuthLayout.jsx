@@ -55,7 +55,7 @@ const AuthLayout = () => {
               <img 
                 src={brandLogo} 
                 alt="Brand Logo" 
-                className="h-16 max-w-[220px] object-contain transition-all duration-300 hover:scale-105"
+                className="h-24 max-w-[300px] object-contain transition-all duration-300 hover:scale-105"
               />
             ) : (
               <>

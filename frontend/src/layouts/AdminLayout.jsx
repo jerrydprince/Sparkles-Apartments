@@ -313,7 +313,7 @@ const AdminLayout = () => {
         <div className="p-6 flex justify-between items-center border-b border-dark-700/50">
           <Link to="/" className="flex items-center gap-2">
             {brandLogo ? (
-              <img src={brandLogo} alt="Logo" className="h-8 max-w-[150px] object-contain" />
+              <img src={brandLogo} alt="Logo" className="h-12 max-w-[180px] w-full object-contain" />
             ) : (
               <>
                 <svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
