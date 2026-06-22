@@ -469,23 +469,49 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
       return;
     }
     const totalAmount = Number(hallBooking.total_amount_ngn || 0);
-    if (!window.confirm(`Confirm payment of ₦${totalAmount.toLocaleString()} for Hall Booking Ref: "${hallBooking.booking_reference}"?`)) return;
+    const alreadyPaid = Number(hallBooking.amount_paid_ngn || 0);
+    const outstanding = totalAmount - alreadyPaid;
+
+    if (outstanding <= 0) {
+      toast.error("This booking is already fully paid.");
+      return;
+    }
+
+    const userInput = window.prompt(`Confirm payment for Hall Booking Ref: "${hallBooking.booking_reference}"\nGuest: ${hallBooking.guest_name}\n\nTotal: ₦${totalAmount.toLocaleString()}\nAlready Paid: ₦${alreadyPaid.toLocaleString()}\nOutstanding: ₦${outstanding.toLocaleString()}\n\nEnter amount being paid now:`, outstanding.toString());
+
+    if (userInput === null) return; // user cancelled
+
+    const amountToPay = Number(userInput);
+    if (isNaN(amountToPay) || amountToPay <= 0) {
+      toast.error("Invalid payment amount.");
+      return;
+    }
+
+    if (amountToPay > outstanding) {
+      toast.error(`Payment amount exceeds the outstanding balance of ₦${outstanding.toLocaleString()}.`);
+      return;
+    }
+
+    const newAmountPaid = alreadyPaid + amountToPay;
+    const isFullyPaid = newAmountPaid >= totalAmount;
+    const newPaymentStatus = isFullyPaid ? 'paid' : 'partial';
+    const newBookingStatus = isFullyPaid ? 'confirmed' : hallBooking.status;
 
     const toastId = toast.loading('Confirming hall booking payment...');
     try {
-      // 1. Update hall_bookings status to 'confirmed', payment_status to 'paid', amount_paid_ngn to totalAmount
+      // 1. Update hall_bookings
       const { error: hbErr } = await supabase
         .from('hall_bookings')
         .update({ 
-          status: 'confirmed',
-          payment_status: 'paid',
-          amount_paid_ngn: totalAmount
+          status: newBookingStatus,
+          payment_status: newPaymentStatus,
+          amount_paid_ngn: newAmountPaid
         })
         .eq('id', hallBooking.id);
       
       if (hbErr) throw hbErr;
 
-      // 2. Update invoice status to 'paid', amount_paid to totalAmount if invoice exists
+      // 2. Update invoice status
       try {
         const { data: invData } = await supabase
           .from('invoices')
@@ -497,8 +523,8 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
           await supabase
             .from('invoices')
             .update({ 
-              status: 'paid',
-              amount_paid: totalAmount
+              status: newPaymentStatus,
+              amount_paid: newAmountPaid
             })
             .eq('id', invData.id);
         }
@@ -506,27 +532,20 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
         console.warn("Invoice status update failed in hall payout confirmation:", invSyncErr);
       }
 
-      // 3. Record Payment inflow in payments table so it reflects in Accounting
-      const outstandingBalance = totalAmount - Number(hallBooking.amount_paid_ngn || 0);
-      let txnRef = `PAY-HALL-CONF-${Date.now()}`;
-      if (outstandingBalance > 0) {
-        const { error: payErr } = await supabase
-          .from('payments')
-          .insert([{
-            hall_booking_id: hallBooking.id,
-            amount: outstandingBalance,
-            method: 'bank_transfer', // Default to bank_transfer for finance confirmations
-            status: 'completed',
-            transaction_ref: txnRef,
-            notes: `Hall Booking payment confirmed by finance: Ref: ${hallBooking.booking_reference} | Guest: ${hallBooking.guest_name}`
-          }]);
+      // 3. Record Payment inflow
+      const txnRef = `PAY-HALL-CONF-${Date.now()}`;
+      const { error: payErr } = await supabase
+        .from('payments')
+        .insert([{
+          hall_booking_id: hallBooking.id,
+          amount: amountToPay,
+          method: 'bank_transfer', // Default to bank_transfer for finance confirmations
+          status: 'completed',
+          transaction_ref: txnRef,
+          notes: `Hall Booking payment confirmed by finance: Ref: ${hallBooking.booking_reference} | Guest: ${hallBooking.guest_name}`
+        }]);
 
-        if (payErr) throw payErr;
-      } else {
-        // If already fully paid, we don't need to insert another payment record
-        // We just needed to update the status to 'confirmed'
-        txnRef = 'ALREADY-PAID';
-      }
+      if (payErr) throw payErr;
 
       // Print receipt in new window
       try {
@@ -565,9 +584,10 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                   <tr><td>Duration:</td><td>${hallBooking.booking_type === 'daily' ? `${hallBooking.num_days} Day(s)` : `${hallBooking.num_hours} Hour(s)`}</td></tr>
                   <tr><td>Payment Date:</td><td>${formattedDate}</td></tr>
                   <tr><td>Transaction Ref:</td><td style="font-family: monospace; font-weight: bold;">${txnRef}</td></tr>
-                  <tr><td>Status:</td><td style="color: #059669; font-weight: bold;">PAID / CONFIRMED</td></tr>
+                  <tr><td>Status:</td><td style="color: ${isFullyPaid ? '#059669' : '#d97706'}; font-weight: bold;">${isFullyPaid ? 'PAID / CONFIRMED' : 'PARTIAL / DEPOSIT'}</td></tr>
+                  ${!isFullyPaid ? `<tr><td>Outstanding Balance:</td><td style="color: #dc2626; font-weight: bold;">₦${(totalAmount - newAmountPaid).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td></tr>` : ''}
                 </table>
-                <div class="amount">₦${totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                <div class="amount">₦${amountToPay.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
                 <div class="footer">
                   <p>Authorized and confirmed by Sparkles Apartments Finance Department.</p>
                 </div>
