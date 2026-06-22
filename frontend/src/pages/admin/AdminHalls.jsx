@@ -129,7 +129,7 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
     let hours = 10;
 
     if (bookingForm.booking_type === 'daily') {
-      days = Math.max(1, differenceInDays(new Date(bookingForm.end_date), new Date(bookingForm.booking_date)));
+      days = Math.max(1, differenceInDays(new Date(bookingForm.end_date), new Date(bookingForm.booking_date)) + 1);
     } else {
       const [sh, sm] = bookingForm.start_time.split(':').map(Number);
       const [eh, em] = bookingForm.end_time.split(':').map(Number);
@@ -394,12 +394,79 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
         .eq('id', activePaymentModal.id);
       if (updateErr) throw updateErr;
 
+      // 3. Update the generated invoice so financial folios reflect the partial payment balance
+      try {
+        await supabase
+          .from('invoices')
+          .update({
+            amount_paid: newAmountPaid,
+            status: newPaymentStatus === 'paid' ? 'paid' : 'partial'
+          })
+          .eq('hall_booking_id', activePaymentModal.id);
+      } catch (invErr) {
+        console.warn("Failed to sync invoice amount_paid:", invErr);
+      }
+
       toast.success(
         isFullyPaid
           ? `✅ Full payment received! Booking ${activePaymentModal.booking_reference} is now Confirmed.`
           : `✔ ₦${amount.toLocaleString()} recorded. Outstanding: ₦${(outstanding - amount).toLocaleString()}`,
         { id: toastId, duration: 5000 }
       );
+
+      // 4. Print receipt for this specific installment transaction
+      try {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          const formattedDate = format(new Date(), 'MMM dd, yyyy, HH:mm');
+          printWindow.document.write(`
+            <html>
+              <head>
+                <title>Payment Receipt - Hall Booking ${activePaymentModal.booking_reference}</title>
+                <style>
+                  @page { size: A5; margin: 20mm; }
+                  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #111827; }
+                  .header { text-align: center; border-bottom: 2px solid #374151; padding-bottom: 15px; margin-bottom: 20px; }
+                  .header h1 { font-size: 22px; margin: 0; font-weight: 900; }
+                  .header p { margin: 2px 0; font-size: 12px; color: #6b7280; }
+                  .title { font-size: 16px; font-weight: 800; text-align: center; text-transform: uppercase; color: #059669; margin: 0 0 20px 0; letter-spacing: 0.05em; }
+                  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                  td { padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
+                  td:first-child { font-weight: 700; width: 45%; }
+                  .amount { font-size: 22px; font-weight: 900; color: #059669; text-align: center; padding: 15px 0; border-top: 2px solid #374151; margin-top: 10px; }
+                  .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 15px; }
+                </style>
+              </head>
+              <body>
+                <div class="header">
+                  <h1>SPARKLES APARTMENTS</h1>
+                  <p>Premium Luxury Shortlets</p>
+                </div>
+                <p class="title">Installment Payment Receipt</p>
+                <table>
+                  <tr><td>Booking Ref:</td><td>${activePaymentModal.booking_reference}</td></tr>
+                  <tr><td>Guest Name:</td><td>${activePaymentModal.guest_name}</td></tr>
+                  <tr><td>Event Hall:</td><td>${activePaymentModal.halls?.name || 'Event Space'}</td></tr>
+                  <tr><td>Event Date:</td><td>${activePaymentModal.booking_date}</td></tr>
+                  <tr><td>Payment Date:</td><td>${formattedDate}</td></tr>
+                  <tr><td>Transaction Ref:</td><td style="font-family: monospace; font-weight: bold;">${txRef}</td></tr>
+                  <tr><td>Payment Status:</td><td style="color: ${isFullyPaid ? '#059669' : '#d97706'}; font-weight: bold;">${isFullyPaid ? 'FULLY PAID' : 'PARTIAL / DEPOSIT'}</td></tr>
+                  ${!isFullyPaid ? `<tr><td>Outstanding Balance:</td><td style="color: #dc2626; font-weight: bold;">₦${(outstanding - amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td></tr>` : ''}
+                </table>
+                <div class="amount">₦${amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                <div class="footer">
+                  <p>Authorized and confirmed by Sparkles Apartments Front Office.</p>
+                </div>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+          setTimeout(() => {
+            printWindow.print();
+            printWindow.close();
+          }, 500);
+        }
+      } catch (printErr) { console.warn('Receipt print failed:', printErr); }
 
       setActivePaymentModal(null);
       setInstallmentForm({ amount: '', method: 'cash', notes: '' });

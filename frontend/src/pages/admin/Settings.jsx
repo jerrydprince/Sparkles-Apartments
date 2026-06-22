@@ -8,10 +8,10 @@ import Automations from './Automations';
 import Security from './Security';
 import { sendResendEmail } from '../../lib/emailService';
 import { optimizeImage } from '../../utils/imageOptimizer';
-
+import SystemWipeTab from './SystemWipeTab';
 
 const AdminSettings = () => {
-  const { hasAccess } = useAuth();
+  const { hasAccess, user } = useAuth();
   const [activeTab, setActiveTab] = useState('general');
   const [loading, setLoading] = useState(true);
   
@@ -639,7 +639,8 @@ const AdminSettings = () => {
     { id: 'payroll', label: 'Payroll & Bank Settings', icon: <CreditCard size={18} /> },
     { id: 'api', label: 'API & Plugins', icon: <Puzzle size={18} /> },
     ...(hasAccess('Automations & Alerts') ? [{ id: 'automations', label: 'Automations & Alerts', icon: <Zap size={18} /> }] : []),
-    ...(hasAccess('Security & Privacy') ? [{ id: 'security', label: 'Security & Privacy', icon: <ShieldAlert size={18} /> }] : [])
+    ...(hasAccess('Security & Privacy') ? [{ id: 'security', label: 'Security & Privacy', icon: <ShieldAlert size={18} /> }] : []),
+    ...(user?.role === 'super_admin' ? [{ id: 'system_wipe', label: 'System Wipe (DANGER)', icon: <AlertCircle size={18} className="text-red-500" /> }] : [])
   ];
 
   return (
@@ -2175,6 +2176,11 @@ const AdminSettings = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* SYSTEM WIPE (DANGER) */}
+      {activeTab === 'system_wipe' && user?.role === 'super_admin' && (
+        <SystemWipeTab user={user} />
       )}
     </div>
   );

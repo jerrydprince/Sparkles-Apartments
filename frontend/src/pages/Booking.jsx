@@ -1408,7 +1408,7 @@ const BookingEngine = () => {
     let hours = 10;
 
     if (hallBookingType === 'daily') {
-      days = Math.max(1, differenceInDays(dateRange[0].endDate, dateRange[0].startDate)) || 1;
+      days = Math.max(1, differenceInDays(dateRange[0].endDate, dateRange[0].startDate) + 1) || 1;
     } else {
       const [sh, sm] = hallStartTime.split(':').map(Number);
       const [eh, em] = hallEndTime.split(':').map(Number);
