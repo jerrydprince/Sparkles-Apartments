@@ -153,7 +153,7 @@ const AdminLayout = () => {
   });
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const [brandLogo, setBrandLogo] = useState('');
+  const [brandLogo, setBrandLogo] = useState(() => localStorage.getItem('contact_logo') || '');
 
   const hasAnyAccess = (permissionName) => {
     if (!permissionName) return false;
@@ -186,6 +186,7 @@ const AdminLayout = () => {
           .single();
         if (data && data.setting_value) {
           setBrandLogo(data.setting_value);
+          localStorage.setItem('contact_logo', data.setting_value);
         }
       } catch (e) {}
     };

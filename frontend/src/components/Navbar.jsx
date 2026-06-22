@@ -9,7 +9,7 @@ import { supabase } from '../lib/supabase';
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [contactLogo, setContactLogo] = useState('');
+  const [contactLogo, setContactLogo] = useState(() => localStorage.getItem('contact_logo') || '');
   const location = useLocation();
   const { user, logout, hasAccess } = useAuth();
 
@@ -34,6 +34,7 @@ const Navbar = () => {
           .single();
         if (data && data.setting_value) {
           setContactLogo(data.setting_value);
+          localStorage.setItem('contact_logo', data.setting_value);
         }
       } catch (e) {}
     };
