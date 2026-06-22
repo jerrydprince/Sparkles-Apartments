@@ -295,6 +295,8 @@ const AdminAccounting = () => {
                        p.notes?.toLowerCase().includes('ar prepayment') ||
                        p.notes?.toLowerCase().includes('ar wallet') ||
                        p.notes?.toLowerCase().includes('prepayment wallet');
+          const isHallBooking = p.hall_booking_id != null || p.transaction_ref?.startsWith('PAY-HALL-') || p.transaction_ref?.startsWith('HALL-WEB-') || p.notes?.toLowerCase().includes('hall booking');
+          
           return {
             id: p.id,
             date: p.processed_at || p.created_at,
@@ -303,15 +305,17 @@ const AdminAccounting = () => {
               ? p.notes || `Walk-in Laundry direct sale settled via ${p.method.toUpperCase()}`
               : (isPOS 
                 ? p.notes || `POS Walk-in Sale settled via ${p.method.toUpperCase()}`
-                : (isARDeposit
-                  ? `AR Prepayment Wallet Deposit`
-                  : `Guest Booking Payment - ${p.bookings?.guest_name || 'Confirmed Guest'}`)),
+                : (isHallBooking
+                  ? p.notes || `Event Hall Booking Payment`
+                  : (isARDeposit
+                    ? `AR Prepayment Wallet Deposit`
+                    : `Guest Booking Payment - ${p.bookings?.guest_name || 'Confirmed Guest'}`))),
             method: isAR ? 'ar' : p.method,
             status: p.status,
             type: 'inflow',
             booking_id: p.booking_id,
             notes: p.notes || '',
-            category: isLaundry ? 'Laundry Revenue' : (isPOS ? 'POS Revenue' : 'Booking Revenue'),
+            category: isLaundry ? 'Laundry Revenue' : (isPOS ? 'POS Revenue' : (isHallBooking ? 'Event Hall Revenue' : 'Booking Revenue')),
             is_refund: p.is_refund
           };
         });

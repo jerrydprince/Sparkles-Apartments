@@ -7,7 +7,7 @@ import { format, differenceInDays, addDays } from 'date-fns';
 import { 
   Building2, Calendar, Coffee, Plus, Trash2, Edit, Check, X,
   Search, Users, DollarSign, Clock, ShieldAlert, Sparkles, Receipt,
-  CheckCircle, Landmark, CreditCard, ChevronRight, FileText
+  CheckCircle, Landmark, CreditCard, ChevronRight, FileText, Banknote, AlertCircle
 } from 'lucide-react';
 
 const AdminHalls = ({ isFrontOfficeClosed }) => {
@@ -24,6 +24,9 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
   
   // Modal states
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [activePaymentModal, setActivePaymentModal] = useState(null); // stores booking object
+  const [installmentForm, setInstallmentForm] = useState({ amount: '', method: 'cash', notes: '' });
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
   
   // Form states - Booking
   const [bookingForm, setBookingForm] = useState({
@@ -173,7 +176,7 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
         .from('hall_bookings')
         .select('id, start_time, end_time')
         .eq('hall_id', bookingForm.hall_id)
-        .in('status', ['pending', 'confirmed', 'checked_in']);
+        .in('status', ['confirmed', 'checked_in']); // Only block if confirmed (fully paid) or actively in use
 
       if (confErr) throw confErr;
 
@@ -189,7 +192,13 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
       if (hasOverlap) {
         toast.dismiss(toastId);
         setIsSaving(false);
-        return toast.error("Double-Booking alert: The selected Hall is already booked for the requested period.");
+        return toast.error("This Hall is already confirmed / in use for the requested period. Please choose a different date or time.");
+      }
+
+      // Warn if within 48 hours
+      const hoursUntilStart = (newStart.getTime() - Date.now()) / (1000 * 60 * 60);
+      if (hoursUntilStart < 48 && hoursUntilStart > 0) {
+        toast(`⚠️ This booking is less than 48 hours away. Ensure the guest completes payment before the 24-hour cutoff.`, { icon: '⚠️', duration: 5000 });
       }
 
       // 2. Build references and amounts
@@ -332,6 +341,76 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
     }
   };
 
+  // --- Record Installment Payment ---
+  const handleRecordInstallmentPayment = async (e) => {
+    e.preventDefault();
+    if (isFrontOfficeClosed) return toast.error("Ledger locked. Action rejected.");
+    if (!activePaymentModal) return;
+
+    const amount = Number(installmentForm.amount);
+    if (!amount || amount <= 0) return toast.error("Enter a valid payment amount.");
+
+    const outstanding = Number(activePaymentModal.total_amount_ngn) - Number(activePaymentModal.amount_paid_ngn);
+    if (amount > outstanding) return toast.error(`Amount exceeds outstanding balance of ₦${outstanding.toLocaleString()}.`);
+
+    // 24-hour installment cutoff
+    const startTime = new Date(activePaymentModal.start_time);
+    const hoursToStart = (startTime.getTime() - Date.now()) / (1000 * 60 * 60);
+    if (hoursToStart < 24 && hoursToStart > 0) {
+      return toast.error("Payment cutoff reached — no installment payments accepted within 24 hours of event start.");
+    }
+    if (hoursToStart <= 0) {
+      return toast.error("Event has already started or passed — no new payments can be recorded.");
+    }
+
+    setIsSavingPayment(true);
+    const toastId = toast.loading("Recording payment...");
+    try {
+      const txRef = `INST-HALL-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Date.now().toString().slice(-4)}`;
+      const newAmountPaid = Number(activePaymentModal.amount_paid_ngn) + amount;
+      const isFullyPaid = newAmountPaid >= Number(activePaymentModal.total_amount_ngn);
+      const newPaymentStatus = isFullyPaid ? 'paid' : 'partial';
+      const newBookingStatus = isFullyPaid ? 'confirmed' : activePaymentModal.status;
+
+      // 1. Log to payments ledger
+      const { error: payErr } = await supabase.from('payments').insert([{
+        hall_booking_id: activePaymentModal.id,
+        amount,
+        method: installmentForm.method,
+        status: 'completed',
+        transaction_ref: txRef,
+        notes: installmentForm.notes || `Hall installment payment for Ref: ${activePaymentModal.booking_reference} | Guest: ${activePaymentModal.guest_name}`
+      }]);
+      if (payErr) throw payErr;
+
+      // 2. Update booking totals and status
+      const { error: updateErr } = await supabase
+        .from('hall_bookings')
+        .update({
+          amount_paid_ngn: newAmountPaid,
+          payment_status: newPaymentStatus,
+          status: newBookingStatus
+        })
+        .eq('id', activePaymentModal.id);
+      if (updateErr) throw updateErr;
+
+      toast.success(
+        isFullyPaid
+          ? `✅ Full payment received! Booking ${activePaymentModal.booking_reference} is now Confirmed.`
+          : `✔ ₦${amount.toLocaleString()} recorded. Outstanding: ₦${(outstanding - amount).toLocaleString()}`,
+        { id: toastId, duration: 5000 }
+      );
+
+      setActivePaymentModal(null);
+      setInstallmentForm({ amount: '', method: 'cash', notes: '' });
+      fetchData();
+    } catch (err) {
+      toast.error("Failed to record payment: " + err.message, { id: toastId });
+    } finally {
+      setIsSavingPayment(false);
+    }
+  };
+
   // --- Filters & Search ---
   const filteredBookings = bookings.filter(b => {
     const name = b.guest_name || '';
@@ -431,6 +510,21 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
                       <td className="p-4 font-bold">
                         <div className="text-gold-500">₦{Number(b.total_amount_ngn).toLocaleString()}</div>
                         <div className="text-xs mt-1 text-gray-400">Paid: <span className="text-green-400">₦{Number(b.amount_paid_ngn).toLocaleString()}</span></div>
+                        {/* Payment progress bar */}
+                        {(() => {
+                          const pct = Math.min(100, Math.round((Number(b.amount_paid_ngn) / Number(b.total_amount_ngn)) * 100));
+                          return (
+                            <div className="mt-1.5 w-full bg-dark-700 rounded-full h-1.5">
+                              <div
+                                className={`h-1.5 rounded-full transition-all ${pct >= 100 ? 'bg-green-500' : pct > 50 ? 'bg-yellow-400' : 'bg-red-400'}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          );
+                        })()}
+                        <div className="text-[10px] text-gray-500 mt-0.5">
+                          {Math.round((Number(b.amount_paid_ngn) / Number(b.total_amount_ngn)) * 100)}% paid
+                        </div>
                       </td>
                       <td className="p-4">
                         <span className={`px-2.5 py-1 text-xs font-bold rounded-full border ${
@@ -446,8 +540,34 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
                       </td>
                       <td className="p-4 text-right space-x-2">
                         {(b.status === 'pending' || b.status === 'confirmed') && (
-                          <>
-                            {b.status === 'confirmed' && (
+                          <div className="flex flex-col gap-1.5 items-end">
+                            {/* Record Payment: only if not fully paid and >24hrs to start */}
+                            {b.payment_status !== 'paid' && (() => {
+                              const hrs = (new Date(b.start_time).getTime() - Date.now()) / (1000 * 60 * 60);
+                              return hrs > 24;
+                            })() && (
+                              <button
+                                disabled={isFrontOfficeClosed}
+                                onClick={() => {
+                                  setActivePaymentModal(b);
+                                  setInstallmentForm({ amount: '', method: 'cash', notes: '' });
+                                }}
+                                className="text-xs bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/30 px-2 py-1.5 rounded-lg font-bold cursor-pointer flex items-center gap-1 disabled:opacity-40"
+                              >
+                                <Banknote size={12} /> Record Payment
+                              </button>
+                            )}
+                            {/* Warn if within 24hrs and still not paid */}
+                            {b.payment_status !== 'paid' && (() => {
+                              const hrs = (new Date(b.start_time).getTime() - Date.now()) / (1000 * 60 * 60);
+                              return hrs <= 24 && hrs > 0;
+                            })() && (
+                              <span className="text-[10px] text-red-400 font-bold flex items-center gap-1">
+                                <AlertCircle size={11} /> Payment cutoff
+                              </span>
+                            )}
+                            {/* Check In: only if fully paid */}
+                            {b.status === 'confirmed' && b.payment_status === 'paid' && (
                               <button 
                                 onClick={() => handleUpdateBookingStatus(b.id, 'checked_in')}
                                 className="text-xs bg-green-500/10 hover:bg-green-500/20 text-green-500 border border-green-500/30 px-2 py-1.5 rounded-lg font-bold cursor-pointer"
@@ -467,7 +587,7 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
                             >
                               Cancel
                             </button>
-                          </>
+                          </div>
                         )}
                         {b.status === 'checked_in' && (
                           <button 
@@ -725,14 +845,18 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
 
                   {/* Payment Inputs */}
                   <div className="space-y-4">
-                    <h5 className="font-bold text-white text-xs uppercase tracking-wider text-left">Record Initial Payment</h5>
+                    <div>
+                      <h5 className="font-bold text-white text-xs uppercase tracking-wider text-left">Initial Payment (Optional)</h5>
+                      <p className="text-[10px] text-gray-500 mt-1">
+                        Booking is reserved immediately. Remaining balance can be paid in installments up to <strong className="text-yellow-400">24 hours before event start</strong>. Hall is only blocked for other bookings once fully confirmed.
+                      </p>
+                    </div>
                     
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-gray-400 font-bold mb-1">Amount Paid (₦) *</label>
+                        <label className="block text-xs text-gray-400 font-bold mb-1">Amount Paid (₦)</label>
                         <input 
                           type="number" 
-                          required
                           min="0"
                           max={bookingSummary.total}
                           value={bookingForm.amount_paid}
@@ -782,6 +906,147 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
           </div>
         </div>
       )}
+
+      {/* --- MODAL: RECORD INSTALLMENT PAYMENT --- */}
+      {activePaymentModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-800 border border-dark-700 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+            <div className="bg-dark-900 p-5 border-b border-dark-700 flex justify-between items-center">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Banknote className="text-brand-500" size={18} /> Record Installment Payment
+              </h3>
+              <button onClick={() => setActivePaymentModal(null)} className="text-gray-400 hover:text-white bg-transparent border-0 cursor-pointer"><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleRecordInstallmentPayment} className="p-6 space-y-5 text-sm">
+              {/* Booking Summary */}
+              <div className="bg-dark-900/60 border border-dark-700 rounded-xl p-4 space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400">Booking Ref</span>
+                  <span className="text-white font-bold font-mono">{activePaymentModal.booking_reference}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400">Guest</span>
+                  <span className="text-white font-semibold">{activePaymentModal.guest_name}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400">Hall</span>
+                  <span className="text-brand-400 font-bold">{activePaymentModal.halls?.name || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400">Event Date</span>
+                  <span className="text-white">{format(new Date(activePaymentModal.start_time), 'MMM dd, yyyy HH:mm')}</span>
+                </div>
+                <div className="border-t border-dark-700 mt-2 pt-2 flex justify-between font-bold">
+                  <span className="text-gray-300">Total Due</span>
+                  <span className="text-gold-500">₦{Number(activePaymentModal.total_amount_ngn).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400 text-xs">Already Paid</span>
+                  <span className="text-green-400 font-bold text-xs">₦{Number(activePaymentModal.amount_paid_ngn).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400 text-xs">Outstanding</span>
+                  <span className="text-red-400 font-bold text-xs">
+                    ₦{(Number(activePaymentModal.total_amount_ngn) - Number(activePaymentModal.amount_paid_ngn)).toLocaleString()}
+                  </span>
+                </div>
+                {/* Progress bar */}
+                {(() => {
+                  const pct = Math.min(100, Math.round((Number(activePaymentModal.amount_paid_ngn) / Number(activePaymentModal.total_amount_ngn)) * 100));
+                  return (
+                    <div className="mt-1 w-full bg-dark-700 rounded-full h-2">
+                      <div className={`h-2 rounded-full transition-all ${pct >= 100 ? 'bg-green-500' : pct > 50 ? 'bg-yellow-400' : 'bg-red-400'}`} style={{ width: `${pct}%` }} />
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* 24hr warning if close */}
+              {(() => {
+                const hrs = (new Date(activePaymentModal.start_time).getTime() - Date.now()) / (1000 * 60 * 60);
+                if (hrs > 24 && hrs < 48) {
+                  return (
+                    <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 flex items-start gap-2">
+                      <AlertCircle size={14} className="text-yellow-400 mt-0.5 shrink-0" />
+                      <p className="text-yellow-300 text-xs">Event is within 48 hours. This is the final window to accept installments — payments are locked 24 hours before start.</p>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Payment Fields */}
+              <div>
+                <label className="block text-xs text-gray-400 font-bold mb-1">Amount to Record (₦) *</label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  max={Number(activePaymentModal.total_amount_ngn) - Number(activePaymentModal.amount_paid_ngn)}
+                  value={installmentForm.amount}
+                  onChange={e => setInstallmentForm(prev => ({ ...prev, amount: e.target.value }))}
+                  className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-lg text-white outline-none focus:border-brand-500"
+                  placeholder="0"
+                />
+                <div className="flex justify-between mt-1">
+                  <span className="text-[10px] text-gray-500">Max: ₦{(Number(activePaymentModal.total_amount_ngn) - Number(activePaymentModal.amount_paid_ngn)).toLocaleString()}</span>
+                  <button
+                    type="button"
+                    onClick={() => setInstallmentForm(prev => ({
+                      ...prev,
+                      amount: String(Number(activePaymentModal.total_amount_ngn) - Number(activePaymentModal.amount_paid_ngn))
+                    }))}
+                    className="text-[10px] text-brand-400 hover:underline cursor-pointer bg-transparent border-0"
+                  >Pay Full Balance</button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-400 font-bold mb-1">Payment Method</label>
+                <select
+                  value={installmentForm.method}
+                  onChange={e => setInstallmentForm(prev => ({ ...prev, method: e.target.value }))}
+                  className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-lg text-white outline-none focus:border-brand-500 cursor-pointer"
+                >
+                  <option value="cash">Cash</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="pos">POS Terminal</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-400 font-bold mb-1">Notes (Optional)</label>
+                <input
+                  type="text"
+                  value={installmentForm.notes}
+                  onChange={e => setInstallmentForm(prev => ({ ...prev, notes: e.target.value }))}
+                  className="bg-dark-900 border border-dark-700 w-full px-3 py-2.5 rounded-lg text-white outline-none focus:border-brand-500"
+                  placeholder="e.g. 2nd installment via GTB transfer"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setActivePaymentModal(null)}
+                  className="flex-1 bg-dark-700 hover:bg-dark-600 text-white py-2.5 rounded-xl font-bold transition-all border-0 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingPayment || !installmentForm.amount}
+                  className="flex-1 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold transition-all flex items-center justify-center gap-2 border-0 cursor-pointer"
+                >
+                  {isSavingPayment ? 'Recording...' : <><Check size={14} /> Record Payment</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

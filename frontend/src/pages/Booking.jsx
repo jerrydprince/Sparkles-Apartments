@@ -1588,11 +1588,19 @@ const BookingEngine = () => {
       const newStart = new Date(`${checkInDateStr}T${hallBookingType === 'daily' ? '00:00' : hallStartTime}:00`);
       const newEnd = new Date(`${checkOutDateStr}T${hallBookingType === 'daily' ? '23:59' : hallEndTime}:00`);
 
+      // Enforce 48-hour advance booking window for online bookings
+      const hoursUntilStart = (newStart.getTime() - Date.now()) / (1000 * 60 * 60);
+      if (hoursUntilStart < 48) {
+        toast.dismiss(toastId);
+        setIsProcessing(false);
+        return toast.error("Hall bookings must be made at least 48 hours in advance. For last-minute bookings, please contact us directly.");
+      }
+
       const { data: conflicts, error: confErr } = await supabase
         .from('hall_bookings')
         .select('id, start_time, end_time')
         .eq('hall_id', selectedHall.id)
-        .in('status', ['pending', 'confirmed', 'checked_in']);
+        .in('status', ['confirmed', 'checked_in']); // Only confirmed (fully paid) or in-use blocks the slot
 
       if (confErr) throw confErr;
 

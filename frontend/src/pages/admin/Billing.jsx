@@ -507,19 +507,26 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
       }
 
       // 3. Record Payment inflow in payments table so it reflects in Accounting
-      const txnRef = `PAY-HALL-CONF-${Date.now()}`;
-      const { error: payErr } = await supabase
-        .from('payments')
-        .insert([{
-          hall_booking_id: hallBooking.id,
-          amount: totalAmount,
-          method: 'bank_transfer',
-          status: 'completed',
-          transaction_ref: txnRef,
-          notes: `Hall Booking payment confirmed by finance: Ref: ${hallBooking.booking_reference} | Guest: ${hallBooking.guest_name}`
-        }]);
+      const outstandingBalance = totalAmount - Number(hallBooking.amount_paid_ngn || 0);
+      let txnRef = `PAY-HALL-CONF-${Date.now()}`;
+      if (outstandingBalance > 0) {
+        const { error: payErr } = await supabase
+          .from('payments')
+          .insert([{
+            hall_booking_id: hallBooking.id,
+            amount: outstandingBalance,
+            method: 'bank_transfer', // Default to bank_transfer for finance confirmations
+            status: 'completed',
+            transaction_ref: txnRef,
+            notes: `Hall Booking payment confirmed by finance: Ref: ${hallBooking.booking_reference} | Guest: ${hallBooking.guest_name}`
+          }]);
 
-      if (payErr) throw payErr;
+        if (payErr) throw payErr;
+      } else {
+        // If already fully paid, we don't need to insert another payment record
+        // We just needed to update the status to 'confirmed'
+        txnRef = 'ALREADY-PAID';
+      }
 
       // Print receipt in new window
       try {
