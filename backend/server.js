@@ -4,13 +4,14 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import cron from 'node-cron';
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = 5001;
 
 // Supabase Setup
 const supabaseUrl = process.env.SUPABASE_URL || 'https://placeholder.supabase.co';
@@ -739,6 +740,90 @@ app.post('/api/attendance/terminal-push', async (req, res) => {
 });
 
 // Secure SMS Send Gateway API Proxy
+
+// ----- Overdue Checkout Auto-Charge -----
+// This job runs every 5 minutes to detect guests who have exceeded checkout time
+// and automatically adds hourly charges to their booking.
+
+const processOverdueCheckouts = async () => {
+  try {
+    // Define checkout time (12:00 PM) and grace period (15 minutes)
+    const checkoutHour = 12; // 12 PM
+    const graceMinutes = 15;
+
+    // Current timestamp in UTC
+    const now = new Date();
+    const nowUtc = new Date(now.toISOString());
+
+    // Fetch bookings that are still checked in and whose checkout date is today or earlier
+    const { data: bookings, error: bookingsErr } = await supabase
+      .from('bookings')
+      .select('id, check_out_date, status, room_id, total_amount_ngn, amount_paid_ngn')
+      .eq('status', 'checked_in');
+
+    if (bookingsErr) throw bookingsErr;
+    if (!bookings || bookings.length === 0) return;
+
+    for (const b of bookings) {
+      // Build a Date object for the checkout deadline (checkout time + grace)
+      const checkoutDate = new Date(b.check_out_date);
+      checkoutDate.setUTCHours(checkoutHour, graceMinutes, 0, 0); // e.g., 12:15 UTC
+
+      if (nowUtc > checkoutDate) {
+        // Calculate overdue hours (rounded up)
+        const msOverdue = nowUtc - checkoutDate;
+        const hoursOverdue = Math.ceil(msOverdue / (1000 * 60 * 60));
+
+        // Fetch room base price to compute per‑hour rate
+        const { data: room, error: roomErr } = await supabase
+          .from('rooms')
+          .select('base_price_ngn')
+          .eq('id', b.room_id)
+          .single();
+        if (roomErr) {
+          console.warn(`Failed to fetch room for booking ${b.id}:`, roomErr);
+          continue;
+        }
+        const hourlyRate = Number(room.base_price_ngn) / 24;
+        const extraCharge = hourlyRate * hoursOverdue;
+
+        // Update booking total amount
+        const { error: updateErr } = await supabase
+          .from('bookings')
+          .update({ total_amount_ngn: Number(b.total_amount_ngn) + extraCharge })
+          .eq('id', b.id);
+        if (updateErr) {
+          console.warn(`Failed to update booking ${b.id}:`, updateErr);
+          continue;
+        }
+
+        // Insert a payment record for the extra charge (status pending)
+        const txnRef = `OVERDUE-${b.id.slice(0, 8)}-${Date.now()}`;
+        await supabase.from('payments').insert([
+          {
+            booking_id: b.id,
+            amount: extraCharge,
+            method: 'auto_charge',
+            status: 'pending',
+            transaction_ref: txnRef,
+            notes: `${hoursOverdue} hour(s) overdue checkout charge (hourly rate NGN ${hourlyRate.toFixed(2)})`
+          }
+        ]);
+
+        console.log(`[Overdue Checkout] Booking ${b.id} charged NGN ${extraCharge.toFixed(2)} for ${hoursOverdue} hour(s) overdue.`);
+      }
+    }
+  } catch (err) {
+    console.error('Error in overdue checkout processing:', err);
+  }
+};
+
+// Schedule the job to run every 5 minutes
+cron.schedule('*/5 * * * *', () => {
+  console.log('Running overdue checkout auto‑charge job...');
+  processOverdueCheckouts();
+});
+
 app.post('/api/sms/send', async (req, res) => {
   const { to, message } = req.body;
   if (!to || !message) {

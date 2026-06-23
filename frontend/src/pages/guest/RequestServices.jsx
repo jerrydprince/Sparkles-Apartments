@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useRealtimeSync } from '../../lib/useRealtimeSync';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import { Calendar, Clock, Plus, Minus, CheckCircle, Package, Coffee, ShieldCheck } from 'lucide-react';
@@ -39,25 +40,21 @@ const RequestServices = () => {
   const [submitting, setSubmitting] = useState(false);
   const [existingRequests, setExistingRequests] = useState([]);
 
+  // Real‑time synchronization for bookings and service requests
+
+  // Initial data load when user is available
   useEffect(() => {
     if (user) {
       fetchData();
-
-      const channel = supabase
-        .channel('guest-services-realtime')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
-          fetchData();
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'booking_services' }, () => {
-          fetchExistingRequests();
-        })
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
     }
-  }, [user, selectedBookingId]);
+  }, [user]);
+  useRealtimeSync(['bookings', 'booking_services'], (table, payload) => {
+    if (table === 'bookings') {
+      fetchData();
+    } else if (table === 'booking_services') {
+      fetchExistingRequests();
+    }
+  });
 
   const fetchExistingRequests = async () => {
     if (!selectedBookingId) return;
@@ -66,9 +63,12 @@ const RequestServices = () => {
         .from('booking_services')
         .select('*, services(name, category)')
         .eq('booking_id', selectedBookingId)
-        .neq('status', 'cancelled');
+        .neq('status', 'cancelled')
+        .order('created_at', { ascending: false });
       if (!error && data) {
-        setExistingRequests(data);
+        // Ensure newest first even if backend ordering changes
+        const sorted = data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        setExistingRequests(sorted);
       }
     } catch (e) {
       console.error("Error fetching existing requests:", e);
@@ -109,15 +109,17 @@ const RequestServices = () => {
       const allSrv = servicesData || [];
       setServices(allSrv);
       
-      const nonPos = allSrv.filter(s => 
-        !['bar', 'restaurant', 'kitchen'].includes(s.internal_notes?.toLowerCase().trim() || '')
-      );
-      setStayServices(nonPos);
+      const nonPos = allSrv.filter(s =>
+         !['bar', 'restaurant', 'kitchen'].includes(s.internal_notes?.toLowerCase().trim() || '') &&
+         !(s.name && s.name.toLowerCase().includes('breakfast'))
+       );
+       setStayServices(nonPos);
 
-      const meals = allSrv.filter(s => 
-        s.category === 'Food & Beverage' && s.internal_notes?.toLowerCase().trim() === 'restaurant'
-      );
-      setMealServices(meals);
+       const meals = allSrv.filter(s =>
+         (s.category === 'Food & Beverage' && s.internal_notes?.toLowerCase().trim() === 'restaurant') ||
+         (s.name && s.name.toLowerCase().includes('breakfast'))
+       );
+       setMealServices(meals);
     } catch (e) {
       console.error(e);
       toast.error('Failed to load services data');
@@ -132,9 +134,10 @@ const RequestServices = () => {
     : 1;
 
   // Checkout time gate variables
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
-  const isCheckOutDay = activeBooking && activeBooking.check_out_date === todayStr;
   const now = new Date();
+  const todayStr = format(now, 'yyyy-MM-dd');
+  const currentTime = format(now, 'HH:mm');
+  const isCheckOutDay = activeBooking && activeBooking.check_out_date === todayStr;
   const currentHour = now.getHours();
   const currentMinute = now.getMinutes();
   const totalMinutesToday = currentHour * 60 + currentMinute;
@@ -165,8 +168,8 @@ const RequestServices = () => {
         { 
           service_id: service.id, 
           quantity: 1, 
-          date: activeBooking?.check_in_date || todayStr, 
-          time: '12:00',
+          date: todayStr, 
+          time: currentTime,
           notes: ''
         }
       ]);
@@ -677,7 +680,7 @@ const RequestServices = () => {
                         </td>
                         <td className="py-4 px-4 text-xs font-mono text-gray-450">
                           {req.scheduled_date ? (
-                            <span>{req.scheduled_date} @ {req.scheduled_time || 'Anytime'}</span>
+                            <span>{format(new Date(req.scheduled_date), 'yyyy-MM-dd')} @ {req.scheduled_time || 'Anytime'}</span>
                           ) : (
                             <span className="text-gray-600">N/A</span>
                           )}

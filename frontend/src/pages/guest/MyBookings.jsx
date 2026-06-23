@@ -265,9 +265,9 @@ const MyBookings = () => {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {(() => {
+                const discount = Number(activeReceiptBooking.discount_amount_ngn || 0);
                 const booking = activeReceiptBooking;
                 const roomPrice = Number(booking.total_room_price_ngn || booking.total_amount_ngn || 0);
-                const discount = Number(booking.discount_amount_ngn || 0);
                 const roomBase = Math.max(0, roomPrice - discount);
                 const roomTax = roomBase * 0.075;
                 const roomTotalWithTax = roomBase + roomTax;
@@ -388,6 +388,7 @@ const MyBookings = () => {
           {(() => {
             const totalAmount = Number(activeReceiptBooking.total_amount_ngn || 0);
             const amountPaid = Number(activeReceiptBooking.amount_paid_ngn || 0);
+            const discount = Number(activeReceiptBooking.discount_amount_ngn || 0);
             const balance = Math.max(0, totalAmount - amountPaid);
 
             return (

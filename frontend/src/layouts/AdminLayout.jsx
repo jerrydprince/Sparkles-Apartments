@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import TopbarAttendanceClock from '../components/TopbarAttendanceClock';
 import { supabase } from '../lib/supabase';
 import { getDefaultAdminRoute } from '../utils/routes';
+import { useNotification } from '../context/NotificationContext';
 
 const ROUTE_PERMISSIONS = {
   '/admin/frontdesk': 'Front Desk',
@@ -145,13 +146,13 @@ const MODULE_SUBPERMISSIONS = {
 
 const AdminLayout = () => {
   const { user, hasRole, hasAccess, logout } = useAuth();
+  const { counters } = useNotification();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDarkTheme, setIsDarkTheme] = useState(() => {
     const theme = localStorage.getItem('system_theme') || 'theme-luxe-gold';
     return theme === 'theme-slate-dark';
   });
-  const [unreadCount, setUnreadCount] = useState(0);
 
   const [brandLogo, setBrandLogo] = useState(() => localStorage.getItem('contact_logo') || '');
 
@@ -195,74 +196,15 @@ const AdminLayout = () => {
 
   const toggleTheme = () => setIsDarkTheme(!isDarkTheme);
 
-  // Fetch real-time unread messages count matching direct recipient or group broadcast roles
-  const fetchUnreadCount = async () => {
-    if (!user) return;
-    try {
-      const { data, error } = await supabase
-        .from('internal_messages')
-        .select('id, sender_id, recipient_id, recipient_role, is_read, priority')
-        .eq('is_read', false);
-
-      if (error) throw error;
-
-      // Client-side filtering for security and DM/group message role isolation
-      const unread = (data || []).filter(m => {
-        if (m.recipient_id === user.id) {
-          return true; // Peer-to-peer DM directly to me
-        }
-        if (m.recipient_role && m.sender_id !== user.id) {
-          const isMyRole = m.recipient_role === 'all' || m.recipient_role === user.role;
-          // Count channel alerts if high/urgent priority (same logic as getChannelUnreadCount)
-          return isMyRole && m.priority !== 'normal';
-        }
-        return false;
-      });
-
-      setUnreadCount(unread.length);
-    } catch (err) {
-      console.warn("Failed to fetch unread count:", err.message);
-    }
-  };
-
-  useEffect(() => {
-    if (!user) return;
-    
-    fetchUnreadCount();
-
-    // Supabase Postgres Changes real-time event listener channel
-    const channel = supabase
-      .channel('internal_messages_topbar_sync')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'internal_messages' 
-      }, () => {
-        fetchUnreadCount();
-      })
-      .subscribe();
-
-    // Fail-safe background fallback polling interval (throttled to 2 minutes as real-time WS is active)
-    const interval = setInterval(fetchUnreadCount, 120000);
-
-    return () => {
-      supabase.removeChannel(channel);
-      clearInterval(interval);
-    };
-  }, [user]);
-
   const isActive = (path) => location.pathname === path;
-  const linkClass = (path) => `flex items-center space-x-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 ${isActive(path) ? 'bg-gradient-to-r from-brand-900/35 to-brand-850/10 border-l-4 border-brand-500 text-brand-400 font-bold shadow-md' : 'text-gray-400 border-l-4 border-transparent hover:text-white hover:bg-dark-700/35 hover:translate-x-1.5'}`;
+  const linkClass = (path) => `flex items-center justify-between space-x-2.5 px-3 py-2.5 rounded-xl transition-all duration-300 ${isActive(path) ? 'bg-gradient-to-r from-brand-900/35 to-brand-850/10 border-l-4 border-brand-500 text-brand-400 font-bold shadow-md' : 'text-gray-400 border-l-4 border-transparent hover:text-white hover:bg-dark-700/35 hover:translate-x-1.5'}`;
+  const Badge = ({ count }) => count > 0 ? <span className="bg-red-500 text-[10px] text-white px-1.5 rounded-full font-black">{count}</span> : null;
 
   const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
-  // Redirect if not logged in
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
+  if (!user) return <Navigate to="/login" replace />;
 
-  // Show access denied only if they are logged in but lack permissions
   if (user.role === 'guest') {
     return (
       <div className="h-screen bg-dark-900 flex flex-col items-center justify-center text-white">
@@ -273,7 +215,6 @@ const AdminLayout = () => {
     );
   }
 
-  // If visiting the base /admin path and doesn't have Dashboard access, redirect to first allowed route
   if ((location.pathname === '/admin' || location.pathname === '/admin/') && !hasAnyAccess('Dashboard') && user.role !== 'super_admin' && user.role !== 'hotel_owner') {
     const fallbackPath = getDefaultAdminRoute(user.role, hasAnyAccess);
     if (fallbackPath && fallbackPath !== '/admin' && fallbackPath !== '/admin/') {
@@ -281,16 +222,11 @@ const AdminLayout = () => {
     }
   }
 
-  // Centered Permission Route Guard
-  const currentPath = location.pathname.replace(/\/$/, ''); // Remove trailing slash
+  const currentPath = location.pathname.replace(/\/$/, '');
   let requiredPermission = ROUTE_PERMISSIONS[currentPath];
-  
   if (!requiredPermission) {
-    // Check dynamic routes / prefixes
     const matchingKey = Object.keys(ROUTE_PERMISSIONS).find(key => currentPath.startsWith(key + '/'));
-    if (matchingKey) {
-      requiredPermission = ROUTE_PERMISSIONS[matchingKey];
-    }
+    if (matchingKey) requiredPermission = ROUTE_PERMISSIONS[matchingKey];
   }
 
   let isRouteForbidden = false;
@@ -300,16 +236,10 @@ const AdminLayout = () => {
 
   return (
     <div className="flex h-screen bg-dark-900 overflow-hidden">
-      
-      {/* Mobile Overlay */}
       {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity" 
-          onClick={closeMobileMenu}
-        />
+        <div className="fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity" onClick={closeMobileMenu} />
       )}
 
-      {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 glass-panel flex flex-col transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 flex justify-between items-center border-b border-dark-700/50">
           <Link to="/" className="flex items-center gap-2">
@@ -335,202 +265,238 @@ const AdminLayout = () => {
         </div>
         
         <nav className="flex-1 px-3 py-6 space-y-4.5 overflow-y-auto custom-scrollbar select-none">
-          
-          {/* CATEGORY 1: OVERVIEW & COMMS */}
-          {(hasAnyAccess('Dashboard') || hasAnyAccess('Internal Messaging') || hasAnyAccess('Reminders') || hasAnyAccess('Reports & Analytics') || hasAnyAccess('Duty Logs') || hasAnyAccess('Monthly Reports')) && (
-            <div className="space-y-1">
-              <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Overview & Comms</h4>
-              <div className="space-y-0.5">
-                {hasAnyAccess('Dashboard') && (
-                  <Link to="/admin" className={linkClass('/admin')}>
+          <div className="space-y-1">
+            <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Overview & Comms</h4>
+            <div className="space-y-0.5">
+              {hasAnyAccess('Dashboard') && (
+                <Link to="/admin" className={linkClass('/admin')}>
+                  <div className="flex items-center gap-2.5">
                     <LayoutDashboard size={16} />
                     <span className="text-xs font-semibold">Live Dashboard</span>
-                  </Link>
-                )}
-                {hasAnyAccess('Internal Messaging') && (
-                  <Link to="/admin/messages" className={linkClass('/admin/messages')}>
+                  </div>
+                </Link>
+              )}
+              {hasAnyAccess('Internal Messaging') && (
+                <Link to="/admin/messages" className={linkClass('/admin/messages')}>
+                  <div className="flex items-center gap-2.5">
                     <MessageSquare size={16} />
                     <span className="text-xs font-semibold">Internal Messaging</span>
-                  </Link>
-                )}
-                {hasAnyAccess('Reminders') && (
-                  <Link to="/admin/reminders" className={linkClass('/admin/reminders')}>
+                  <Badge count={counters.internalMessaging} />
+                  </div>
+                  <Badge count={counters.internalMessaging} />
+                </Link>
+              )}
+              {hasAnyAccess('Reminders') && (
+                <Link to="/admin/reminders" className={linkClass('/admin/reminders')}>
+                  <div className="flex items-center gap-2.5">
                     <CalendarClock size={16} />
                     <span className="text-xs font-semibold">Schedules & Reminders</span>
-                  </Link>
-                )}
-                {hasAnyAccess('Reports & Analytics') && (
-                  <Link to="/admin/reports" className={linkClass('/admin/reports')}>
+                  </div>
+                  <Badge count={counters.reminders} />
+                </Link>
+              )}
+              {hasAnyAccess('Reports & Analytics') && (
+                <Link to="/admin/reports" className={linkClass('/admin/reports')}>
+                  <div className="flex items-center gap-2.5">
                     <TrendingUp size={16} />
                     <span className="text-xs font-semibold">Reports & Analytics</span>
-                  </Link>
-                )}
-                {hasAnyAccess('Duty Logs') && (
-                  <Link to="/admin/duty-reports" className={linkClass('/admin/duty-reports')}>
+                  </div>
+                </Link>
+              )}
+              {hasAnyAccess('Duty Logs') && (
+                <Link to="/admin/duty-reports" className={linkClass('/admin/duty-reports')}>
+                  <div className="flex items-center gap-2.5">
                     <ClipboardList size={16} />
                     <span className="text-xs font-semibold">Duty Manager Logs</span>
-                  </Link>
-                )}
-                {hasAnyAccess('Monthly Reports') && (
-                  <Link to="/admin/monthly-reports" className={linkClass('/admin/monthly-reports')}>
+                  </div>
+                </Link>
+              )}
+              {hasAnyAccess('Monthly Reports') && (
+                <Link to="/admin/monthly-reports" className={linkClass('/admin/monthly-reports')}>
+                  <div className="flex items-center gap-2.5">
                     <MailOpen size={16} />
                     <span className="text-xs font-semibold">Monthly Reports Dispatch</span>
-                  </Link>
-                )}
-              </div>
+                  </div>
+                </Link>
+              )}
             </div>
-          )}
+          </div>
 
-          {/* CATEGORY 2: FRONT OFFICE */}
-          {(hasAnyAccess('Front Desk') || hasAnyAccess('CRM & Guests') || hasAnyAccess('Lost & Found') || hasAnyAccess('Reservations')) && (
-            <div className="space-y-1">
-              <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Front Office</h4>
-              <div className="space-y-0.5">
-                {hasAnyAccess('Front Desk') && (
-                  <Link to="/admin/frontdesk" className={linkClass('/admin/frontdesk')}>
+          <div className="space-y-1">
+            <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Front Office</h4>
+            <div className="space-y-0.5">
+              {hasAnyAccess('Front Desk') && (
+                <Link to="/admin/frontdesk" className={linkClass('/admin/frontdesk')}>
+                  <div className="flex items-center gap-2.5">
                     <Bell size={16} />
                     <span className="text-xs font-semibold">Front Desk Reception</span>
-                  </Link>
-                )}
-                {hasAnyAccess('Reservations') && (
-                  <Link to="/admin/reservations" className={linkClass('/admin/reservations')}>
+                  </div>
+                </Link>
+              )}
+              {hasAnyAccess('Reservations') && (
+                <Link to="/admin/reservations" className={linkClass('/admin/reservations')}>
+                  <div className="flex items-center gap-2.5">
                     <CalendarDays size={16} />
                     <span className="text-xs font-semibold">Suite Bookings (Reservations)</span>
-                  </Link>
-                )}
-                {hasAnyAccess('CRM & Guests') && (
-                  <Link to="/admin/crm" className={linkClass('/admin/crm')}>
+                  </div>
+                  <Badge count={counters.reservations} />
+                </Link>
+              )}
+              {hasAnyAccess('CRM & Guests') && (
+                <Link to="/admin/crm" className={linkClass('/admin/crm')}>
+                  <div className="flex items-center gap-2.5">
                     <Users size={16} />
                     <span className="text-xs font-semibold">CRM Guest Directory</span>
-                  </Link>
-                )}
-                {hasAnyAccess('Lost & Found') && (
-                  <Link to="/admin/lost-found" className={linkClass('/admin/lost-found')}>
+                  </div>
+                </Link>
+              )}
+              {hasAnyAccess('Lost & Found') && (
+                <Link to="/admin/lost-found" className={linkClass('/admin/lost-found')}>
+                  <div className="flex items-center gap-2.5">
                     <SearchCheck size={16} />
                     <span className="text-xs font-semibold">Lost & Found Registry</span>
-                  </Link>
-                )}
-              </div>
+                  </div>
+                </Link>
+              )}
             </div>
-          )}
+          </div>
 
-          {/* CATEGORY 3: HOTEL OPERATIONS */}
-          {(hasAnyAccess('Housekeeping') || hasAnyAccess('Laundry') || hasAnyAccess('Store Keeping') || hasAnyAccess('Maintenance') || hasAnyAccess('Restaurant Desk') || hasAnyAccess('Kitchen Desk') || hasAnyAccess('Order History') || hasAnyAccess('Guest Services')) && (
-            <div className="space-y-1">
-              <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Hotel Operations</h4>
-              <div className="space-y-0.5">
-                {hasAnyAccess('Housekeeping') && (
-                  <Link to="/admin/housekeeping" className={linkClass('/admin/housekeeping')}>
+          <div className="space-y-1">
+            <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Hotel Operations</h4>
+            <div className="space-y-0.5">
+              {hasAnyAccess('Housekeeping') && (
+                <Link to="/admin/housekeeping" className={linkClass('/admin/housekeeping')}>
+                  <div className="flex items-center gap-2.5">
                     <Sparkles size={16} />
                     <span className="text-xs font-semibold">Housekeeping Cleaning</span>
-                  </Link>
-                )}
-                {hasAnyAccess('Laundry') && (
-                  <Link to="/admin/laundry" className={linkClass('/admin/laundry')}>
+                  </div>
+                  <Badge count={counters.housekeeping} />
+                </Link>
+              )}
+              {hasAnyAccess('Laundry') && (
+                <Link to="/admin/laundry" className={linkClass('/admin/laundry')}>
+                  <div className="flex items-center gap-2.5">
                     <Shirt size={16} />
                     <span className="text-xs font-semibold">Laundry Department</span>
-                  </Link>
-                )}
-                {hasAnyAccess('Maintenance') && (
-                  <Link to="/admin/maintenance" className={linkClass('/admin/maintenance')}>
+                  </div>
+                </Link>
+              )}
+              {hasAnyAccess('Maintenance') && (
+                <Link to="/admin/maintenance" className={linkClass('/admin/maintenance')}>
+                  <div className="flex items-center gap-2.5">
                     <Wrench size={16} />
                     <span className="text-xs font-semibold">Maintenance Department</span>
-                  </Link>
-                )}
-                {(hasAnyAccess('Store Keeping') || user?.role === 'super_admin') && (
-                  <Link to="/admin/store" className={linkClass('/admin/store')}>
+                  </div>
+                  <Badge count={counters.maintenance} />
+                </Link>
+              )}
+              {(hasAnyAccess('Store Keeping') || user?.role === 'super_admin') && (
+                <Link to="/admin/store" className={linkClass('/admin/store')}>
+                  <div className="flex items-center gap-2.5">
                     <Archive size={16} />
                     <span className="text-xs font-semibold">Stores & Warehouses</span>
-                  </Link>
-                )}
-                {(hasAnyAccess('Restaurant Desk') || hasAnyAccess('Kitchen Desk') || hasAnyAccess('Order History') || user?.role === 'super_admin') && (
-                  <Link to="/admin/restaurant" className={linkClass('/admin/restaurant')}>
+                  </div>
+                </Link>
+              )}
+              {(hasAnyAccess('Restaurant Desk') || hasAnyAccess('Kitchen Desk') || hasAnyAccess('Order History') || user?.role === 'super_admin') && (
+                <Link to="/admin/restaurant" className={linkClass('/admin/restaurant')}>
+                  <div className="flex items-center gap-2.5">
                     <ChefHat size={16} />
                     <span className="text-xs font-semibold">Restaurant & Kitchen</span>
-                  </Link>
-                )}
-                {(hasAnyAccess('Service Portals') || user?.role === 'super_admin') && (
-                  <Link to="/admin/services-portal" className={linkClass('/admin/services-portal')}>
+                  </div>
+                  <Badge count={counters.restaurant} />
+                </Link>
+              )}
+              {(hasAnyAccess('Service Portals') || user?.role === 'super_admin') && (
+                <Link to="/admin/services-portal" className={linkClass('/admin/services-portal')}>
+                  <div className="flex items-center gap-2.5">
                     <Compass size={16} />
                     <span className="text-xs font-semibold">🛎️ Service Portals</span>
-                  </Link>
-                )}
-              </div>
+                  </div>
+                </Link>
+              )}
             </div>
-          )}
+          </div>
 
-          {/* CATEGORY 4: POINT OF SALE */}
-          {(hasAnyAccess('POS') || user?.role === 'super_admin') && (
-            <div className="space-y-1">
-              <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Point of Sale</h4>
-              <div className="space-y-0.5">
-                <Link to="/admin/pos" className={linkClass('/admin/pos')}>
+          <div className="space-y-1">
+            <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Point of Sale</h4>
+            <div className="space-y-0.5">
+              <Link to="/admin/pos" className={linkClass('/admin/pos')}>
+                <div className="flex items-center gap-2.5">
                   <ShoppingCart size={16} />
                   <span className="text-xs font-semibold">POS Checkouts Terminal</span>
-                </Link>
-              </div>
+                </div>
+              </Link>
             </div>
-          )}
+          </div>
 
-          {/* CATEGORY 5: FINANCE & AUDITS */}
-          {(hasAnyAccess('Finance & Billing') || hasAnyAccess('Accounting')) && (
-            <div className="space-y-1">
-              <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Finance & Auditing</h4>
-              <div className="space-y-0.5">
-                {hasAnyAccess('Finance & Billing') && (
-                  <Link to="/admin/billing" className={linkClass('/admin/billing')}>
+          <div className="space-y-1">
+            <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Finance & Auditing</h4>
+            <div className="space-y-0.5">
+              {hasAnyAccess('Finance & Billing') && (
+                <Link to="/admin/billing" className={linkClass('/admin/billing')}>
+                  <div className="flex items-center gap-2.5">
                     <FileText size={16} />
                     <span className="text-xs font-semibold">Folios & Billings</span>
-                  </Link>
-                )}
-                {hasAnyAccess('Accounting') && (
-                  <Link to="/admin/accounting" className={linkClass('/admin/accounting')}>
+                  </div>
+                </Link>
+              )}
+              {hasAnyAccess('Accounting') && (
+                <Link to="/admin/accounting" className={linkClass('/admin/accounting')}>
+                  <div className="flex items-center gap-2.5">
                     <Wallet size={16} />
                     <span className="text-xs font-semibold">General Ledger & Accounts</span>
-                  </Link>
-                )}
-              </div>
+                  </div>
+                </Link>
+              )}
             </div>
-          )}
+          </div>
 
-          {/* CATEGORY 6: SYSTEM CONTROL */}
-          {(hasAnyAccess('Rooms') || user?.role === 'super_admin' || hasAnyAccess('Channel Manager') || hasAnyAccess('Staff & Roles') || hasAnyAccess('Leave & Absences') || hasAnyAccess('Website CMS') || hasAnyAccess('Settings')) && (
-            <div className="space-y-1">
-              <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">System Control</h4>
-              <div className="space-y-0.5">
-                {(hasAnyAccess('Rooms') || user?.role === 'super_admin') && (
-                  <Link to="/admin/rooms" className={linkClass('/admin/rooms')}>
+          <div className="space-y-1">
+            <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">System Control</h4>
+            <div className="space-y-0.5">
+              {(hasAnyAccess('Rooms') || user?.role === 'super_admin') && (
+                <Link to="/admin/rooms" className={linkClass('/admin/rooms')}>
+                  <div className="flex items-center gap-2.5">
                     <BedDouble size={16} />
                     <span className="text-xs font-semibold">Rooms, Halls & Inventory</span>
-                  </Link>
-                )}
-                {hasAnyAccess('Channel Manager') && (
-                  <Link to="/admin/channel-manager" className={linkClass('/admin/channel-manager')}>
+                  </div>
+                </Link>
+              )}
+              {hasAnyAccess('Channel Manager') && (
+                <Link to="/admin/channel-manager" className={linkClass('/admin/channel-manager')}>
+                  <div className="flex items-center gap-2.5">
                     <Network size={16} />
                     <span className="text-xs font-semibold">Channel Manager Sync</span>
-                  </Link>
-                )}
-                {(hasAnyAccess('Staff & Roles') || hasAccess('Leave & Absences - Request Leave of Absence') || hasAccess('Leave & Absences - Review Leave Applications')) && (
-                  <Link to="/admin/staff" className={linkClass('/admin/staff')}>
+                  </div>
+                </Link>
+              )}
+              {(hasAnyAccess('Staff & Roles') || hasAccess('Leave & Absences - Request Leave of Absence') || hasAccess('Leave & Absences - Review Leave Applications')) && (
+                <Link to="/admin/staff" className={linkClass('/admin/staff')}>
+                  <div className="flex items-center gap-2.5">
                     <ShieldCheck size={16} />
                     <span className="text-xs font-semibold">Staff & Security Matrix</span>
-                  </Link>
-                )}
-                {hasAnyAccess('Website CMS') && (
-                  <Link to="/admin/cms" className={linkClass('/admin/cms')}>
+                  </div>
+                </Link>
+              )}
+              {hasAnyAccess('Website CMS') && (
+                <Link to="/admin/cms" className={linkClass('/admin/cms')}>
+                  <div className="flex items-center gap-2.5">
                     <Globe size={16} />
                     <span className="text-xs font-semibold">Website CMS Manager</span>
-                  </Link>
-                )}
-                {hasAnyAccess('Settings') && (
-                  <Link to="/admin/settings" className={linkClass('/admin/settings')}>
+                  </div>
+                </Link>
+              )}
+              {hasAnyAccess('Settings') && (
+                <Link to="/admin/settings" className={linkClass('/admin/settings')}>
+                  <div className="flex items-center gap-2.5">
                     <Settings size={16} />
                     <span className="text-xs font-semibold">System Settings</span>
-                  </Link>
-                )}
-              </div>
+                  </div>
+                </Link>
+              )}
             </div>
-          )}
+          </div>
         </nav>
 
         <div className="p-4 border-t border-dark-700/50">
@@ -541,15 +507,10 @@ const AdminLayout = () => {
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 overflow-y-auto bg-dark-900 flex flex-col min-w-0">
-        {/* Topbar */}
         <header className="glass-panel sticky top-0 z-30 p-4 flex justify-between items-center">
           <div className="flex items-center space-x-4">
-            <button 
-              onClick={toggleMobileMenu}
-              className="p-1 -ml-1 md:hidden text-gray-400 hover:text-white rounded-md hover:bg-dark-700 transition-colors"
-            >
+            <button onClick={toggleMobileMenu} className="p-1 -ml-1 md:hidden text-gray-400 hover:text-white rounded-md hover:bg-dark-700 transition-colors">
               <Menu size={24} />
             </button>
             <h2 className="text-xl font-medium hidden sm:block">Property Management System</h2>
@@ -560,23 +521,16 @@ const AdminLayout = () => {
           </div>
           <div className="flex items-center space-x-4">
             <TopbarAttendanceClock />
-            
-            {/* Topbar Operations Chat Notification Hub */}
             {hasAnyAccess('Internal Messaging') && (
-              <Link 
-                to="/admin/messages" 
-                className="relative p-2 rounded-full text-gray-400 hover:text-white hover:bg-dark-700 transition-all duration-300 active:scale-95 group"
-                title="Operations Chat Terminal"
-              >
+              <Link to="/admin/messages" className="relative p-2 rounded-full text-gray-400 hover:text-white hover:bg-dark-700 transition-all duration-300 active:scale-95 group" title="Operations Chat Terminal">
                 <MessageSquare size={20} className="group-hover:rotate-[10deg] transition-transform duration-300" />
-                {unreadCount > 0 && (
+                {counters.internalMessaging > 0 && (
                   <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] font-black tracking-tighter px-1 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.6)]">
-                    {unreadCount > 99 ? '99+' : unreadCount}
+                    {counters.internalMessaging > 99 ? '99+' : counters.internalMessaging}
                   </span>
                 )}
               </Link>
             )}
-
             <button onClick={toggleTheme} className="p-2 rounded-full text-gray-400 hover:text-white hover:bg-dark-700 transition-colors">
               {isDarkTheme ? <Sun size={20} /> : <Moon size={20} />}
             </button>
@@ -590,7 +544,6 @@ const AdminLayout = () => {
           </div>
         </header>
 
-        {/* Content Area */}
         <div className="p-4 md:p-8 flex-1 flex flex-col min-w-0">
           {isRouteForbidden ? (
             <div className="m-auto glass-panel text-center p-8 rounded-2xl max-w-md w-full border border-dark-700 shadow-2xl animate-in fade-in zoom-in-95 duration-300">
@@ -601,16 +554,7 @@ const AdminLayout = () => {
               <p className="text-gray-400 mb-6 font-medium">
                 Your role does not have permission to view the <strong>{Array.isArray(requiredPermission) ? requiredPermission.join(' / ') : requiredPermission}</strong> module.
               </p>
-              <p className="text-gray-500 text-xs mb-8">
-                Please contact the hotel administrator to adjust your dynamic security permissions matrix.
-              </p>
-              <button 
-                type="button"
-                onClick={() => {
-                  window.location.href = getDefaultAdminRoute(user.role, hasAccess);
-                }}
-                className="bg-brand-500 hover:bg-brand-600 text-dark-950 font-bold px-6 py-3 rounded-xl transition-all"
-              >
+              <button type="button" onClick={() => { window.location.href = getDefaultAdminRoute(user.role, hasAccess); }} className="bg-brand-500 hover:bg-brand-600 text-dark-950 font-bold px-6 py-3 rounded-xl transition-all">
                 Go to my Department Home
               </button>
             </div>
@@ -620,6 +564,7 @@ const AdminLayout = () => {
         </div>
       </main>
     </div>
+    
   );
 };
 

@@ -4,6 +4,7 @@ import PublicLayout from './layouts/PublicLayout';
 import AdminLayout from './layouts/AdminLayout';
 import GuestLayout from './layouts/GuestLayout';
 import AuthLayout from './layouts/AuthLayout';
+import { NotificationProvider } from './context/NotificationContext';
 
 // Public Pages (Lazy Loaded)
 const Home = lazy(() => import('./pages/Home'));
@@ -84,93 +85,94 @@ function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <Toaster position="top-right" toastOptions={{ duration: 4000, className: 'glass-panel text-white' }} />
-        <Router>
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            {/* Public Routes */}
-            <Route element={<PublicLayout />}>
-              <Route path="/" element={<Home />} />
-              <Route path="/about" element={<About />} />
-              <Route path="/gallery" element={<Gallery />} />
-              <Route path="/amenities" element={<Amenities />} />
-              <Route path="/apartments" element={<Apartments />} />
-              <Route path="/booking" element={<Booking />} />
-              <Route path="/contact" element={<Contact />} />
-              <Route path="/room/:id" element={<RoomDetails />} />
-              <Route path="/payment-success" element={<PaymentSuccess />} />
-              <Route path="/terms" element={<Terms />} />
-              <Route path="/privacy" element={<PrivacyPolicy />} />
-              <Route path="/cancellation" element={<CancellationPolicy />} />
-              <Route path="/faq" element={<FAQ />} />
-            </Route>
+        <NotificationProvider>
+          <Router>
+            <Suspense fallback={<PageLoader />}> 
+              <Routes>
+                {/* Public Routes */}
+                <Route element={<PublicLayout />}> 
+                  <Route path="/" element={<Home />} />
+                  <Route path="/about" element={<About />} />
+                  <Route path="/gallery" element={<Gallery />} />
+                  <Route path="/amenities" element={<Amenities />} />
+                  <Route path="/apartments" element={<Apartments />} />
+                  <Route path="/booking" element={<Booking />} />
+                  <Route path="/contact" element={<Contact />} />
+                  <Route path="/room/:id" element={<RoomDetails />} />
+                  <Route path="/payment-success" element={<PaymentSuccess />} />
+                  <Route path="/terms" element={<Terms />} />
+                  <Route path="/privacy" element={<PrivacyPolicy />} />
+                  <Route path="/cancellation" element={<CancellationPolicy />} />
+                  <Route path="/faq" element={<FAQ />} />
+                </Route>
 
-            {/* Auth Routes */}
-            <Route element={<AuthLayout />}>
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-            </Route>
+                {/* Auth Routes */}
+                <Route element={<AuthLayout />}> 
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/register" element={<Register />} />
+                  <Route path="/forgot-password" element={<ForgotPassword />} />
+                  <Route path="/reset-password" element={<ResetPassword />} />
+                </Route>
 
-            {/* Admin Routes */}
-            <Route path="/admin" element={<AdminLayout />}>
-              <Route index element={<AdminDashboard />} />
-              <Route path="frontdesk" element={<AdminFrontDesk />} />
-              <Route path="calendar" element={<AdminCalendar />} />
-              <Route path="reservations" element={<AdminReservations />} />
-              <Route path="rooms" element={<AdminRooms />} />
-              <Route path="pricing" element={<AdminPricing />} />
-              <Route path="housekeeping" element={<AdminHousekeeping />} />
-              <Route path="maintenance" element={<AdminMaintenance />} />
-              <Route path="crm" element={<AdminGuests />} />
-              <Route path="billing" element={<AdminBilling />} />
-              <Route path="reports" element={<AdminReports />} />
-              <Route path="staff" element={<AdminStaffManagement />} />
-              <Route path="channel-manager" element={<AdminChannelManager />} />
-              <Route path="settings" element={<AdminSettings />} />
-              <Route path="cms" element={<AdminCMS />} />
-              <Route path="automations" element={<AdminAutomations />} />
-              <Route path="services" element={<AdminGuestServices />} />
-              <Route path="laundry" element={<AdminLaundry />} />
-              <Route path="pos" element={<AdminPOS />} />
-              <Route path="store" element={<AdminStoreKeeping />} />
-              <Route path="security" element={<AdminSecurity />} />
-              <Route path="accounting" element={<AdminAccounting />} />
-              <Route path="duty-reports" element={<AdminDutyReports />} />
-              <Route path="lost-found" element={<AdminLostFound />} />
-              <Route path="reminders" element={<AdminReminders />} />
-              <Route path="messages" element={<AdminInternalMessages />} />
-              <Route path="monthly-reports" element={<AdminMonthlyReports />} />
-              <Route path="restaurant" element={<AdminRestaurantKitchen />} />
-              <Route path="services-portal" element={<AdminServicesPortal />} />
-            </Route>
+                {/* Admin Routes */}
+                <Route path="/admin" element={<AdminLayout />}> 
+                  <Route index element={<AdminDashboard />} />
+                  <Route path="frontdesk" element={<AdminFrontDesk />} />
+                  <Route path="calendar" element={<AdminCalendar />} />
+                  <Route path="reservations" element={<AdminReservations />} />
+                  <Route path="rooms" element={<AdminRooms />} />
+                  <Route path="pricing" element={<AdminPricing />} />
+                  <Route path="housekeeping" element={<AdminHousekeeping />} />
+                  <Route path="maintenance" element={<AdminMaintenance />} />
+                  <Route path="crm" element={<AdminGuests />} />
+                  <Route path="billing" element={<AdminBilling />} />
+                  <Route path="reports" element={<AdminReports />} />
+                  <Route path="staff" element={<AdminStaffManagement />} />
+                  <Route path="channel-manager" element={<AdminChannelManager />} />
+                  <Route path="settings" element={<AdminSettings />} />
+                  <Route path="cms" element={<AdminCMS />} />
+                  <Route path="automations" element={<AdminAutomations />} />
+                  <Route path="services" element={<AdminGuestServices />} />
+                  <Route path="laundry" element={<AdminLaundry />} />
+                  <Route path="pos" element={<AdminPOS />} />
+                  <Route path="store" element={<AdminStoreKeeping />} />
+                  <Route path="security" element={<AdminSecurity />} />
+                  <Route path="accounting" element={<AdminAccounting />} />
+                  <Route path="duty-reports" element={<AdminDutyReports />} />
+                  <Route path="lost-found" element={<AdminLostFound />} />
+                  <Route path="reminders" element={<AdminReminders />} />
+                  <Route path="messages" element={<AdminInternalMessages />} />
+                  <Route path="monthly-reports" element={<AdminMonthlyReports />} />
+                  <Route path="restaurant" element={<AdminRestaurantKitchen />} />
+                  <Route path="services-portal" element={<AdminServicesPortal />} />
+                </Route>
 
-            {/* Guest Routes */}
-            <Route path="/guest" element={<GuestLayout />}>
-              <Route index element={<GuestDashboard />} />
-              <Route path="bookings" element={<MyBookings />} />
-              <Route path="check-in" element={<CheckIn />} />
-              <Route path="profile" element={<Profile />} />
-              <Route path="services" element={<GuestRequestServices />} />
-              <Route path="financials" element={<GuestFinancials />} />
-            </Route>
+                {/* Guest Routes */}
+                <Route path="/guest" element={<GuestLayout />}> 
+                  <Route index element={<GuestDashboard />} />
+                  <Route path="bookings" element={<MyBookings />} />
+                  <Route path="check-in" element={<CheckIn />} />
+                  <Route path="profile" element={<Profile />} />
+                  <Route path="services" element={<GuestRequestServices />} />
+                  <Route path="financials" element={<GuestFinancials />} />
+                </Route>
 
-            {/* Catch-all 404 Route */}
-            <Route path="*" element={
-              <div className="min-h-screen bg-dark-900 flex flex-col items-center justify-center p-4">
-                <div className="glass-panel text-center p-8 rounded-2xl max-w-md w-full border border-dark-700 shadow-2xl">
-                  <h1 className="text-6xl font-black text-brand-500 mb-4">404</h1>
-                  <h2 className="text-2xl font-bold text-white mb-2">Page Not Found</h2>
-                  <p className="text-gray-400 mb-8">The page you are looking for doesn't exist or has been moved.</p>
-                  <a href="/" className="btn-primary w-full py-3 inline-block">Return Home</a>
-                </div>
-              </div>
-            } />
-          </Routes>
-        </Suspense>
-      </Router>
-    </AuthProvider>
+                {/* Catch-all 404 Route */}
+                <Route path="*" element={
+                  <div className="min-h-screen bg-dark-900 flex flex-col items-center justify-center p-4">
+                    <div className="glass-panel text-center p-8 rounded-2xl max-w-md w-full border border-dark-700 shadow-2xl">
+                      <h1 className="text-6xl font-black text-brand-500 mb-4">404</h1>
+                      <h2 className="text-2xl font-bold text-white mb-2">Page Not Found</h2>
+                      <p className="text-gray-400 mb-8">The page you are looking for doesn't exist or has been moved.</p>
+                      <a href="/" className="btn-primary w-full py-3 inline-block">Return Home</a>
+                    </div>
+                  </div>
+                } />
+              </Routes>
+            </Suspense>
+          </Router>
+        </NotificationProvider>
+      </AuthProvider>
     </ErrorBoundary>
   );
 }

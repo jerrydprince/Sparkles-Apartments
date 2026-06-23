@@ -7,7 +7,8 @@ import { format } from 'date-fns';
 import { 
   Car, Flower2, Droplets, Plus, Clock, User, ShieldCheck, 
   DollarSign, Calendar, Search, RefreshCw, AlertCircle, 
-  Check, ArrowRight, UserCheck, X, ClipboardList, BookOpen, Compass
+  Check, ArrowRight, UserCheck, X, ClipboardList, BookOpen, Compass,
+  Utensils
 } from 'lucide-react';
 
 const ServicesPortal = () => {
@@ -509,6 +510,7 @@ const ServicesPortal = () => {
   const filteredRequests = requests.filter(req => {
     const serviceName = req.services?.name || '';
     const serviceCat = req.services?.category || '';
+    const internalNotes = req.services?.internal_notes?.toLowerCase().trim() || '';
     
     // Tab filters
     if (activeTab === 'transport') {
@@ -517,6 +519,8 @@ const ServicesPortal = () => {
       if (serviceCat.toLowerCase() !== 'wellness' || (!serviceName.toLowerCase().includes('spa') && !serviceName.toLowerCase().includes('massage'))) return false;
     } else if (activeTab === 'pool') {
       if (!serviceName.toLowerCase().includes('pool')) return false;
+    } else if (activeTab === 'restaurant') {
+      if (internalNotes !== 'restaurant') return false;
     } else {
       return false; // Other tabs don't show request list directly
     }
@@ -539,6 +543,7 @@ const ServicesPortal = () => {
   const activePickupCount = requests.filter(r => (r.services?.category?.toLowerCase() === 'transportation' || r.services?.name?.toLowerCase().includes('pickup')) && ['confirmed', 'scheduled', 'in_progress'].includes(r.status)).length;
   const activeSpaCount = requests.filter(r => r.services?.category?.toLowerCase() === 'wellness' && (r.services?.name?.toLowerCase().includes('spa') || r.services?.name?.toLowerCase().includes('massage')) && ['confirmed', 'scheduled', 'in_progress'].includes(r.status)).length;
   const activePoolCount = requests.filter(r => r.services?.name?.toLowerCase().includes('pool') && ['confirmed', 'scheduled', 'in_progress'].includes(r.status)).length;
+  const activeRestaurantCount = requests.filter(r => r.services?.internal_notes?.toLowerCase().trim() === 'restaurant' && ['confirmed', 'scheduled', 'in_progress'].includes(r.status)).length;
 
   return (
     <div className="min-h-screen pb-12 text-white">
@@ -595,12 +600,12 @@ const ServicesPortal = () => {
         </div>
 
         <div className="bg-dark-800 border border-dark-700 p-5 rounded-2xl flex items-center gap-4 shadow-sm hover:scale-[1.01] transition-all">
-          <div className="w-12 h-12 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-xl flex items-center justify-center">
-            <DollarSign size={24} />
+          <div className="w-12 h-12 bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-xl flex items-center justify-center">
+            <Utensils size={24} />
           </div>
           <div>
-            <span className="block text-[10px] text-gray-450 uppercase tracking-widest font-black">Register Sales</span>
-            <span className="block text-sm text-gold-500 font-bold mt-1">Walk-in Direct Portal</span>
+            <span className="block text-[10px] text-gray-450 uppercase tracking-widest font-black">Restaurant</span>
+            <span className="block text-2xl font-black text-white mt-0.5">{activeRestaurantCount}</span>
           </div>
         </div>
       </div>
@@ -658,6 +663,21 @@ const ServicesPortal = () => {
               {isDeptClosed('pool') && <span className="text-[9px] bg-red-500/15 border border-red-500/20 text-red-400 px-1.5 py-0.2 rounded font-black">CLOSED</span>}
             </button>
 
+            <button
+              onClick={() => { setActiveTab('restaurant'); setSearchQuery(''); }}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-xs font-bold border transition-all ${
+                activeTab === 'restaurant' 
+                  ? 'bg-gradient-to-tr from-brand-900/40 to-brand-850/20 border-brand-500/80 text-white shadow shadow-brand-500/10' 
+                  : 'border-transparent text-gray-450 hover:text-white hover:bg-dark-750/30'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Utensils size={16} className={activeTab === 'restaurant' ? 'text-brand-400' : 'text-gray-500'} />
+                <span>Restaurant Orders</span>
+              </div>
+              {isDeptClosed('restaurant') && <span className="text-[9px] bg-red-500/15 border border-red-500/20 text-red-400 px-1.5 py-0.2 rounded font-black">CLOSED</span>}
+            </button>
+
             <span className="block text-[10px] text-gray-500 font-black uppercase tracking-wider px-3 mt-4 mb-2">Register & Closeout</span>
 
             <button
@@ -701,11 +721,11 @@ const ServicesPortal = () => {
         <div className="lg:col-span-9 space-y-6">
           
           {/* Active List Headers (Search + count for lists) */}
-          {['transport', 'spa', 'pool'].includes(activeTab) && (
+          {['transport', 'spa', 'pool', 'restaurant'].includes(activeTab) && (
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-dark-700/60 pb-4">
               <div>
                 <h2 className="text-xl font-bold flex items-center gap-2">
-                  {activeTab === 'transport' ? 'Airport Pickup & Logistics' : activeTab === 'spa' ? 'Spa & Relaxation Services' : 'Poolside Access Logs'}
+                  {activeTab === 'transport' ? 'Airport Pickup & Logistics' : activeTab === 'spa' ? 'Spa & Relaxation Services' : activeTab === 'pool' ? 'Poolside Access Logs' : 'Restaurant Orders'}
                 </h2>
                 <p className="text-gray-400 text-xs mt-0.5">Manage live booking request items and confirm, schedule, or close logs.</p>
               </div>
