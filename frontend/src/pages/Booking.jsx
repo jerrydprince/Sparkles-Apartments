@@ -1111,8 +1111,8 @@ const BookingEngine = () => {
         }
 
         // E. Render success details & trigger alerts
-        toast.success(`Booking Confirmed via AR Wallet! Ref: ${tempRef}`);
-        setConfirmedBookingRef(tempRef);
+        toast.success(`Booking Confirmed via AR Wallet! Ref: ${insertedBooking.booking_reference}`);
+        setConfirmedBookingRef(insertedBooking.booking_reference);
         setStep(5);
         window.scrollTo({ top: 0, behavior: 'smooth' });
         setIsProcessing(false);
@@ -1129,8 +1129,8 @@ const BookingEngine = () => {
             if (data) triggerAutomationRules('booking_created', data);
           });
       } else {
-        toast.success(`Booking Confirmed! Ref: ${tempRef}`);
-        setConfirmedBookingRef(tempRef);
+        toast.success(`Booking Confirmed! Ref: ${insertedBooking.booking_reference}`);
+        setConfirmedBookingRef(insertedBooking.booking_reference);
         setStep(5);
         window.scrollTo({ top: 0, behavior: 'smooth' });
         setIsProcessing(false);
@@ -1975,7 +1975,7 @@ const BookingEngine = () => {
                                   {!room.isClean ? 'Awaiting Housekeeping Inspection' : 'Unavailable for Selected Dates'}
                                 </button>
                               ) : (
-                                <button onClick={() => { setSelectedRoom(room); setStep(3); }} className={`w-full py-3 font-medium transition-colors ${selectedRoom?.id === room.id ? 'bg-gold-500 text-dark-900' : 'border border-gold-500 text-gold-500 hover:bg-gold-500 hover:text-dark-900'}`}>
+                                <button onClick={() => { setSelectedRoom(room); setStep(3); }} className={`w-full py-3 font-medium transition-colors ${selectedRoom?.id === room.id ? 'bg-gold-500 !text-white' : 'border border-gold-500 text-gold-500 hover:bg-gold-500 hover:!text-white'}`}>
                                   {selectedRoom?.id === room.id ? 'Selected' : 'Select Room'}
                                 </button>
                               )}
@@ -2016,7 +2016,7 @@ const BookingEngine = () => {
                                   ))}
                                 </div>
                               </div>
-                              <button onClick={() => { setSelectedHall(hall); setStep(3); }} className={`w-full py-3 font-semibold transition-all ${selectedHall?.id === hall.id ? 'bg-gold-500 text-dark-900' : 'border border-gold-500 text-gold-500 hover:bg-gold-500 hover:text-dark-900'}`}>
+                              <button onClick={() => { setSelectedHall(hall); setStep(3); }} className={`w-full py-3 font-semibold transition-all ${selectedHall?.id === hall.id ? 'bg-gold-500 !text-white' : 'border border-gold-500 text-gold-500 hover:bg-gold-500 hover:!text-white'}`}>
                                 {selectedHall?.id === hall.id ? 'Selected' : 'Select Hall'}
                               </button>
                             </div>

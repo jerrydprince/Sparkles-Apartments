@@ -111,9 +111,14 @@ const MyBookings = () => {
 
   return (
     <div className="space-y-8 text-white relative">
-      <div>
-        <h2 className="text-2xl font-semibold text-white">Your Reservation History</h2>
-        <p className="text-gray-400 mt-1">Review your upcoming bookings, dynamic invoices, and past luxury stays.</p>
+      <div className="flex justify-between items-center print:hidden">
+        <div>
+          <h2 className="text-2xl font-semibold text-white">Your Reservation History</h2>
+          <p className="text-gray-400 mt-1">Review your upcoming bookings, dynamic invoices, and past luxury stays.</p>
+        </div>
+        <a href="/booking" className="btn-primary py-2.5 px-6 text-sm rounded font-bold uppercase tracking-wider shadow-md">
+          Book a Room
+        </a>
       </div>
 
       {bookings.length === 0 ? (

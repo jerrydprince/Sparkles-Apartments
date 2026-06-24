@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import { Eye, EyeOff } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -24,9 +25,13 @@ const Login = () => {
     try {
       const { user: loggedUser } = await login({ email, password });
       console.log('Login successful', loggedUser);
+      
+      const { data: profileData } = await supabase.from('profiles').select('role').eq('id', loggedUser.id).single();
+      const role = profileData?.role || 'guest';
+
       toast.success('Successfully logged in!', { id: toastId });
       // Delay navigation briefly so the toast can appear before the route changes
-      setTimeout(() => navigate('/admin'), 200);
+      setTimeout(() => navigate(role === 'guest' ? '/guest' : '/admin'), 200);
       // No need for manual location reload – context will update UI
       // The context state will update and AuthLayout will automatically redirect to the dashboard.
       // We do not use window.location.href because it can interrupt Supabase localStorage persistence.

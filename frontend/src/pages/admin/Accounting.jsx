@@ -10,6 +10,7 @@ import {
   ChevronRight, Sparkles, X, ChevronLeft, Archive 
 } from 'lucide-react';
 import StoreRequisitionModal from '../../components/admin/StoreRequisitionModal';
+import Pagination from '../../components/Pagination';
 import { 
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, 
   CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell, 
@@ -118,6 +119,12 @@ const AdminAccounting = () => {
   const [isCloseReportModalOpen, setIsCloseReportModalOpen] = useState(false);
   const [debtorSearch, setDebtorSearch] = useState('');
   const [debtorFilter, setDebtorFilter] = useState('all');
+
+  const ITEMS_PER_PAGE = 50;
+  const [expensePage, setExpensePage] = useState(1);
+  const [ledgerPage, setLedgerPage] = useState(1);
+  const [arPage, setArPage] = useState(1);
+  const [arSearchTerm, setArSearchTerm] = useState('');
   const [corporateBookings, setCorporateBookings] = useState([]);
   
   // Debt settlement states
@@ -2843,6 +2850,26 @@ const AdminAccounting = () => {
     downloadCSV(csvContent, `Balance_Sheet_${reportEndDate}.csv`);
   };
 
+  const baseExpenses = expenses.filter(exp => {
+    const matchesSearch = (exp.description || '').toLowerCase().includes(expenseSearch.toLowerCase()) || 
+                          (exp.paid_to || '').toLowerCase().includes(expenseSearch.toLowerCase());
+    const matchesCategory = expenseCategory === 'all' || exp.category === expenseCategory;
+    return matchesSearch && matchesCategory;
+  });
+  const paginatedExpenses = baseExpenses.slice((expensePage - 1) * ITEMS_PER_PAGE, expensePage * ITEMS_PER_PAGE);
+
+  const baseUnifiedLedger = getUnifiedLedger();
+  const paginatedLedger = baseUnifiedLedger.slice((ledgerPage - 1) * ITEMS_PER_PAGE, ledgerPage * ITEMS_PER_PAGE);
+
+  const baseMergedAR = getMergedARAccounts();
+  const filteredMergedAR = baseMergedAR.filter(ar => {
+    const s = arSearchTerm.toLowerCase();
+    return (ar.guest_name || '').toLowerCase().includes(s) || 
+           (ar.guest_email || '').toLowerCase().includes(s) || 
+           (ar.id || '').toLowerCase().includes(s);
+  });
+  const paginatedARAccounts = filteredMergedAR.slice((arPage - 1) * ITEMS_PER_PAGE, arPage * ITEMS_PER_PAGE);
+
   return (
     <div className="pb-12 text-white">
       {/* Header Panel */}
@@ -3146,14 +3173,7 @@ const AdminAccounting = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-dark-700/40">
-                {expenses
-                  .filter(exp => {
-                    const matchesSearch = (exp.description || '').toLowerCase().includes(expenseSearch.toLowerCase()) || 
-                                          (exp.paid_to || '').toLowerCase().includes(expenseSearch.toLowerCase());
-                    const matchesCategory = expenseCategory === 'all' || exp.category === expenseCategory;
-                    return matchesSearch && matchesCategory;
-                  })
-                  .map(exp => (
+                {paginatedExpenses.map(exp => (
                     <tr key={exp.id} className="hover:bg-dark-700/20 transition-colors">
                       <td className="p-4 text-gray-400 font-mono">{format(new Date(exp.expense_date), 'MMM dd, yyyy')}</td>
                       <td className="p-4">
@@ -3176,14 +3196,19 @@ const AdminAccounting = () => {
                       </td>
                     </tr>
                   ))}
-                {expenses.length === 0 && (
+                {baseExpenses.length === 0 && (
                   <tr>
-                    <td colSpan="7" className="p-12 text-center text-gray-500 text-sm">No expenses logged yet.</td>
+                    <td colSpan="7" className="p-12 text-center text-gray-500 text-sm">No expenses found.</td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+          {baseExpenses.length > ITEMS_PER_PAGE && (
+            <div className="p-4 border-t border-dark-700/50 bg-dark-800/80">
+              <Pagination currentPage={expensePage} totalPages={Math.ceil(baseExpenses.length / ITEMS_PER_PAGE)} limit={ITEMS_PER_PAGE} onPageChange={setExpensePage} />
+            </div>
+          )}
         </div>
       )}
 
@@ -3410,7 +3435,7 @@ const AdminAccounting = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-dark-700/40">
-                {getUnifiedLedger().map((item, idx) => (
+                {paginatedLedger.map((item, idx) => (
                   <tr key={`ledger-${idx}-${item.id}`} className="hover:bg-dark-700/20 transition-colors">
                     <td className="p-4 text-gray-400 font-mono">{format(new Date(item.date), 'MMM dd, yyyy')}</td>
                     <td className="p-4">
@@ -3454,14 +3479,21 @@ const AdminAccounting = () => {
                     )}
                   </tr>
                 ))}
-                {getUnifiedLedger().length === 0 && (
+                {baseUnifiedLedger.length === 0 && (
                   <tr>
-                    <td colSpan="7" className="p-12 text-center text-gray-500 text-sm">No transactions match your search filters.</td>
+                    <td colSpan={hasAccess('Finance - Process Refunds & Adjustments') ? "9" : "8"} className="p-12 text-center text-gray-500 text-sm">
+                      No general ledger records found.
+                    </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+          {baseUnifiedLedger.length > ITEMS_PER_PAGE && (
+            <div className="p-4 border-t border-dark-700/50 bg-dark-800/80">
+              <Pagination currentPage={ledgerPage} totalPages={Math.ceil(baseUnifiedLedger.length / ITEMS_PER_PAGE)} limit={ITEMS_PER_PAGE} onPageChange={setLedgerPage} />
+            </div>
+          )}
         </div>
       )}
 
@@ -4020,7 +4052,7 @@ const AdminAccounting = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="glass-panel p-6 rounded-2xl border border-dark-700/50 relative overflow-hidden">
               <p className="text-gray-400 text-sm font-semibold uppercase tracking-wider">Total Registered Accounts</p>
-              <h3 className="text-2xl font-black mt-2 text-white font-mono">{getMergedARAccounts().length}</h3>
+              <h3 className="text-2xl font-black mt-2 text-white font-mono">{baseMergedAR.length}</h3>
               <div className="flex items-center gap-1.5 mt-4 text-xs text-green-400 font-semibold">
                 <Check size={14} />
                 <span>Active Prepayments</span>
@@ -4030,7 +4062,7 @@ const AdminAccounting = () => {
             <div className="glass-panel p-6 rounded-2xl border border-dark-700/50 relative overflow-hidden">
               <p className="text-gray-400 text-sm font-semibold uppercase tracking-wider">Total Prepayment Reserve</p>
               <h3 className="text-2xl font-black mt-2 text-green-400 font-mono">
-                ₦{getMergedARAccounts().reduce((sum, a) => sum + Number(a.balance), 0).toLocaleString()}
+                ₦{baseMergedAR.reduce((sum, a) => sum + Number(a.balance), 0).toLocaleString()}
               </h3>
               <div className="flex items-center gap-1.5 mt-4 text-xs text-green-400 font-semibold">
                 <TrendingUp size={14} />
@@ -4050,6 +4082,18 @@ const AdminAccounting = () => {
 
           {/* Wallets Table */}
           <div className="glass-panel rounded-2xl border border-dark-700/50 overflow-hidden">
+            <div className="p-5 border-b border-dark-700/50 bg-dark-800/80">
+              <div className="relative w-full max-w-md">
+                <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input 
+                  type="text" 
+                  value={arSearchTerm}
+                  onChange={(e) => { setArSearchTerm(e.target.value); setArPage(1); }}
+                  placeholder="Live search by guest name, email, or reference..."
+                  className="w-full bg-dark-900 border border-dark-700/60 p-2.5 pl-10 rounded-xl text-sm outline-none focus:border-brand-500 text-white"
+                />
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm whitespace-nowrap">
                 <thead className="bg-dark-900/60 border-b border-dark-700/50 text-gray-400">
@@ -4064,7 +4108,7 @@ const AdminAccounting = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dark-700/40">
-                  {getMergedARAccounts().map((item, idx) => (
+                  {paginatedARAccounts.map((item, idx) => (
                     <tr key={`ar-${idx}-${item.id}`} className="hover:bg-dark-700/20 transition-colors">
                       <td className="p-4 text-gray-400 font-mono font-bold">{item.id}</td>
                       <td className="p-4">
@@ -4173,14 +4217,19 @@ const AdminAccounting = () => {
                       </td>
                     </tr>
                   ))}
-                  {getMergedARAccounts().length === 0 && (
+                  {filteredMergedAR.length === 0 && (
                     <tr>
-                      <td colSpan="7" className="p-12 text-center text-gray-500 text-sm">No active AR Prepayment accounts. Click the activate button above to create one.</td>
+                      <td colSpan="7" className="p-12 text-center text-gray-500 text-sm">No active prepayment wallets found.</td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
+            {filteredMergedAR.length > ITEMS_PER_PAGE && (
+              <div className="p-4 border-t border-dark-700/50 bg-dark-800/80">
+                <Pagination currentPage={arPage} totalPages={Math.ceil(filteredMergedAR.length / ITEMS_PER_PAGE)} limit={ITEMS_PER_PAGE} onPageChange={setArPage} />
+              </div>
+            )}
           </div>
         </div>
       )}

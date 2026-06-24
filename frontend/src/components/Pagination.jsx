@@ -22,7 +22,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange, limit }) => {
       <button
         onClick={handlePrev}
         disabled={currentPage === 1}
-        className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-gray-800/60 text-gray-300 hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-gray-800/60 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         aria-label="Previous page"
       >
         <ChevronLeft size={14} />
@@ -36,7 +36,7 @@ const Pagination = ({ currentPage, totalPages, onPageChange, limit }) => {
       <button
         onClick={handleNext}
         disabled={currentPage === totalPages}
-        className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-gray-800/60 text-gray-300 hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-gray-800/60 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         aria-label="Next page"
       >
         Next

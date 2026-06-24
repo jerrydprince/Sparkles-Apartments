@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, Navigate } from 'react-router-dom';
 import { LayoutDashboard, CalendarDays, Users, Settings, LogOut, BedDouble, FileText, Globe, Bell, TrendingUp, Sparkles, Network, MessageSquare, ShieldCheck, Zap, ShieldAlert, Menu, X, Sun, Moon, Package, Wallet, ShoppingCart, Archive, Shirt, ClipboardList, SearchCheck, CalendarClock, MailOpen, Award, Wrench, ChefHat, Compass } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
 import TopbarAttendanceClock from '../components/TopbarAttendanceClock';
 import { supabase } from '../lib/supabase';
 import { getDefaultAdminRoute } from '../utils/routes';
@@ -146,6 +147,7 @@ const MODULE_SUBPERMISSIONS = {
 
 const AdminLayout = () => {
   const { user, hasRole, hasAccess, logout } = useAuth();
+  const { counters } = useNotification();
 
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -368,7 +370,7 @@ const AdminLayout = () => {
                     <Sparkles size={16} />
                     <span className="text-xs font-semibold">Housekeeping Cleaning</span>
                   </div>
-
+                  <Badge count={counters.housekeeping} />
                 </Link>
               )}
               {hasAnyAccess('Laundry') && (
@@ -377,6 +379,7 @@ const AdminLayout = () => {
                     <Shirt size={16} />
                     <span className="text-xs font-semibold">Laundry Department</span>
                   </div>
+                  <Badge count={counters.laundry} />
                 </Link>
               )}
               {hasAnyAccess('Maintenance') && (
@@ -385,7 +388,7 @@ const AdminLayout = () => {
                     <Wrench size={16} />
                     <span className="text-xs font-semibold">Maintenance Department</span>
                   </div>
-
+                  <Badge count={counters.maintenance} />
                 </Link>
               )}
               {(hasAnyAccess('Store Keeping') || user?.role === 'super_admin') && (
@@ -402,7 +405,7 @@ const AdminLayout = () => {
                     <ChefHat size={16} />
                     <span className="text-xs font-semibold">Restaurant & Kitchen</span>
                   </div>
-
+                  <Badge count={counters.restaurant} />
                 </Link>
               )}
               {(hasAnyAccess('Service Portals') || user?.role === 'super_admin') && (
@@ -411,6 +414,7 @@ const AdminLayout = () => {
                     <Compass size={16} />
                     <span className="text-xs font-semibold">🛎️ Service Portals</span>
                   </div>
+                  <Badge count={counters.servicePortals} />
                 </Link>
               )}
             </div>
@@ -522,8 +526,23 @@ const AdminLayout = () => {
             {hasAnyAccess('Internal Messaging') && (
               <Link to="/admin/messages" className="relative p-2 rounded-full text-gray-400 hover:text-white hover:bg-dark-700 transition-all duration-300 active:scale-95 group" title="Operations Chat Terminal">
                 <MessageSquare size={20} className="group-hover:rotate-[10deg] transition-transform duration-300" />
+                {counters.internalMessaging > 0 && (
+                  <span className="absolute top-1 right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 border-2 border-dark-900"></span>
+                  </span>
+                )}
               </Link>
             )}
+            <button className="relative p-2 rounded-full text-gray-400 hover:text-white hover:bg-dark-700 transition-colors">
+              <Bell size={20} />
+              {(counters.restaurant + counters.laundry + counters.housekeeping + counters.maintenance + counters.servicePortals) > 0 && (
+                <span className="absolute top-1 right-1 flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 border-2 border-dark-900"></span>
+                </span>
+              )}
+            </button>
             <button onClick={toggleTheme} className="p-2 rounded-full text-gray-400 hover:text-white hover:bg-dark-700 transition-colors">
               {isDarkTheme ? <Sun size={20} /> : <Moon size={20} />}
             </button>

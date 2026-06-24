@@ -69,6 +69,7 @@ const GuestFinancials = lazy(() => import('./pages/guest/Financials'));
 
 // Context & Providers
 import { AuthProvider } from './context/AuthContext';
+import { NotificationProvider } from './context/NotificationContext';
 import { Toaster } from 'react-hot-toast';
 
 import ErrorBoundary from './components/ErrorBoundary';
@@ -84,9 +85,10 @@ function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <Toaster position="top-center" />
-        <Router>
-          <Suspense fallback={<PageLoader />}> 
+        <NotificationProvider>
+          <Toaster position="top-center" />
+          <Router>
+            <Suspense fallback={<PageLoader />}>
             <Routes>
               {/* Public Routes */}
               <Route element={<PublicLayout />}>
@@ -170,6 +172,7 @@ function App() {
             </Routes>
           </Suspense>
         </Router>
+        </NotificationProvider>
       </AuthProvider>
     </ErrorBoundary>
   );
