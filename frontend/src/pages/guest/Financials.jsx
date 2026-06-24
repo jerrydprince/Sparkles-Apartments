@@ -201,16 +201,12 @@ const GuestFinancials = () => {
                           p.notes?.toLowerCase().includes('restaurant room service') ||
                           p.notes?.toLowerCase().includes('corporate charge');
             const isLaundry = p.transaction_ref?.startsWith('LDY-') || p.notes?.toLowerCase().includes('laundry');
-            const isARDeposit = p.transaction_ref?.startsWith('AR-DEP-') || 
-                                p.notes?.toLowerCase().includes('deposit') || 
-                                p.notes?.toLowerCase().includes('deposited') || 
+            const isARFunding = p.transaction_ref?.startsWith('AR-DEP-') || 
+                                (p.notes?.toLowerCase().includes('deposit') && !p.notes?.toLowerCase().includes('paid from')) || 
                                 p.notes?.toLowerCase().includes('initial ar wallet') ||
-                                p.notes?.toLowerCase().includes('prepayment wallet deposit') ||
-                                p.notes?.toLowerCase().includes('ar prepayment wallet deposit');
+                                (p.notes?.toLowerCase().includes('prepayment wallet deposit') && !p.notes?.toLowerCase().includes('paid from'));
             const isAR = p.method === 'ar' || p.method === 'ar_wallet' || p.method === 'ar_prepayment_wallet' ||
-                         p.notes?.toLowerCase().includes('ar prepayment') ||
-                         p.notes?.toLowerCase().includes('ar wallet') ||
-                         p.notes?.toLowerCase().includes('prepayment wallet');
+                         p.notes?.toLowerCase().includes('paid from guest ar');
             return {
               id: p.id,
               date: p.processed_at || p.created_at,
@@ -221,12 +217,12 @@ const GuestFinancials = () => {
                   ? p.notes || `POS Walk-in Sale settled via ${p.method?.toUpperCase()}`
                   : (p.is_refund === true
                     ? p.notes || "AR Prepayment Wallet Refund"
-                    : (isARDeposit
-                      ? p.notes || `AR Prepayment Wallet Deposit`
-                      : `Guest Booking Payment - ${p.bookings?.guest_name || 'Confirmed Guest'}`))),
+                    : (isARFunding
+                      ? p.notes || `AR Prepayment Wallet Deposit (Funding)`
+                      : (isAR ? `Folio Charge (AR Payment) - ${p.bookings?.guest_name || 'Confirmed Guest'}` : `Guest Booking Payment - ${p.bookings?.guest_name || 'Confirmed Guest'}`)))),
               method: isAR ? 'ar' : p.method,
               status: p.status,
-              type: 'inflow',
+              type: (isAR && !isARFunding) ? 'outflow' : 'inflow',
               booking_id: p.booking_id,
               notes: p.notes || '',
               category: isLaundry ? 'Laundry Revenue' : (isPOS ? 'POS Revenue' : 'Booking Revenue'),
@@ -291,7 +287,8 @@ const GuestFinancials = () => {
         const formatted = statement.map(rec => {
           const descLower = (rec.description || '').toLowerCase();
           const notesLower = (rec.notes || '').toLowerCase();
-          const isDeposit = descLower.includes('deposit') || notesLower.includes('deposit') || descLower.includes('deposited') || notesLower.includes('deposited') || notesLower.includes('initial ar wallet') || descLower.includes('refund') || notesLower.includes('refund') || descLower.includes('refunded') || notesLower.includes('refunded') || descLower.includes('credit') || notesLower.includes('credit') || rec.is_refund === true;
+          const isDepositText = descLower.includes('deposit') || notesLower.includes('deposit') || descLower.includes('deposited') || notesLower.includes('deposited') || notesLower.includes('initial ar wallet') || descLower.includes('refund') || notesLower.includes('refund') || descLower.includes('refunded') || notesLower.includes('refunded') || descLower.includes('credit') || notesLower.includes('credit');
+          const isDeposit = (isDepositText && !notesLower.includes('paid from') && !descLower.includes('paid from')) || rec.is_refund === true;
           return {
             id: rec.id,
             date: rec.date,

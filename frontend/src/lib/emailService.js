@@ -120,7 +120,10 @@ export const triggerAutomationRules = async (triggerEvent, bookingData) => {
     };
     const accentColor = themeColors[systemTheme] || '#DF6853';
 
-    const contactLogo = settingsMap.contact_logo || 'https://images.unsplash.com/photo-1512918728675-ed5a9ecdebfd?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+    let contactLogo = settingsMap.contact_logo || 'https://images.unsplash.com/photo-1512918728675-ed5a9ecdebfd?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80';
+    if (contactLogo && contactLogo.startsWith('/')) {
+      contactLogo = window.location.origin + contactLogo;
+    }
     const contactAddress = settingsMap.contact_address || 'Plot 572 Iduwa Ogenyi Street Mabushi, Off Ahmadu Bello Way, Abuja';
     const contactPhone = settingsMap.contact_phone || '08033214684, 08062332639, 08171278657';
     const contactEmail = settingsMap.contact_email || 'info@sparklesapartments.ng';

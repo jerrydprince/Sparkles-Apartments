@@ -67,6 +67,9 @@ export const NotificationProvider = ({ children }) => {
           const isLaundry = service.category?.toLowerCase() === 'laundry' || service.name?.toLowerCase().includes('laundry') || service.name?.toLowerCase().includes('ironing');
           const isHousekeeping = service.category?.toLowerCase() === 'housekeeping' || service.name?.toLowerCase().includes('cleaning') || service.name?.toLowerCase().includes('towel');
           const isMaintenance = service.category?.toLowerCase() === 'maintenance' || service.name?.toLowerCase().includes('repair');
+          const isTransport = service.category?.toLowerCase() === 'transportation' || service.name?.toLowerCase().includes('pickup');
+          const isSpa = service.category?.toLowerCase() === 'wellness' && (service.name?.toLowerCase().includes('spa') || service.name?.toLowerCase().includes('massage'));
+          const isPool = service.name?.toLowerCase().includes('pool');
           
           if (isMeal) {
             restaurantCount++;
@@ -76,8 +79,8 @@ export const NotificationProvider = ({ children }) => {
             housekeepingCount++;
           } else if (isMaintenance) {
             maintenanceCount++;
-          } else {
-            servicePortalsCount++; // fallback for other guest services
+          } else if (isTransport || isSpa || isPool) {
+            servicePortalsCount++;
           }
         });
 

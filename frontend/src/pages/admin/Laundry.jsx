@@ -346,7 +346,7 @@ const AdminLaundry = () => {
           )
         `)
         .or('category.eq.Laundry,name.ilike.%laundry%', { foreignTable: 'services' })
-        .in('status', ['confirmed', 'scheduled', 'in_progress'])
+        .in('status', ['pending', 'confirmed', 'scheduled', 'in_progress'])
         .order('created_at', { ascending: false });
 
       if (reqErr) throw reqErr;

@@ -590,8 +590,8 @@ const RestaurantKitchen = () => {
 
       // Filter to restaurant services orders
       const filtered = (data || []).filter(item => 
-        item.services?.internal_notes?.toLowerCase() === 'restaurant' &&
-        item.notes?.startsWith('restaurant_order:')
+        item.services?.internal_notes?.toLowerCase() === 'restaurant' ||
+        item.services?.name?.toLowerCase().includes('breakfast')
       );
 
       setOrders(filtered);
