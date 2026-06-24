@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import TopbarAttendanceClock from '../components/TopbarAttendanceClock';
 import { supabase } from '../lib/supabase';
 import { getDefaultAdminRoute } from '../utils/routes';
-import { useNotification } from '../context/NotificationContext';
+
 
 const ROUTE_PERMISSIONS = {
   '/admin/frontdesk': 'Front Desk',
@@ -146,7 +146,7 @@ const MODULE_SUBPERMISSIONS = {
 
 const AdminLayout = () => {
   const { user, hasRole, hasAccess, logout } = useAuth();
-  const { counters } = useNotification();
+
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDarkTheme, setIsDarkTheme] = useState(() => {
@@ -281,9 +281,7 @@ const AdminLayout = () => {
                   <div className="flex items-center gap-2.5">
                     <MessageSquare size={16} />
                     <span className="text-xs font-semibold">Internal Messaging</span>
-                  <Badge count={counters.internalMessaging} />
                   </div>
-                  <Badge count={counters.internalMessaging} />
                 </Link>
               )}
               {hasAnyAccess('Reminders') && (
@@ -292,7 +290,7 @@ const AdminLayout = () => {
                     <CalendarClock size={16} />
                     <span className="text-xs font-semibold">Schedules & Reminders</span>
                   </div>
-                  <Badge count={counters.reminders} />
+
                 </Link>
               )}
               {hasAnyAccess('Reports & Analytics') && (
@@ -339,7 +337,7 @@ const AdminLayout = () => {
                     <CalendarDays size={16} />
                     <span className="text-xs font-semibold">Suite Bookings (Reservations)</span>
                   </div>
-                  <Badge count={counters.reservations} />
+
                 </Link>
               )}
               {hasAnyAccess('CRM & Guests') && (
@@ -370,7 +368,7 @@ const AdminLayout = () => {
                     <Sparkles size={16} />
                     <span className="text-xs font-semibold">Housekeeping Cleaning</span>
                   </div>
-                  <Badge count={counters.housekeeping} />
+
                 </Link>
               )}
               {hasAnyAccess('Laundry') && (
@@ -387,7 +385,7 @@ const AdminLayout = () => {
                     <Wrench size={16} />
                     <span className="text-xs font-semibold">Maintenance Department</span>
                   </div>
-                  <Badge count={counters.maintenance} />
+
                 </Link>
               )}
               {(hasAnyAccess('Store Keeping') || user?.role === 'super_admin') && (
@@ -404,7 +402,7 @@ const AdminLayout = () => {
                     <ChefHat size={16} />
                     <span className="text-xs font-semibold">Restaurant & Kitchen</span>
                   </div>
-                  <Badge count={counters.restaurant} />
+
                 </Link>
               )}
               {(hasAnyAccess('Service Portals') || user?.role === 'super_admin') && (
@@ -524,11 +522,6 @@ const AdminLayout = () => {
             {hasAnyAccess('Internal Messaging') && (
               <Link to="/admin/messages" className="relative p-2 rounded-full text-gray-400 hover:text-white hover:bg-dark-700 transition-all duration-300 active:scale-95 group" title="Operations Chat Terminal">
                 <MessageSquare size={20} className="group-hover:rotate-[10deg] transition-transform duration-300" />
-                {counters.internalMessaging > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] font-black tracking-tighter px-1 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.6)]">
-                    {counters.internalMessaging > 99 ? '99+' : counters.internalMessaging}
-                  </span>
-                )}
               </Link>
             )}
             <button onClick={toggleTheme} className="p-2 rounded-full text-gray-400 hover:text-white hover:bg-dark-700 transition-colors">

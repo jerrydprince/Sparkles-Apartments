@@ -15,7 +15,6 @@ export const validateStrongPassword = (password) => {
 
 // Generate and persist unique browser device signature for concurrent device gates
 export const getOrCreateDeviceId = () => {
-  if (typeof window === 'undefined') return 'server';
   let id = localStorage.getItem('luxe_device_id');
   if (!id) {
     id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2) + Date.now().toString(36);
@@ -571,7 +570,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async ({ email, password }) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const sanitizedEmail = email.trim().toLowerCase();
+  const { data, error } = await supabase.auth.signInWithPassword({ email: sanitizedEmail, password });
     if (error) throw error;
     
     // Log login activity

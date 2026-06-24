@@ -33,7 +33,8 @@ const AuthLayout = () => {
   }, []);
 
   if (user) {
-    return <Navigate to={user.role === 'guest' ? '/guest' : getDefaultAdminRoute(user.role, hasAccess)} replace />;
+    const target = user.role === 'guest' ? '/guest' : '/admin';
+    return <Navigate to={target} replace />;
   }
 
   return (
