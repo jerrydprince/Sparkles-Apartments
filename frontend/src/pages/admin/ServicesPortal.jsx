@@ -509,6 +509,9 @@ const ServicesPortal = () => {
 
   // Filter requests based on query and current tab
   const filteredRequests = requests.filter(req => {
+    // Only show requests for checked-in guests, unless it's transportation/pickup
+    if (req.bookings?.status !== 'checked_in' && activeTab !== 'transport') return false;
+
     const serviceName = req.services?.name || '';
     const serviceCat = req.services?.category || '';
     const internalNotes = req.services?.internal_notes?.toLowerCase().trim() || '';
@@ -542,9 +545,9 @@ const ServicesPortal = () => {
 
   // Render stats cards
   const activePickupCount = requests.filter(r => (r.services?.category?.toLowerCase() === 'transportation' || r.services?.name?.toLowerCase().includes('pickup')) && ['confirmed', 'scheduled', 'in_progress'].includes(r.status)).length;
-  const activeSpaCount = requests.filter(r => r.services?.category?.toLowerCase() === 'wellness' && (r.services?.name?.toLowerCase().includes('spa') || r.services?.name?.toLowerCase().includes('massage')) && ['confirmed', 'scheduled', 'in_progress'].includes(r.status)).length;
-  const activePoolCount = requests.filter(r => r.services?.name?.toLowerCase().includes('pool') && ['confirmed', 'scheduled', 'in_progress'].includes(r.status)).length;
-  const activeRestaurantCount = requests.filter(r => r.services?.internal_notes?.toLowerCase().trim() === 'restaurant' && ['confirmed', 'scheduled', 'in_progress'].includes(r.status)).length;
+  const activeSpaCount = requests.filter(r => r.bookings?.status === 'checked_in' && r.services?.category?.toLowerCase() === 'wellness' && (r.services?.name?.toLowerCase().includes('spa') || r.services?.name?.toLowerCase().includes('massage')) && ['confirmed', 'scheduled', 'in_progress'].includes(r.status)).length;
+  const activePoolCount = requests.filter(r => r.bookings?.status === 'checked_in' && r.services?.name?.toLowerCase().includes('pool') && ['confirmed', 'scheduled', 'in_progress'].includes(r.status)).length;
+  const activeRestaurantCount = requests.filter(r => r.bookings?.status === 'checked_in' && r.services?.internal_notes?.toLowerCase().trim() === 'restaurant' && ['confirmed', 'scheduled', 'in_progress'].includes(r.status)).length;
 
   return (
     <div className="min-h-screen pb-12 text-white">

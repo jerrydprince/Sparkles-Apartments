@@ -352,7 +352,8 @@ const AdminLaundry = () => {
       if (reqErr) throw reqErr;
       
       // Filter out any entries that might be null due to inner join filtering limits
-      const resolvedRequests = (activeRequests || []).filter(r => r.bookings && r.services);
+      // and ensure we only show requests for checked-in guests
+      const resolvedRequests = (activeRequests || []).filter(r => r.bookings && r.services && r.bookings.status === 'checked_in');
       setInhouseRequests(resolvedRequests);
 
       // 2. Fetch Completed Inhouse Laundry History

@@ -267,6 +267,8 @@ const AdminLayout = () => {
         </div>
         
         <nav className="flex-1 px-3 py-6 space-y-4.5 overflow-y-auto custom-scrollbar select-none">
+          
+          {(hasAnyAccess('Dashboard') || hasAnyAccess('Internal Messaging') || hasAnyAccess('Reminders') || hasAnyAccess('Reports & Analytics') || hasAnyAccess('Duty Logs') || hasAnyAccess('Monthly Reports')) && (
           <div className="space-y-1">
             <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Overview & Comms</h4>
             <div className="space-y-0.5">
@@ -292,7 +294,6 @@ const AdminLayout = () => {
                     <CalendarClock size={16} />
                     <span className="text-xs font-semibold">Schedules & Reminders</span>
                   </div>
-
                 </Link>
               )}
               {hasAnyAccess('Reports & Analytics') && (
@@ -321,7 +322,9 @@ const AdminLayout = () => {
               )}
             </div>
           </div>
+          )}
 
+          {(hasAnyAccess('Front Desk') || hasAnyAccess('Reservations') || hasAnyAccess('CRM & Guests') || hasAnyAccess('Lost & Found')) && (
           <div className="space-y-1">
             <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Front Office</h4>
             <div className="space-y-0.5">
@@ -339,7 +342,6 @@ const AdminLayout = () => {
                     <CalendarDays size={16} />
                     <span className="text-xs font-semibold">Suite Bookings (Reservations)</span>
                   </div>
-
                 </Link>
               )}
               {hasAnyAccess('CRM & Guests') && (
@@ -360,7 +362,9 @@ const AdminLayout = () => {
               )}
             </div>
           </div>
+          )}
 
+          {(hasAnyAccess('Housekeeping') || hasAnyAccess('Laundry') || hasAnyAccess('Maintenance') || hasAnyAccess('Store Keeping') || hasAnyAccess('Restaurant Desk') || hasAnyAccess('Kitchen Desk') || hasAnyAccess('Order History') || hasAnyAccess('Service Portals') || user?.role === 'super_admin') && (
           <div className="space-y-1">
             <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Hotel Operations</h4>
             <div className="space-y-0.5">
@@ -419,7 +423,9 @@ const AdminLayout = () => {
               )}
             </div>
           </div>
+          )}
 
+          {(hasAnyAccess('POS') || user?.role === 'super_admin') && (
           <div className="space-y-1">
             <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Point of Sale</h4>
             <div className="space-y-0.5">
@@ -431,7 +437,9 @@ const AdminLayout = () => {
               </Link>
             </div>
           </div>
+          )}
 
+          {(hasAnyAccess('Finance & Billing') || hasAnyAccess('Accounting')) && (
           <div className="space-y-1">
             <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Finance & Auditing</h4>
             <div className="space-y-0.5">
@@ -453,7 +461,9 @@ const AdminLayout = () => {
               )}
             </div>
           </div>
+          )}
 
+          {(hasAnyAccess('Rooms') || hasAnyAccess('Channel Manager') || hasAnyAccess('Staff & Roles') || hasAccess('Leave & Absences - Request Leave of Absence') || hasAccess('Leave & Absences - Review Leave Applications') || hasAnyAccess('Website CMS') || hasAnyAccess('Settings') || user?.role === 'super_admin') && (
           <div className="space-y-1">
             <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">System Control</h4>
             <div className="space-y-0.5">
@@ -499,6 +509,7 @@ const AdminLayout = () => {
               )}
             </div>
           </div>
+          )}
         </nav>
 
         <div className="p-4 border-t border-dark-700/50">

@@ -351,7 +351,8 @@ export const AuthProvider = ({ children }) => {
       const mergedUser = {
         ...authUser,
         ...(profileData || {}),
-        name: profileData ? `${profileData.first_name} ${profileData.last_name}` : authUser.email
+        name: profileData ? `${profileData.first_name} ${profileData.last_name}` : authUser.email,
+        role: profileData?.role || 'guest'
       };
       
       setUser(mergedUser);

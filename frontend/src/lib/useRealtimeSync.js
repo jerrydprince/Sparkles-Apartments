@@ -5,6 +5,7 @@ import { supabase } from './supabase';
  * useRealtimeSync
  * Custom React hook that subscribes to Supabase Realtime postgres_changes
  * events for the specified tables and triggers a callback when updates occur.
+ * Includes a broadcast fallback for manual triggers.
  * 
  * @param {Array<string>} tables - List of tables to listen to (e.g. ['rooms', 'bookings'])
  * @param {Function} callback - Callback function triggered on event, called with (table, payload)
@@ -42,10 +43,41 @@ export const useRealtimeSync = (tables, callback) => {
       }
     });
 
+    // Sub to a global broadcast channel for manual fallback triggers
+    const globalChannel = supabase.channel('system_global_broadcast');
+    tables.forEach(table => {
+      globalChannel.on(
+        'broadcast',
+        { event: `refresh_${table}` },
+        (payload) => {
+          console.log(`[Broadcast Sync] Force refresh on table "${table}":`, payload);
+          if (callbackRef.current) {
+            callbackRef.current(table, payload);
+          }
+        }
+      );
+    });
+    globalChannel.subscribe();
+
     return () => {
       console.log(`[Realtime Sync] Unsubscribing from tables: ${tables.join(', ')}`);
       supabase.removeChannel(channel);
+      supabase.removeChannel(globalChannel);
     };
   }, [JSON.stringify(tables)]);
+};
+
+export const forceTableRefresh = (table) => {
+  const channel = supabase.channel('system_global_broadcast');
+  channel.subscribe((status) => {
+    if (status === 'SUBSCRIBED') {
+      channel.send({
+        type: 'broadcast',
+        event: `refresh_${table}`,
+        payload: { source: 'client_broadcast' }
+      });
+      setTimeout(() => supabase.removeChannel(channel), 1000);
+    }
+  });
 };
 

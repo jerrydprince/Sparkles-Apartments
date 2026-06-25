@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { useRealtimeSync } from '../../lib/useRealtimeSync';
+import { useRealtimeSync, forceTableRefresh } from '../../lib/useRealtimeSync';
 import toast from 'react-hot-toast';
 import { Sparkles, Wrench, CheckCircle, Clock, AlertTriangle, Plus, X, ListChecks, Calendar as CalendarIcon, User, LayoutGrid, List, Archive } from 'lucide-react';
 import { format, differenceInHours } from 'date-fns';
@@ -140,6 +140,8 @@ const AdminHousekeeping = () => {
       }
       toast.success('Status updated');
       fetchData();
+      forceTableRefresh('housekeeping_tasks');
+      forceTableRefresh('rooms');
     } else {
       console.error(error);
       toast.error('Failed to update status: ' + error.message);
@@ -169,6 +171,8 @@ const AdminHousekeeping = () => {
       setActiveInspection(null);
       setChecklist({ bed: false, bathroom: false, trash: false, floors: false, restock: false });
       fetchData();
+      forceTableRefresh('housekeeping_tasks');
+      forceTableRefresh('rooms');
     } else {
       toast.error('Failed to update status: ' + error.message);
     }

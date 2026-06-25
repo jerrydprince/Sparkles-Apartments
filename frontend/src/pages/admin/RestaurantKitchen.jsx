@@ -906,6 +906,9 @@ const RestaurantKitchen = () => {
 
   // Filters
   const filteredOrders = orders.filter(o => {
+    // Only show orders for guests that have actually checked in
+    if (o.bookings?.status !== 'checked_in') return false;
+
     const guestName = o.bookings?.guest_name || '';
     const roomNum = o.bookings?.rooms?.room_number || '';
     const mealName = o.services?.name || '';
