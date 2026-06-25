@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, Navigate } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, Users, Settings, LogOut, BedDouble, FileText, Globe, Bell, TrendingUp, Sparkles, Network, MessageSquare, ShieldCheck, Zap, ShieldAlert, Menu, X, Sun, Moon, Package, Wallet, ShoppingCart, Archive, Shirt, ClipboardList, SearchCheck, CalendarClock, MailOpen, Award, Wrench, ChefHat, Compass } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Users, Settings, LogOut, BedDouble, FileText, Globe, Bell, TrendingUp, Sparkles, Network, MessageSquare, ShieldCheck, Zap, ShieldAlert, Menu, X, Sun, Moon, Package, Wallet, ShoppingCart, Archive, Shirt, ClipboardList, SearchCheck, CalendarClock, MailOpen, Award, Wrench, ChefHat, Compass , ChevronDown, ChevronRight , Activity, ConciergeBell, Building2, Store, Landmark, Shield } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import TopbarAttendanceClock from '../components/TopbarAttendanceClock';
@@ -158,6 +158,17 @@ const AdminLayout = () => {
 
   const [brandLogo, setBrandLogo] = useState(() => localStorage.getItem('contact_logo') || '');
 
+  const [openMenus, setOpenMenus] = useState({
+    overview: true,
+    frontOffice: true,
+    hotelOperations: true,
+    pos: true,
+    finance: true,
+    systemControl: true
+  });
+
+  const toggleMenu = (key) => setOpenMenus(prev => ({ ...prev, [key]: !prev[key] }));
+
   const hasAnyAccess = (permissionName) => {
     if (!permissionName) return false;
     if (Array.isArray(permissionName)) {
@@ -266,15 +277,24 @@ const AdminLayout = () => {
           </button>
         </div>
         
-        <nav className="flex-1 px-3 py-6 space-y-4.5 overflow-y-auto custom-scrollbar select-none">
+        <nav className="flex-1 px-4 py-8 space-y-6 overflow-y-auto custom-scrollbar select-none">
           
           {(hasAnyAccess('Dashboard') || hasAnyAccess('Internal Messaging') || hasAnyAccess('Reminders') || hasAnyAccess('Reports & Analytics') || hasAnyAccess('Duty Logs') || hasAnyAccess('Monthly Reports')) && (
           <div className="space-y-1">
-            <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Overview & Comms</h4>
-            <div className="space-y-0.5">
+            <button onClick={() => toggleMenu('overview')} className="w-full flex items-center justify-between text-[11px] font-bold text-white bg-dark-800 hover:bg-brand-500/10 hover:text-brand-400 border border-dark-700/50 hover:border-brand-500/40 px-4 py-3 rounded-2xl transition-all duration-300 cursor-pointer outline-none shadow-md hover:shadow-[0_6px_20px_rgba(223,104,83,0.15)] hover:-translate-y-0.5 uppercase tracking-wider group relative overflow-hidden">
+              <div className="flex items-center gap-2.5 relative z-10">
+                <Activity size={16} className="text-brand-500/80 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-300" />
+                <span>Overview & Comms</span>
+              </div>
+              <div className="text-gray-400 group-hover:text-brand-400 group-hover:translate-x-1 transition-all duration-300 relative z-10">
+                {openMenus.overview ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </div>
+            </button>
+            {openMenus.overview && (
+            <div className="space-y-0.5 animate-in slide-in-from-top-1 fade-in duration-200 mt-1">
               {hasAnyAccess('Dashboard') && (
                 <Link to="/admin" className={linkClass('/admin')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <LayoutDashboard size={16} />
                     <span className="text-xs font-semibold">Live Dashboard</span>
                   </div>
@@ -282,7 +302,7 @@ const AdminLayout = () => {
               )}
               {hasAnyAccess('Internal Messaging') && (
                 <Link to="/admin/messages" className={linkClass('/admin/messages')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <MessageSquare size={16} />
                     <span className="text-xs font-semibold">Internal Messaging</span>
                   </div>
@@ -290,7 +310,7 @@ const AdminLayout = () => {
               )}
               {hasAnyAccess('Reminders') && (
                 <Link to="/admin/reminders" className={linkClass('/admin/reminders')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <CalendarClock size={16} />
                     <span className="text-xs font-semibold">Schedules & Reminders</span>
                   </div>
@@ -298,7 +318,7 @@ const AdminLayout = () => {
               )}
               {hasAnyAccess('Reports & Analytics') && (
                 <Link to="/admin/reports" className={linkClass('/admin/reports')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <TrendingUp size={16} />
                     <span className="text-xs font-semibold">Reports & Analytics</span>
                   </div>
@@ -306,7 +326,7 @@ const AdminLayout = () => {
               )}
               {hasAnyAccess('Duty Logs') && (
                 <Link to="/admin/duty-reports" className={linkClass('/admin/duty-reports')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <ClipboardList size={16} />
                     <span className="text-xs font-semibold">Duty Manager Logs</span>
                   </div>
@@ -314,23 +334,33 @@ const AdminLayout = () => {
               )}
               {hasAnyAccess('Monthly Reports') && (
                 <Link to="/admin/monthly-reports" className={linkClass('/admin/monthly-reports')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <MailOpen size={16} />
                     <span className="text-xs font-semibold">Monthly Reports Dispatch</span>
                   </div>
                 </Link>
               )}
             </div>
+            )}
           </div>
           )}
 
           {(hasAnyAccess('Front Desk') || hasAnyAccess('Reservations') || hasAnyAccess('CRM & Guests') || hasAnyAccess('Lost & Found')) && (
           <div className="space-y-1">
-            <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Front Office</h4>
-            <div className="space-y-0.5">
+            <button onClick={() => toggleMenu('frontOffice')} className="w-full flex items-center justify-between text-[11px] font-bold text-white bg-dark-800 hover:bg-brand-500/10 hover:text-brand-400 border border-dark-700/50 hover:border-brand-500/40 px-4 py-3 rounded-2xl transition-all duration-300 cursor-pointer outline-none shadow-md hover:shadow-[0_6px_20px_rgba(223,104,83,0.15)] hover:-translate-y-0.5 uppercase tracking-wider group relative overflow-hidden">
+              <div className="flex items-center gap-2.5 relative z-10">
+                <ConciergeBell size={16} className="text-brand-500/80 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-300" />
+                <span>Front Office</span>
+              </div>
+              <div className="text-gray-400 group-hover:text-brand-400 group-hover:translate-x-1 transition-all duration-300 relative z-10">
+                {openMenus.frontOffice ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </div>
+            </button>
+            {openMenus.frontOffice && (
+            <div className="space-y-0.5 animate-in slide-in-from-top-1 fade-in duration-200 mt-1">
               {hasAnyAccess('Front Desk') && (
                 <Link to="/admin/frontdesk" className={linkClass('/admin/frontdesk')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <Bell size={16} />
                     <span className="text-xs font-semibold">Front Desk Reception</span>
                   </div>
@@ -338,7 +368,7 @@ const AdminLayout = () => {
               )}
               {hasAnyAccess('Reservations') && (
                 <Link to="/admin/reservations" className={linkClass('/admin/reservations')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <CalendarDays size={16} />
                     <span className="text-xs font-semibold">Suite Bookings (Reservations)</span>
                   </div>
@@ -346,7 +376,7 @@ const AdminLayout = () => {
               )}
               {hasAnyAccess('CRM & Guests') && (
                 <Link to="/admin/crm" className={linkClass('/admin/crm')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <Users size={16} />
                     <span className="text-xs font-semibold">CRM Guest Directory</span>
                   </div>
@@ -354,23 +384,33 @@ const AdminLayout = () => {
               )}
               {hasAnyAccess('Lost & Found') && (
                 <Link to="/admin/lost-found" className={linkClass('/admin/lost-found')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <SearchCheck size={16} />
                     <span className="text-xs font-semibold">Lost & Found Registry</span>
                   </div>
                 </Link>
               )}
             </div>
+            )}
           </div>
           )}
 
           {(hasAnyAccess('Housekeeping') || hasAnyAccess('Laundry') || hasAnyAccess('Maintenance') || hasAnyAccess('Store Keeping') || hasAnyAccess('Restaurant Desk') || hasAnyAccess('Kitchen Desk') || hasAnyAccess('Order History') || hasAnyAccess('Service Portals') || user?.role === 'super_admin') && (
           <div className="space-y-1">
-            <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Hotel Operations</h4>
-            <div className="space-y-0.5">
+            <button onClick={() => toggleMenu('hotelOperations')} className="w-full flex items-center justify-between text-[11px] font-bold text-white bg-dark-800 hover:bg-brand-500/10 hover:text-brand-400 border border-dark-700/50 hover:border-brand-500/40 px-4 py-3 rounded-2xl transition-all duration-300 cursor-pointer outline-none shadow-md hover:shadow-[0_6px_20px_rgba(223,104,83,0.15)] hover:-translate-y-0.5 uppercase tracking-wider group relative overflow-hidden">
+              <div className="flex items-center gap-2.5 relative z-10">
+                <Building2 size={16} className="text-brand-500/80 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-300" />
+                <span>Hotel Operations</span>
+              </div>
+              <div className="text-gray-400 group-hover:text-brand-400 group-hover:translate-x-1 transition-all duration-300 relative z-10">
+                {openMenus.hotelOperations ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </div>
+            </button>
+            {openMenus.hotelOperations && (
+            <div className="space-y-0.5 animate-in slide-in-from-top-1 fade-in duration-200 mt-1">
               {hasAnyAccess('Housekeeping') && (
                 <Link to="/admin/housekeeping" className={linkClass('/admin/housekeeping')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <Sparkles size={16} />
                     <span className="text-xs font-semibold">Housekeeping Cleaning</span>
                   </div>
@@ -379,7 +419,7 @@ const AdminLayout = () => {
               )}
               {hasAnyAccess('Laundry') && (
                 <Link to="/admin/laundry" className={linkClass('/admin/laundry')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <Shirt size={16} />
                     <span className="text-xs font-semibold">Laundry Department</span>
                   </div>
@@ -388,7 +428,7 @@ const AdminLayout = () => {
               )}
               {hasAnyAccess('Maintenance') && (
                 <Link to="/admin/maintenance" className={linkClass('/admin/maintenance')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <Wrench size={16} />
                     <span className="text-xs font-semibold">Maintenance Department</span>
                   </div>
@@ -397,7 +437,7 @@ const AdminLayout = () => {
               )}
               {(hasAnyAccess('Store Keeping') || user?.role === 'super_admin') && (
                 <Link to="/admin/store" className={linkClass('/admin/store')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <Archive size={16} />
                     <span className="text-xs font-semibold">Stores & Warehouses</span>
                   </div>
@@ -405,7 +445,7 @@ const AdminLayout = () => {
               )}
               {(hasAnyAccess('Restaurant Desk') || hasAnyAccess('Kitchen Desk') || hasAnyAccess('Order History') || user?.role === 'super_admin') && (
                 <Link to="/admin/restaurant" className={linkClass('/admin/restaurant')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <ChefHat size={16} />
                     <span className="text-xs font-semibold">Restaurant & Kitchen</span>
                   </div>
@@ -414,7 +454,7 @@ const AdminLayout = () => {
               )}
               {(hasAnyAccess('Service Portals') || user?.role === 'super_admin') && (
                 <Link to="/admin/services-portal" className={linkClass('/admin/services-portal')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <Compass size={16} />
                     <span className="text-xs font-semibold">🛎️ Service Portals</span>
                   </div>
@@ -422,30 +462,50 @@ const AdminLayout = () => {
                 </Link>
               )}
             </div>
+            )}
           </div>
           )}
 
           {(hasAnyAccess('POS') || user?.role === 'super_admin') && (
           <div className="space-y-1">
-            <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Point of Sale</h4>
-            <div className="space-y-0.5">
+            <button onClick={() => toggleMenu('pos')} className="w-full flex items-center justify-between text-[11px] font-bold text-white bg-dark-800 hover:bg-brand-500/10 hover:text-brand-400 border border-dark-700/50 hover:border-brand-500/40 px-4 py-3 rounded-2xl transition-all duration-300 cursor-pointer outline-none shadow-md hover:shadow-[0_6px_20px_rgba(223,104,83,0.15)] hover:-translate-y-0.5 uppercase tracking-wider group relative overflow-hidden">
+              <div className="flex items-center gap-2.5 relative z-10">
+                <Store size={16} className="text-brand-500/80 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-300" />
+                <span>Point of Sale</span>
+              </div>
+              <div className="text-gray-400 group-hover:text-brand-400 group-hover:translate-x-1 transition-all duration-300 relative z-10">
+                {openMenus.pos ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </div>
+            </button>
+            {openMenus.pos && (
+            <div className="space-y-0.5 animate-in slide-in-from-top-1 fade-in duration-200 mt-1">
               <Link to="/admin/pos" className={linkClass('/admin/pos')}>
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 relative z-10">
                   <ShoppingCart size={16} />
                   <span className="text-xs font-semibold">POS Checkouts Terminal</span>
                 </div>
               </Link>
             </div>
+            )}
           </div>
           )}
 
           {(hasAnyAccess('Finance & Billing') || hasAnyAccess('Accounting')) && (
           <div className="space-y-1">
-            <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">Finance & Auditing</h4>
-            <div className="space-y-0.5">
+            <button onClick={() => toggleMenu('finance')} className="w-full flex items-center justify-between text-[11px] font-bold text-white bg-dark-800 hover:bg-brand-500/10 hover:text-brand-400 border border-dark-700/50 hover:border-brand-500/40 px-4 py-3 rounded-2xl transition-all duration-300 cursor-pointer outline-none shadow-md hover:shadow-[0_6px_20px_rgba(223,104,83,0.15)] hover:-translate-y-0.5 uppercase tracking-wider group relative overflow-hidden">
+              <div className="flex items-center gap-2.5 relative z-10">
+                <Landmark size={16} className="text-brand-500/80 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-300" />
+                <span className="truncate">Finance & Audit</span>
+              </div>
+              <div className="text-gray-400 group-hover:text-brand-400 group-hover:translate-x-1 transition-all duration-300 relative z-10">
+                {openMenus.finance ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </div>
+            </button>
+            {openMenus.finance && (
+            <div className="space-y-0.5 animate-in slide-in-from-top-1 fade-in duration-200 mt-1">
               {hasAnyAccess('Finance & Billing') && (
                 <Link to="/admin/billing" className={linkClass('/admin/billing')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <FileText size={16} />
                     <span className="text-xs font-semibold">Folios & Billings</span>
                   </div>
@@ -453,23 +513,33 @@ const AdminLayout = () => {
               )}
               {hasAnyAccess('Accounting') && (
                 <Link to="/admin/accounting" className={linkClass('/admin/accounting')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <Wallet size={16} />
                     <span className="text-xs font-semibold">General Ledger & Accounts</span>
                   </div>
                 </Link>
               )}
             </div>
+            )}
           </div>
           )}
 
           {(hasAnyAccess('Rooms') || hasAnyAccess('Channel Manager') || hasAnyAccess('Staff & Roles') || hasAccess('Leave & Absences - Request Leave of Absence') || hasAccess('Leave & Absences - Review Leave Applications') || hasAnyAccess('Website CMS') || hasAnyAccess('Settings') || user?.role === 'super_admin') && (
           <div className="space-y-1">
-            <h4 className="text-[9px] font-black text-brand-500/85 uppercase tracking-widest px-3 pt-2 pb-1">System Control</h4>
-            <div className="space-y-0.5">
+            <button onClick={() => toggleMenu('systemControl')} className="w-full flex items-center justify-between text-[11px] font-bold text-white bg-dark-800 hover:bg-brand-500/10 hover:text-brand-400 border border-dark-700/50 hover:border-brand-500/40 px-4 py-3 rounded-2xl transition-all duration-300 cursor-pointer outline-none shadow-md hover:shadow-[0_6px_20px_rgba(223,104,83,0.15)] hover:-translate-y-0.5 uppercase tracking-wider group relative overflow-hidden">
+              <div className="flex items-center gap-2.5 relative z-10">
+                <Shield size={16} className="text-brand-500/80 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-300" />
+                <span>System Control</span>
+              </div>
+              <div className="text-gray-400 group-hover:text-brand-400 group-hover:translate-x-1 transition-all duration-300 relative z-10">
+                {openMenus.systemControl ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </div>
+            </button>
+            {openMenus.systemControl && (
+            <div className="space-y-0.5 animate-in slide-in-from-top-1 fade-in duration-200 mt-1">
               {(hasAnyAccess('Rooms') || user?.role === 'super_admin') && (
                 <Link to="/admin/rooms" className={linkClass('/admin/rooms')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <BedDouble size={16} />
                     <span className="text-xs font-semibold">Rooms, Halls & Inventory</span>
                   </div>
@@ -477,7 +547,7 @@ const AdminLayout = () => {
               )}
               {hasAnyAccess('Channel Manager') && (
                 <Link to="/admin/channel-manager" className={linkClass('/admin/channel-manager')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <Network size={16} />
                     <span className="text-xs font-semibold">Channel Manager Sync</span>
                   </div>
@@ -485,7 +555,7 @@ const AdminLayout = () => {
               )}
               {(hasAnyAccess('Staff & Roles') || hasAccess('Leave & Absences - Request Leave of Absence') || hasAccess('Leave & Absences - Review Leave Applications')) && (
                 <Link to="/admin/staff" className={linkClass('/admin/staff')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <ShieldCheck size={16} />
                     <span className="text-xs font-semibold">Staff & Security Matrix</span>
                   </div>
@@ -493,7 +563,7 @@ const AdminLayout = () => {
               )}
               {hasAnyAccess('Website CMS') && (
                 <Link to="/admin/cms" className={linkClass('/admin/cms')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <Globe size={16} />
                     <span className="text-xs font-semibold">Website CMS Manager</span>
                   </div>
@@ -501,13 +571,14 @@ const AdminLayout = () => {
               )}
               {hasAnyAccess('Settings') && (
                 <Link to="/admin/settings" className={linkClass('/admin/settings')}>
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 relative z-10">
                     <Settings size={16} />
                     <span className="text-xs font-semibold">System Settings</span>
                   </div>
                 </Link>
               )}
             </div>
+            )}
           </div>
           )}
         </nav>
