@@ -8,7 +8,7 @@ const Footer = () => {
     address: '123 Luxury Avenue, Victoria Island, Lagos, Nigeria', // Default fallback
     phone: '+234 800 LUXE APT',
     email: 'reservations@luxe.com',
-    logo: '/logo.png'
+    logo: localStorage.getItem('contact_logo') || ''
   });
 
   useEffect(() => {
@@ -40,6 +40,8 @@ const Footer = () => {
     }
   };
 
+  console.log("FOOTER LOGO:", contactInfo.logo ? contactInfo.logo.substring(0, 50) + '...' : 'EMPTY');
+
   return (
     <footer className="bg-dark-900 pt-20 pb-10 border-t border-dark-700">
       <div className="container mx-auto px-6">
@@ -47,7 +49,21 @@ const Footer = () => {
           {/* Brand */}
           <div>
             <Link to="/" className="flex items-center gap-3 mb-6 inline-flex">
-              <img src={contactInfo.logo} alt="Sparkles Apartments" className="h-12 w-auto" />
+              {contactInfo.logo && contactInfo.logo !== '/logo.png' ? (
+                <img src={contactInfo.logo} alt="Sparkles Apartments" className="h-10 max-w-[180px] object-contain" />
+              ) : (
+                <>
+                  <svg width="45" height="45" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M50 10 L10 90 L35 90 L60 40 Z" fill="#DF6853"/>
+                    <path d="M40 90 L90 90 L75 60 L50 90 Z" fill="#DF6853"/>
+                    <path d="M25 15 L28 25 L38 28 L28 31 L25 41 L22 31 L12 28 L22 25 Z" fill="#DF6853"/>
+                  </svg>
+                  <div className="flex flex-col justify-center">
+                    <span className="text-[22px] font-sans font-extrabold text-white leading-none tracking-wide">SPARKLES</span>
+                    <span className="text-[11px] font-sans text-gray-400 leading-tight tracking-[0.25em] mt-1">APARTMENTS</span>
+                  </div>
+                </>
+              )}
             </Link>
             <p className="text-gray-400 mb-6 leading-relaxed">
               Experience unparalleled luxury and comfort in our premium shortlet apartments designed for the elite.
