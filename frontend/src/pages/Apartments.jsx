@@ -8,12 +8,12 @@ const Apartments = () => {
   const cachedRooms = getCachedData('rooms');
   const [rooms, setRooms] = useState(cachedRooms || []);
   const [loading, setLoading] = useState(!cachedRooms);
-  
+
   // Filtering States
   const [searchTerm, setSearchTerm] = useState('');
   const [capacityFilter, setCapacityFilter] = useState('all');
   const [priceSort, setPriceSort] = useState('default');
-  
+
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
@@ -46,7 +46,7 @@ const Apartments = () => {
       <div className="container mx-auto px-6">
         <div className="text-center mb-16 pt-10">
           <h4 className="text-gold-500 font-medium tracking-widest uppercase mb-4">Our Portfolio</h4>
-          <h1 className="text-4xl md:text-6xl font-bold mb-6 text-white">All Residences</h1>
+          <h1 className="text-4xl md:text-6xl font-bold mb-6 text-white">All Apartments</h1>
           <p className="text-gray-400 max-w-2xl mx-auto text-lg">
             Explore our complete collection of premium apartments, designed for ultimate comfort and luxury.
           </p>
@@ -58,21 +58,21 @@ const Apartments = () => {
             <span className="absolute inset-y-0 left-0 pl-4 flex items-center text-gray-500">
               <Search size={18} />
             </span>
-            <input 
-              type="text" 
+            <input
+              type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by name, type or amenities..." 
+              placeholder="Search by name, type or amenities..."
               className="w-full bg-dark-900 text-white border border-dark-700 rounded-lg pl-11 pr-4 py-3 focus:border-gold-500 outline-none transition-all"
             />
           </div>
-          
+
           <div className="flex flex-col sm:flex-row w-full md:w-auto gap-4">
             <div className="relative w-full sm:w-48">
               <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">
                 <Users size={16} />
               </span>
-              <select 
+              <select
                 value={capacityFilter}
                 onChange={(e) => setCapacityFilter(e.target.value)}
                 className="w-full bg-dark-900 text-white border border-dark-700 rounded-lg pl-10 pr-10 py-3 appearance-none focus:border-gold-500 outline-none cursor-pointer"
@@ -92,7 +92,7 @@ const Apartments = () => {
               <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">
                 <DollarSign size={16} />
               </span>
-              <select 
+              <select
                 value={priceSort}
                 onChange={(e) => setPriceSort(e.target.value)}
                 className="w-full bg-dark-900 text-white border border-dark-700 rounded-lg pl-10 pr-10 py-3 appearance-none focus:border-gold-500 outline-none cursor-pointer"
@@ -119,9 +119,9 @@ const Apartments = () => {
               {(() => {
                 const filteredRooms = rooms
                   .filter(room => {
-                    const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                                          room.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                          (room.amenities && room.amenities.some(a => a.toLowerCase().includes(searchTerm.toLowerCase())));
+                    const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      room.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (room.amenities && room.amenities.some(a => a.toLowerCase().includes(searchTerm.toLowerCase())));
                     const matchesCapacity = capacityFilter === 'all' || room.capacity >= parseInt(capacityFilter);
                     return matchesSearch && matchesCapacity;
                   })
@@ -138,8 +138,8 @@ const Apartments = () => {
                 if (paginatedRooms.length === 0) {
                   return (
                     <div className="col-span-full py-16 text-center text-gray-400">
-                      <p className="text-xl">No residences match your search criteria.</p>
-                      <button onClick={() => {setSearchTerm(''); setCapacityFilter('all'); setPriceSort('default');}} className="mt-4 text-gold-500 hover:underline">Clear all filters</button>
+                      <p className="text-xl">No apartments match your search criteria.</p>
+                      <button onClick={() => { setSearchTerm(''); setCapacityFilter('all'); setPriceSort('default'); }} className="mt-4 text-gold-500 hover:underline">Clear all filters</button>
                     </div>
                   );
                 }
@@ -150,9 +150,9 @@ const Apartments = () => {
                       <div key={room.id} className="bg-dark-800 border border-dark-700 group overflow-hidden flex flex-col h-full rounded-lg shadow-lg hover:shadow-gold-500/10 transition-shadow">
                         <div className="relative h-64 overflow-hidden">
                           {room.image_url ? (
-                            <img 
-                              src={room.image_url} 
-                              alt={room.name} 
+                            <img
+                              src={room.image_url}
+                              alt={room.name}
                               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                             />
                           ) : (
@@ -196,41 +196,40 @@ const Apartments = () => {
                         </div>
                       </div>
                     ))}
-                    
+
                     {/* Pagination Controls */}
                     {totalPages > 1 && (
                       <div className="col-span-full mt-12 flex justify-center gap-2">
-                        <button 
+                        <button
                           onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                           disabled={currentPage === 1}
                           className="px-4 py-2 border border-dark-700 bg-dark-900 rounded disabled:opacity-50 hover:bg-dark-800 transition-colors text-white"
                         >
                           Previous
                         </button>
-                        
+
                         <div className="flex gap-1">
                           {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
                             // Show first, last, and pages around current page
                             if (
-                              page === 1 || 
-                              page === totalPages || 
+                              page === 1 ||
+                              page === totalPages ||
                               (page >= currentPage - 1 && page <= currentPage + 1)
                             ) {
                               return (
                                 <button
                                   key={page}
                                   onClick={() => setCurrentPage(page)}
-                                  className={`w-10 h-10 flex items-center justify-center rounded border transition-colors ${
-                                    currentPage === page 
-                                      ? 'border-gold-500 bg-gold-500/10 text-gold-500 font-bold' 
-                                      : 'border-dark-700 bg-dark-900 text-gray-400 hover:bg-dark-800 hover:text-white'
-                                  }`}
+                                  className={`w-10 h-10 flex items-center justify-center rounded border transition-colors ${currentPage === page
+                                    ? 'border-gold-500 bg-gold-500/10 text-gold-500 font-bold'
+                                    : 'border-dark-700 bg-dark-900 text-gray-400 hover:bg-dark-800 hover:text-white'
+                                    }`}
                                 >
                                   {page}
                                 </button>
                               );
                             } else if (
-                              page === currentPage - 2 || 
+                              page === currentPage - 2 ||
                               page === currentPage + 2
                             ) {
                               return <span key={page} className="px-1 text-gray-500 flex items-end pb-2">...</span>;
@@ -239,7 +238,7 @@ const Apartments = () => {
                           })}
                         </div>
 
-                        <button 
+                        <button
                           onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                           disabled={currentPage === totalPages}
                           className="px-4 py-2 border border-dark-700 bg-dark-900 rounded disabled:opacity-50 hover:bg-dark-800 transition-colors text-white"
