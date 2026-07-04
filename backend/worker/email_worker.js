@@ -25,13 +25,16 @@ supabase
   .channel('custom-all-channel')
   .on(
     'postgres_changes',
-    { event: 'UPDATE', schema: 'public', table: 'bookings' },
+    { event: '*', schema: 'public', table: 'bookings' },
     async (payload) => {
-      const { new: newRecord, old: oldRecord } = payload;
+      const { eventType, new: newRecord, old: oldRecord } = payload;
       
-      // Trigger only when a booking goes from pending -> confirmed
-      if (oldRecord.status !== 'confirmed' && newRecord.status === 'confirmed') {
-        console.log(`[EVENT] Booking ${newRecord.booking_reference} confirmed! Preparing notifications...`);
+      // Trigger when a booking is created as confirmed, or updated to confirmed
+      const isNewAndConfirmed = eventType === 'INSERT' && newRecord.status === 'confirmed';
+      const isUpdatedToConfirmed = eventType === 'UPDATE' && oldRecord.status !== 'confirmed' && newRecord.status === 'confirmed';
+
+      if (isNewAndConfirmed || isUpdatedToConfirmed) {
+        console.log(`[EVENT] Booking ${newRecord.booking_reference} confirmed (${eventType})! Preparing notifications...`);
         await Promise.all([
           sendBookingConfirmation(newRecord),
           sendBookingSMS(newRecord)
