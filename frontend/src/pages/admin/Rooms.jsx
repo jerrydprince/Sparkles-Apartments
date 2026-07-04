@@ -555,8 +555,12 @@ const AdminRooms = () => {
       ];
     }
     
-    // Always add these as selectable options globally
-    options.push({ value: '2 Queen Beds', label: '2 Queen Beds' });
+    // Add '2 Queen Beds' globally, except for flats
+    if (!sub.toLowerCase().includes('flat')) {
+      options.push({ value: '2 Queen Beds', label: '2 Queen Beds' });
+    }
+    
+    // Always add Green Area as a selectable option
     options.push({ value: 'Green Area', label: 'Green Area' });
     
     return options;
