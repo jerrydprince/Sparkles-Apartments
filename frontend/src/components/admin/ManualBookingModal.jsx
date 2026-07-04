@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
 import { Plus, X, Package, CheckSquare, Square, Coffee, Download, Share2, Wallet, Users } from 'lucide-react';
 import { addDays, format, differenceInDays } from 'date-fns';
-import { triggerAutomationRules } from '../../lib/emailService';
+import { triggerAutomationRules, sendResendEmail, sendSMSNotification } from '../../lib/emailService';
 import { sendTermiiSms } from '../../lib/smsService';
 
 const getItemsForSubmenu = (submenu, allServices) => {
@@ -576,13 +576,40 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
 
       if (bookingError) throw bookingError;
 
-      // Trigger booking confirmation SMS
+      // Explicitly send Booking Confirmation Email and SMS for Front Office bookings
       try {
+        const msgText = `Hi ${newBooking.firstName}, your booking at Sparkles Apartments is confirmed! Check-in: ${newBooking.checkIn}, Check-out: ${newBooking.checkOut}. Reference: ${bookingData.booking_reference}. We look forward to hosting you!`;
+        
         if (newBooking.phone) {
-          sendTermiiSms(newBooking.phone, `Hi ${newBooking.firstName}, your booking at Sparkles Apartments is confirmed! Check-in: ${newBooking.checkIn}, Check-out: ${newBooking.checkOut}. Reference: ${bookingData.booking_reference}. We look forward to hosting you!`);
+          sendSMSNotification({
+            to: newBooking.phone,
+            message: msgText
+          });
         }
-      } catch (smsErr) {
-        console.warn("Booking confirmation SMS failed:", smsErr);
+        
+        if (newBooking.email) {
+          const emailHtml = `
+            <div style="font-family: sans-serif; padding: 20px; color: #1f2937;">
+              <h2>Booking Confirmation</h2>
+              <p>Hi ${newBooking.firstName},</p>
+              <p>Your booking at <strong>Sparkles Apartments</strong> is confirmed!</p>
+              <ul>
+                <li><strong>Reference:</strong> ${bookingData.booking_reference}</li>
+                <li><strong>Check-in:</strong> ${newBooking.checkIn}</li>
+                <li><strong>Check-out:</strong> ${newBooking.checkOut}</li>
+              </ul>
+              <p>We look forward to hosting you!</p>
+            </div>
+          `;
+          sendResendEmail({
+            to: newBooking.email,
+            subject: 'Sparkles Apartments - Booking Confirmation',
+            from: 'booking@sparklesapartments.ng',
+            html: emailHtml
+          });
+        }
+      } catch (notifyErr) {
+        console.warn("Front desk booking notification failed:", notifyErr);
       }
 
       // 1b. Log Payment transaction inflow if paid/partial
