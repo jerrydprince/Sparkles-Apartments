@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
-import { Plus, X, Package, CheckSquare, Square, Coffee } from 'lucide-react';
+import { Plus, X, Package, CheckSquare, Square, Coffee, Download, Share2, Wallet, Users } from 'lucide-react';
 import { addDays, format, differenceInDays } from 'date-fns';
 import { triggerAutomationRules } from '../../lib/emailService';
+import { sendTermiiSms } from '../../lib/smsService';
 
 const getItemsForSubmenu = (submenu, allServices) => {
   return allServices.filter(s => {
@@ -574,6 +575,15 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
       }]).select().single();
 
       if (bookingError) throw bookingError;
+
+      // Trigger booking confirmation SMS
+      try {
+        if (newBooking.phone) {
+          sendTermiiSms(newBooking.phone, `Hi ${newBooking.firstName}, your booking at Sparkles Apartments is confirmed! Check-in: ${newBooking.checkIn}, Check-out: ${newBooking.checkOut}. Reference: ${bookingData.booking_reference}. We look forward to hosting you!`);
+        }
+      } catch (smsErr) {
+        console.warn("Booking confirmation SMS failed:", smsErr);
+      }
 
       // 1b. Log Payment transaction inflow if paid/partial
       if (amountPaidVal > 0 && bookingData) {

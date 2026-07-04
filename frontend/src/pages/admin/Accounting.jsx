@@ -306,7 +306,7 @@ const AdminAccounting = () => {
           
           return {
             id: p.id,
-            date: p.processed_at || p.created_at,
+            date: p.payment_date || p.processed_at || p.created_at,
             amount: Number(p.amount),
             description: isLaundry
               ? p.notes || `Walk-in Laundry direct sale settled via ${p.method.toUpperCase()}`

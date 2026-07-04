@@ -6,82 +6,10 @@ import { FileText, CreditCard, Download, Search, CheckCircle, RefreshCcw, Dollar
 import { format, addMonths, addYears } from 'date-fns';
 import { useAuth } from '../../context/AuthContext';
 import Accounting from './Accounting';
+import Pagination from '../../components/Pagination';
 import { triggerAutomationRules, sendResendEmail, sendSMSNotification } from '../../lib/emailService';
 import { usePaystackPayment } from 'react-paystack';
-const PaginationControl = ({ currentPage, totalItems, pageSize, onPageChange }) => {
-  const totalPages = Math.ceil(totalItems / pageSize);
-  if (totalPages <= 1) return null;
 
-  return (
-    <div className="flex items-center justify-between border-t border-dark-700 bg-dark-900/30 px-4 py-3 sm:px-6 mt-4 rounded-b-lg">
-      <div className="flex flex-1 justify-between sm:hidden">
-        <button
-          type="button"
-          disabled={currentPage === 1}
-          onClick={() => onPageChange(currentPage - 1)}
-          className="relative inline-flex items-center rounded-md border border-dark-750 bg-dark-800 px-4 py-2 text-xs font-bold text-gray-300 hover:bg-dark-700 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Previous
-        </button>
-        <button
-          type="button"
-          disabled={currentPage === totalPages}
-          onClick={() => onPageChange(currentPage + 1)}
-          className="relative ml-3 inline-flex items-center rounded-md border border-dark-750 bg-dark-800 px-4 py-2 text-xs font-bold text-gray-300 hover:bg-dark-700 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Next
-        </button>
-      </div>
-      <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs text-gray-400">
-            Showing <span className="font-semibold text-white">{((currentPage - 1) * pageSize) + 1}</span> to{' '}
-            <span className="font-semibold text-white">
-              {Math.min(currentPage * pageSize, totalItems)}
-            </span>{' '}
-            of <span className="font-semibold text-white">{totalItems}</span> results
-          </p>
-        </div>
-        <div>
-          <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
-            <button
-              type="button"
-              disabled={currentPage === 1}
-              onClick={() => onPageChange(currentPage - 1)}
-              className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-dark-750 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-            >
-              <span className="sr-only">Previous</span>
-              &larr;
-            </button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-              <button
-                type="button"
-                key={page}
-                onClick={() => onPageChange(page)}
-                className={`relative inline-flex items-center px-3 py-2 text-xs font-bold ring-1 ring-inset ring-dark-750 cursor-pointer ${
-                  page === currentPage
-                    ? 'z-10 bg-brand-500 text-dark-950 focus:z-20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 font-extrabold'
-                    : 'text-gray-300 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0'
-                }`}
-              >
-                {page}
-              </button>
-            ))}
-            <button
-              type="button"
-              disabled={currentPage === totalPages}
-              onClick={() => onPageChange(currentPage + 1)}
-              className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-dark-750 bg-dark-800 hover:bg-dark-700 focus:z-20 focus:outline-offset-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-            >
-              <span className="sr-only">Next</span>
-              &rarr;
-            </button>
-          </nav>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 const AdminBilling = ({ isFrontOfficeClosed }) => {
   const { hasAccess } = useAuth();
@@ -169,7 +97,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
   const [currentPageService, setCurrentPageService] = useState(1);
   const [currentPageCheckout, setCurrentPageCheckout] = useState(1);
   const [currentPageSettlements, setCurrentPageSettlements] = useState(1);
-  const pageSize = 10;
+  const pageSize = 50;
 
   useEffect(() => {
     fetchInvoices();
@@ -1937,9 +1865,15 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
 
   const sortedInvoices = [...filteredInvoices].sort((a, b) => {
     if (sortBy === 'created_at_desc') {
+      const dateB = new Date(b.due_date || b.created_at).getTime();
+      const dateA = new Date(a.due_date || a.created_at).getTime();
+      if (dateB !== dateA) return dateB - dateA;
       return new Date(b.created_at) - new Date(a.created_at);
     }
     if (sortBy === 'created_at_asc') {
+      const dateA = new Date(a.due_date || a.created_at).getTime();
+      const dateB = new Date(b.due_date || b.created_at).getTime();
+      if (dateA !== dateB) return dateA - dateB;
       return new Date(a.created_at) - new Date(b.created_at);
     }
     if (sortBy === 'status_custom') {
@@ -2134,12 +2068,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
               </tbody>
             </table>
           </div>
-          <PaginationControl
-            currentPage={currentPageService}
-            totalItems={pendingServicePayments.length}
-            pageSize={pageSize}
-            onPageChange={setCurrentPageService}
-          />
+          <Pagination currentPage={currentPageService} totalPages={Math.ceil((pendingServicePayments.length) / (pageSize))} limit={pageSize} onPageChange={setCurrentPageService} />
         </div>
       )}
 
@@ -2204,12 +2133,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
               </tbody>
             </table>
           </div>
-          <PaginationControl
-            currentPage={currentPageCheckout}
-            totalItems={pendingCheckoutPayments.length}
-            pageSize={pageSize}
-            onPageChange={setCurrentPageCheckout}
-          />
+          <Pagination currentPage={currentPageCheckout} totalPages={Math.ceil((pendingCheckoutPayments.length) / (pageSize))} limit={pageSize} onPageChange={setCurrentPageCheckout} />
         </div>
       )}
 
@@ -2388,12 +2312,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
             </tbody>
           </table>
         </div>
-        <PaginationControl
-          currentPage={currentPageInvoices}
-          totalItems={sortedInvoices.length}
-          pageSize={pageSize}
-          onPageChange={setCurrentPageInvoices}
-        />
+        <Pagination currentPage={currentPageInvoices} totalPages={Math.ceil((sortedInvoices.length) / (pageSize))} limit={pageSize} onPageChange={setCurrentPageInvoices} />
       </div>
     </div>
   )}
@@ -2517,12 +2436,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                 </tbody>
               </table>
             </div>
-            <PaginationControl
-              currentPage={currentPagePayouts}
-              totalItems={specialistPayouts.filter(p => specialistPayoutTab === 'pending' ? p.payment_status === 'approved' : p.payment_status === 'paid').length}
-              pageSize={pageSize}
-              onPageChange={setCurrentPagePayouts}
-            />
+            <Pagination currentPage={currentPagePayouts} totalPages={Math.ceil((specialistPayouts.filter(p => specialistPayoutTab === 'pending' ? p.payment_status === 'approved' : p.payment_status === 'paid').length) / (pageSize))} limit={pageSize} onPageChange={setCurrentPagePayouts} />
           </div>
 
           {/* Reminder / Subscription Payouts */}
@@ -2782,12 +2696,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
               </table>
             </div>
             
-            <PaginationControl
-              currentPage={currentPageSettlements}
-              totalItems={filteredSettlements.length}
-              pageSize={pageSize}
-              onPageChange={setCurrentPageSettlements}
-            />
+            <Pagination currentPage={currentPageSettlements} totalPages={Math.ceil((filteredSettlements.length) / (pageSize))} limit={pageSize} onPageChange={setCurrentPageSettlements} />
           </div>
         </div>
       )}

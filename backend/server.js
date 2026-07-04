@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import cron from 'node-cron';
+import { processSmsAutomations } from './automations.js';
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 
@@ -822,6 +823,7 @@ const processOverdueCheckouts = async () => {
 cron.schedule('*/5 * * * *', () => {
   console.log('Running overdue checkout auto‑charge job...');
   processOverdueCheckouts();
+  processSmsAutomations();
 });
 
 app.post('/api/sms/send', async (req, res) => {
@@ -856,9 +858,9 @@ app.post('/api/sms/send', async (req, res) => {
         acc[curr.setting_key] = curr.setting_value;
         return acc;
       }, {});
-      gateway = sMap.sms_gateway || 'mock';
-      termiiKey = sMap.sms_termii_api_key || '';
-      termiiSender = sMap.sms_termii_sender_id || 'Sparkles';
+      gateway = 'termii'; // Force Termii
+      termiiKey = 'TLgXnjVEEEDmCUPBYdLqYAJwkJsaSbniXMfNXmeHeaRfJosZrOlGmVpfAjyELl'; // Provided key
+      termiiSender = 'SparklesApt'; // Requested sender
       twilioSid = sMap.sms_twilio_account_sid || '';
       twilioToken = sMap.sms_twilio_auth_token || '';
       twilioFrom = sMap.sms_twilio_from_number || '';
@@ -866,6 +868,11 @@ app.post('/api/sms/send', async (req, res) => {
   } catch (dbErr) {
     console.warn("Failed to load SMS settings from DB: ", dbErr.message);
   }
+
+  // Force Termii overrides if DB fails
+  gateway = 'termii';
+  termiiKey = 'TLgXnjVEEEDmCUPBYdLqYAJwkJsaSbniXMfNXmeHeaRfJosZrOlGmVpfAjyELl';
+  termiiSender = 'SparklesApt';
 
   // Normalize phone numbers to include international code, stripping optional lead symbols
   let normalizedPhone = to.trim();
@@ -882,7 +889,7 @@ app.post('/api/sms/send', async (req, res) => {
       return res.status(500).json({ error: 'Termii API Key is not configured in settings.' });
     }
     try {
-      const response = await fetch('https://api.ng.termii.com/api/sms/send', {
+      const response = await fetch('https://v3.api.termii.com/api/sms/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -934,20 +941,54 @@ app.post('/api/sms/send', async (req, res) => {
       return res.status(500).json({ error: 'Twilio API dispatch error: ' + err.message });
     }
   } else {
-    // Mock sandbox simulator mode
-    await new Promise(resolve => setTimeout(resolve, 300));
-    try {
-      await supabase.from('notification_logs').insert([{
-        recipient: normalizedPhone,
-        channel: 'sms',
-        template_name: 'Mock SMS Notification',
-        status: 'sent',
-        error_message: 'Simulated sandbox SMS delivery.'
-      }]);
-    } catch (e) {
-      console.warn("Could not log mock SMS notification:", e.message);
-    }
+    // Mock simulation
+    console.log(`[SMS Mock] Simulating SMS dispatch to ${normalizedPhone}`);
     return res.json({ success: true, simulated: true, messageId: 'mock_' + Date.now() });
+  }
+});
+
+// Bulk SMS Endpoint
+app.post('/api/sms/send/bulk', async (req, res) => {
+  const { to, message } = req.body; // to is an array
+  if (!to || !Array.isArray(to) || to.length === 0 || !message) {
+    return res.status(400).json({ error: 'Missing to array or message in request body' });
+  }
+
+  const termiiKey = 'TLgXnjVEEEDmCUPBYdLqYAJwkJsaSbniXMfNXmeHeaRfJosZrOlGmVpfAjyELl';
+  const termiiSender = 'SparklesApt';
+
+  const validNumbers = to.map(phone => {
+    let num = phone.trim();
+    if (num.startsWith('0') && num.length === 11) return '234' + num.slice(1);
+    if (num.startsWith('+')) return num.slice(1);
+    return num;
+  }).filter(Boolean);
+
+  if (validNumbers.length === 0) {
+    return res.status(400).json({ error: 'No valid numbers provided' });
+  }
+
+  try {
+    const response = await fetch('https://v3.api.termii.com/api/sms/send/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: validNumbers,
+        from: termiiSender,
+        sms: message,
+        type: 'plain',
+        channel: 'generic',
+        api_key: termiiKey
+      })
+    });
+    const data = await response.json();
+    if (response.ok) {
+      return res.json({ success: true, messageId: data.message_id || 'termii_bulk_' + Date.now() });
+    } else {
+      return res.status(500).json({ error: data.message || 'Termii Bulk API failed', details: data });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: 'Termii Bulk API dispatch error: ' + err.message });
   }
 });
 

@@ -376,7 +376,15 @@ const AdminRooms = () => {
     if (isBulkAdd && !isEdit) {
       const payloads = [];
       for(let i=1; i<=bulkCount; i++) {
-        const generatedNum = bulkName.trim() ? `${bulkName.trim()} ${bulkPrefix}${i}` : `${bulkPrefix}${i}`;
+        let suffix = i;
+        let prefixText = bulkPrefix;
+        const match = bulkPrefix.match(/(\d+)$/);
+        if (match) {
+          prefixText = bulkPrefix.slice(0, match.index);
+          suffix = parseInt(match[1]) + i - 1;
+        }
+        
+        const generatedNum = bulkName.trim() ? `${bulkName.trim()} ${prefixText}${suffix}` : `${prefixText}${suffix}`;
         const payload = buildRoomPayload(generatedNum);
         if (bulkName.trim()) {
           payload.name = generatedNum;
@@ -384,18 +392,29 @@ const AdminRooms = () => {
         payloads.push(payload);
       }
       toast.loading(`Creating ${bulkCount} rooms...`, { id: 'bulk' });
-      const { data, error } = await supabase.from('rooms').insert(payloads).select('id, room_number, name, type, property_id, capacity, size_sqm, base_price_ngn, status, properties(name)');
-      if (error) toast.error(error.message, { id: 'bulk' });
-      else {
+      
+      try {
+        const chunkSize = 50;
+        let allData = [];
+        
+        for (let i = 0; i < payloads.length; i += chunkSize) {
+          const chunk = payloads.slice(i, i + chunkSize);
+          const { data, error } = await supabase.from('rooms').insert(chunk).select('id, room_number, name, type, property_id, capacity, size_sqm, base_price_ngn, status, properties(name)');
+          if (error) throw error;
+          if (data) allData = [...allData, ...data];
+        }
+        
         toast.success(`${bulkCount} rooms created!`, { id: 'bulk' });
         clearCache('rooms');
         clearCache('roomDetails');
         setIsRoomModalOpen(false);
-        if (data) {
-          setRooms(prev => [...prev, ...data].sort((a,b) => a.room_number.localeCompare(b.room_number)));
+        if (allData.length > 0) {
+          setRooms(prev => [...prev, ...allData].sort((a,b) => a.room_number.localeCompare(b.room_number)));
         } else {
           fetchData(true);
         }
+      } catch (error) {
+        toast.error(error.message, { id: 'bulk' });
       }
     } else {
       const payload = buildRoomPayload(newRoom.room_number);
@@ -1139,7 +1158,7 @@ const AdminRooms = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-400 mb-1 uppercase tracking-wider">Number Prefix (e.g. "10")</label>
+                    <label className="block text-xs font-bold text-gray-400 mb-1 uppercase tracking-wider">Starting Number (e.g. 100 or A-101)</label>
                     <input 
                       type="text" 
                       required 
@@ -1153,7 +1172,7 @@ const AdminRooms = () => {
                     <input 
                       type="number" 
                       min="1" 
-                      max="50" 
+                      max="1000" 
                       required 
                       value={bulkCount} 
                       onChange={e => setBulkCount(parseInt(e.target.value))} 

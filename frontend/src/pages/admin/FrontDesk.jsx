@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import AdminReservations from './Reservations';
 import LostFound from './LostFound';
 import { triggerAutomationRules } from '../../lib/emailService';
+import { sendTermiiSms } from '../../lib/smsService';
 import AdminBilling from './Billing';
 import AdminHalls from './AdminHalls';
 
@@ -193,6 +194,7 @@ const AdminFrontDesk = () => {
   const [housekeepingTasks, setHousekeepingTasks] = useState([]);
   const [maintenanceTickets, setMaintenanceTickets] = useState([]);
   const [matrixFilter, setMatrixFilter] = useState('all'); // all, occupied, clean, dirty, maintenance
+  const [matrixSearchTerm, setMatrixSearchTerm] = useState('');
   const [activeInspection, setActiveInspection] = useState(null);
   const [checklist, setChecklist] = useState({ bed: false, bathroom: false, trash: false, floors: false, restock: false });
   const [preselectedRoomId, setPreselectedRoomId] = useState(null);
@@ -1388,6 +1390,10 @@ const AdminFrontDesk = () => {
           .single();
         if (fullBooking) {
           triggerAutomationRules('check_in', fullBooking);
+          const guestPhone = fullBooking.profiles?.phone || fullBooking.guest_phone;
+          if (guestPhone) {
+            sendTermiiSms(guestPhone, `Welcome to Sparkles Apartments! You have been successfully checked in to Room ${fullBooking.rooms?.room_number || ''}. Have a great stay!`);
+          }
         }
       } catch (autoErr) {
         console.warn("Check-in automation trigger failed:", autoErr);
@@ -1771,6 +1777,15 @@ const AdminFrontDesk = () => {
         amount_paid_ngn: newPaid,
         payment_status: 'paid'
       }).eq('id', activeCheckOut.id);
+
+      try {
+        const guestPhone = activeCheckOut.profiles?.phone || activeCheckOut.guest_phone;
+        if (guestPhone) {
+          sendTermiiSms(guestPhone, `Thank you for staying at Sparkles Apartments! Your checkout from Room ${activeCheckOut.rooms?.room_number || ''} is complete. We hope to see you again soon.`);
+        }
+      } catch(e) {
+        console.warn("SMS error on checkout", e);
+      }
 
       // Mark all booking services under this booking as paid on checkout
       await supabase
@@ -2406,6 +2421,16 @@ const AdminFrontDesk = () => {
 
       if (finalCheckoutErr) throw finalCheckoutErr;
 
+      // Trigger checkout automation SMS
+      try {
+        const guestPhone = activeCheckOut.profiles?.phone || activeCheckOut.guest_phone;
+        if (guestPhone) {
+          sendTermiiSms(guestPhone, `Thank you for staying at Sparkles Apartments! Your checkout from Room ${activeCheckOut.rooms?.room_number || ''} is complete. We hope to see you again soon.`);
+        }
+      } catch(e) {
+        console.warn("SMS error on checkout", e);
+      }
+
       // Mark all booking services under this booking as paid on checkout
       await supabase
         .from('booking_services')
@@ -2504,14 +2529,14 @@ const AdminFrontDesk = () => {
       )}
       {/* Header Panel */}
       <div className="bg-dark-800 border border-dark-700 p-6 shadow-sm flex flex-col md:flex-row justify-between items-center rounded-lg">
-        <div>
+        <div className="w-full md:w-auto">
           <h1 className="text-2xl font-bold text-white">Front Desk & Reception</h1>
           <p className="text-gray-400 flex items-center gap-2 mt-1">
             <CalendarIcon size={16} />
             {currentTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </p>
         </div>
-        <div className="mt-4 md:mt-0 flex items-center gap-4">
+        <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-3 w-full md:w-auto py-2">
           {hasAccess('Store Keeping - Log Requisitions') && (
             <button onClick={() => setIsRequisitionOpen(true)} className="bg-brand-500/10 hover:bg-brand-500 border border-brand-500/20 text-brand-400 hover:text-white py-2 px-4 flex items-center gap-2 mr-2 rounded text-sm font-bold transition-all shadow">
               <Archive size={16}/> Store Requisition
@@ -2600,7 +2625,7 @@ const AdminFrontDesk = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-4 border-b border-dark-700 overflow-x-auto">
+      <div className="flex gap-4 border-b border-dark-700 overflow-x-auto w-full max-w-full hide-scrollbar custom-scrollbar">
         <button onClick={() => setActiveTab('overview')} className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${activeTab === 'overview' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}>
           <Search size={18} /> Front Desk Overview
         </button>
@@ -3082,9 +3107,23 @@ const AdminFrontDesk = () => {
                 </button>
               ))}
             </div>
-            <div className="text-[11px] text-gray-500 font-mono flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-ping"></span>
-              Live Grid System
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">
+                  <Search size={14} />
+                </span>
+                <input 
+                  type="text" 
+                  value={matrixSearchTerm}
+                  onChange={(e) => setMatrixSearchTerm(e.target.value)}
+                  placeholder="Search rooms..." 
+                  className="bg-dark-900 text-white border border-dark-700 rounded-lg pl-9 pr-4 py-2 text-sm focus:border-brand-500 outline-none w-48 transition-all focus:w-64"
+                />
+              </div>
+              <div className="text-[11px] text-gray-500 font-mono flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-ping"></span>
+                Live Grid
+              </div>
             </div>
           </div>
 
@@ -3092,6 +3131,15 @@ const AdminFrontDesk = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {allRooms.filter(room => {
               const activeBooking = inHouse.find(b => b.room_id === room.id);
+              
+              // Apply search filter first
+              if (matrixSearchTerm) {
+                const term = matrixSearchTerm.toLowerCase();
+                const roomMatch = room.name.toLowerCase().includes(term) || room.type.toLowerCase().includes(term);
+                const guestMatch = activeBooking && activeBooking.guest_name && activeBooking.guest_name.toLowerCase().includes(term);
+                if (!roomMatch && !guestMatch) return false;
+              }
+
               const latestTask = housekeepingTasks.find(t => t.room_id === room.id);
               const maintTicket = maintenanceTickets.find(t => t.room_id === room.id);
               const isOccupied = room.status === 'occupied' || activeBooking;
@@ -3558,12 +3606,12 @@ const AdminFrontDesk = () => {
                   }, {});
 
                 return (
-                  <div className="flex overflow-x-auto custom-scrollbar select-none relative w-full flex-1">
+                  <div className="flex overflow-auto max-h-[70vh] custom-scrollbar select-none relative w-full flex-1">
                     
                     {/* Fixed Left Sidebar: Accommodation List */}
-                    <div className="w-[280px] min-w-[280px] bg-dark-900 border-r border-dark-700 flex-shrink-0 z-20 sticky left-0 shadow-[4px_0_10px_rgba(0,0,0,0.3)]">
+                    <div className="w-[280px] min-w-[280px] bg-dark-900 border-r border-dark-700 flex-shrink-0 z-[40] sticky left-0 shadow-[4px_0_10px_rgba(0,0,0,0.3)]">
                       {/* Left Header */}
-                      <div className="h-[76px] bg-dark-950 border-b border-dark-700 p-4 flex items-center justify-start">
+                      <div className="h-[76px] bg-dark-900 !opacity-100 border-b border-dark-700 p-4 flex items-center justify-start sticky top-0 z-[50]">
                         <span className="text-xs uppercase font-bold tracking-wider text-gray-400">Accommodation</span>
                       </div>
                       
@@ -3597,7 +3645,7 @@ const AdminFrontDesk = () => {
                     <div className="flex-grow flex flex-col min-w-0 z-10" style={{ width: `${totalTimelineWidth}px`, minWidth: `${totalTimelineWidth}px`, flexShrink: 0 }}>
                       
                       {/* Timeline Header Row (Dates) */}
-                      <div className="h-[76px] bg-dark-950 border-b border-dark-700 flex-shrink-0 flex sticky top-0 z-20">
+                      <div className="h-[76px] bg-dark-900 !opacity-100 border-b border-dark-700 flex-shrink-0 flex sticky top-0 z-[30]">
                         {days.map((dayStr) => {
                           const dateObj = new Date(dayStr + 'T00:00:00');
                           const isTodayStr = format(new Date(), 'yyyy-MM-dd') === dayStr;

@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { format, differenceInDays } from 'date-fns';
 import { useAuth, validateStrongPassword } from '../../context/AuthContext';
 import { useRealtimeSync } from '../../lib/useRealtimeSync';
+import { sendResendEmail } from '../../lib/emailService';
 
 // Secondary Auth client for silent signup
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -1637,6 +1638,32 @@ const AdminStaffManagement = () => {
             user_id: profile.id, log_type: 'activity', action: `Promoted guest account to staff: ${newStaffForm.first_name} ${newStaffForm.last_name}`, module: 'System'
           });
 
+          // Send onboarding email with credentials
+          if (newStaffForm.email && newStaffForm.password) {
+            try {
+              await sendResendEmail({
+                to: newStaffForm.email,
+                subject: 'Welcome to the Sparkles Apartments Team!',
+                html: `
+                  <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+                    <h2>Welcome aboard, ${newStaffForm.first_name}!</h2>
+                    <p>We are thrilled to have you join our team as a <strong>${newStaffForm.role}</strong>.</p>
+                    <p>Your staff account has been provisioned successfully. Below are your login credentials for the portal:</p>
+                    <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                      <p style="margin: 0 0 10px 0;"><strong>Login URL:</strong> <a href="https://sparklesapartments.ng/login">https://sparklesapartments.ng/login</a></p>
+                      <p style="margin: 0 0 10px 0;"><strong>Email / Username:</strong> ${newStaffForm.email}</p>
+                      <p style="margin: 0;"><strong>Password:</strong> ${newStaffForm.password}</p>
+                    </div>
+                    <p>Please log in to change your password immediately upon your first access.</p>
+                    <p>Best Regards,<br/>Sparkles Apartments Management</p>
+                  </div>
+                `
+              });
+            } catch (err) {
+              console.error("Failed to send onboarding email:", err);
+            }
+          }
+
           toast.success('Staff account successfully promoted and activated!', { id: loadingToast });
           setShowAddStaff(false);
           setNewStaffForm({ 
@@ -1724,6 +1751,34 @@ const AdminStaffManagement = () => {
       await supabase.from('system_logs').insert({
         user_id: profile.id, log_type: 'activity', action: `Registered new staff member: ${newStaffForm.first_name}`, module: 'System'
       });
+
+      // 5. Send onboarding email with credentials
+      if (newStaffForm.email && newStaffForm.password) {
+        try {
+          await sendResendEmail({
+            to: newStaffForm.email,
+            subject: 'Welcome to the Sparkles Apartments Team!',
+            html: `
+              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+                <h2>Welcome aboard, ${newStaffForm.first_name}!</h2>
+                <p>We are thrilled to have you join our team as a <strong>${newStaffForm.role}</strong>.</p>
+                <p>Your staff account has been provisioned successfully. Below are your login credentials for the portal:</p>
+                <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                  <p style="margin: 0 0 10px 0;"><strong>Login URL:</strong> <a href="https://sparklesapartments.ng/login">https://sparklesapartments.ng/login</a></p>
+                  <p style="margin: 0 0 10px 0;"><strong>Email / Username:</strong> ${newStaffForm.email}</p>
+                  <p style="margin: 0;"><strong>Password:</strong> ${newStaffForm.password}</p>
+                </div>
+                <p>Please log in to change your password immediately upon your first access.</p>
+                <p>Best Regards,<br/>Sparkles Apartments Management</p>
+              </div>
+            `
+          });
+          toast.success('Onboarding email dispatched.');
+        } catch (emailErr) {
+          console.error("Failed to send onboarding email:", emailErr);
+          toast.error("Account created, but failed to send the onboarding email.");
+        }
+      }
 
       toast.success('Staff added successfully!', { id: loadingToast });
       setShowAddStaff(false);
