@@ -562,7 +562,7 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
         total_extras_price_ngn: servicesSubtotal,
         total_amount_ngn: newBooking.totalAmount,
         amount_paid_ngn: amountPaidVal,
-        status: (newBooking.paymentMethod === 'ar_wallet' && !billToGroup) ? 'confirmed' : 'pending',
+        status: 'confirmed', // Front desk bookings are confirmed immediately to trigger the background worker
         booking_source: billToGroup ? 'group' : newBooking.bookingSource,
         payment_status: billToGroup ? 'unpaid' : newBooking.paymentStatus,
         special_requests: newBooking.purpose 
@@ -576,41 +576,7 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
 
       if (bookingError) throw bookingError;
 
-      // Explicitly send Booking Confirmation Email and SMS for Front Office bookings
-      try {
-        const msgText = `Hi ${newBooking.firstName}, your booking at Sparkles Apartments is confirmed! Check-in: ${newBooking.checkIn}, Check-out: ${newBooking.checkOut}. Reference: ${bookingData.booking_reference}. We look forward to hosting you!`;
-        
-        if (newBooking.phone) {
-          await sendSMSNotification({
-            to: newBooking.phone,
-            message: msgText
-          });
-        }
-        
-        if (newBooking.email) {
-          const emailHtml = `
-            <div style="font-family: sans-serif; padding: 20px; color: #1f2937;">
-              <h2>Booking Confirmation</h2>
-              <p>Hi ${newBooking.firstName},</p>
-              <p>Your booking at <strong>Sparkles Apartments</strong> is confirmed!</p>
-              <ul>
-                <li><strong>Reference:</strong> ${bookingData.booking_reference}</li>
-                <li><strong>Check-in:</strong> ${newBooking.checkIn}</li>
-                <li><strong>Check-out:</strong> ${newBooking.checkOut}</li>
-              </ul>
-              <p>We look forward to hosting you!</p>
-            </div>
-          `;
-          await sendResendEmail({
-            to: newBooking.email,
-            subject: 'Sparkles Apartments - Booking Confirmation',
-            from: 'booking@sparklesapartments.ng',
-            html: emailHtml
-          });
-        }
-      } catch (notifyErr) {
-        console.warn("Front desk booking notification failed:", notifyErr);
-      }
+      // Notifications are now handled automatically by the backend email_worker.js listening for INSERT/UPDATE with status='confirmed'
 
       // 1b. Log Payment transaction inflow if paid/partial
       if (amountPaidVal > 0 && bookingData) {
