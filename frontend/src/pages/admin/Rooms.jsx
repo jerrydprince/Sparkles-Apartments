@@ -47,6 +47,7 @@ const AdminRooms = () => {
   // Modals
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [isWalkinModalOpen, setIsWalkinModalOpen] = useState(false);
+  const [isBedDropdownOpen, setIsBedDropdownOpen] = useState(false);
   
   const [isEdit, setIsEdit] = useState(false);
   const [currentRoom, setCurrentRoom] = useState(null);
@@ -517,40 +518,47 @@ const AdminRooms = () => {
 
   const getBedConfigurationOptions = () => {
     const sub = newRoom.sub_category || '';
+    let options = [];
     if (sub.includes('4')) {
-      return [
+      options = [
         { value: '4 King Beds', label: '4 King Beds' },
         { value: '4 Queen Beds', label: '4 Queen Beds' },
         { value: '3 King Beds, 2 Twin Beds', label: '3 King Beds, 2 Twin Beds' },
         { value: '2 King Beds, 4 Twin Beds', label: '2 King Beds, 4 Twin Beds' }
       ];
     } else if (sub.includes('3')) {
-      return [
+      options = [
         { value: '3 King Beds', label: '3 King Beds' },
         { value: '3 Queen Beds', label: '3 Queen Beds' },
         { value: '2 King Beds, 2 Twin Beds', label: '2 King Beds, 2 Twin Beds' },
         { value: '1 King Bed, 4 Twin Beds', label: '1 King Bed, 4 Twin Beds' }
       ];
     } else if (sub.includes('2')) {
-      return [
+      options = [
         { value: '2 King Beds', label: '2 King Beds' },
         { value: '2 Queen Beds', label: '2 Queen Beds' },
         { value: '1 King Bed, 2 Twin Beds', label: '1 King Bed, 2 Twin Beds' },
         { value: '4 Twin Beds', label: '4 Twin Beds' }
       ];
     } else if (sub.includes('1')) {
-      return [
+      options = [
         { value: '1 King Bed', label: '1 King Bed' },
         { value: '1 Queen Bed', label: '1 Queen Bed' },
         { value: '2 Twin Beds', label: '2 Twin Beds' }
       ];
+    } else {
+      options = [
+        { value: '1 King Bed', label: '1 King Bed' },
+        { value: '1 Queen Bed', label: '1 Queen Bed' },
+        { value: '2 Twin Beds', label: '2 Twin Beds' },
+        { value: '1 King, 1 Sofa Bed', label: '1 King, 1 Sofa Bed' }
+      ];
     }
-    return [
-      { value: '1 King Bed', label: '1 King Bed' },
-      { value: '1 Queen Bed', label: '1 Queen Bed' },
-      { value: '2 Twin Beds', label: '2 Twin Beds' },
-      { value: '1 King, 1 Sofa Bed', label: '1 King, 1 Sofa Bed' }
-    ];
+    
+    // Always add Green Area as a selectable option
+    options.push({ value: 'Green Area', label: 'Green Area' });
+    
+    return options;
   };
 
   const [optimizingExisting, setOptimizingExisting] = useState(false);
@@ -1242,11 +1250,42 @@ const AdminRooms = () => {
                 </div>
                 <div className="col-span-2 md:col-span-1">
                   <label className="block text-sm text-gray-400 mb-1">Bed Configuration</label>
-                  <select required value={newRoom.bed_configuration} onChange={e => setNewRoom({...newRoom, bed_configuration: e.target.value})} className="w-full bg-dark-900 border border-dark-700 p-2 text-white outline-none focus:border-gold-500">
-                    {getBedConfigurationOptions().map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <div 
+                      className="w-full bg-dark-900 border border-dark-700 p-2 text-white outline-none focus:border-gold-500 cursor-pointer flex justify-between items-center"
+                      onClick={() => setIsBedDropdownOpen(!isBedDropdownOpen)}
+                    >
+                      <span className="truncate">{newRoom.bed_configuration || 'Select Configuration...'}</span>
+                      <span className="text-gray-500 text-xs">▼</span>
+                    </div>
+                    {isBedDropdownOpen && (
+                      <div className="absolute top-full left-0 w-full mt-1 bg-dark-800 border border-dark-700 z-50 max-h-60 overflow-y-auto shadow-2xl">
+                        {getBedConfigurationOptions().map(opt => {
+                          const selectedVals = newRoom.bed_configuration ? newRoom.bed_configuration.split(', ').map(v => v.trim()) : [];
+                          const isSelected = selectedVals.includes(opt.value);
+                          return (
+                            <label key={opt.value} className="flex items-center p-3 hover:bg-dark-700 cursor-pointer">
+                              <input 
+                                type="checkbox" 
+                                checked={isSelected}
+                                onChange={() => {
+                                  let newSelected;
+                                  if (isSelected) {
+                                    newSelected = selectedVals.filter(v => v !== opt.value);
+                                  } else {
+                                    newSelected = [...selectedVals, opt.value];
+                                  }
+                                  setNewRoom({...newRoom, bed_configuration: newSelected.join(', ')});
+                                }}
+                                className="mr-3 accent-gold-500 w-4 h-4 cursor-pointer"
+                              />
+                              <span className="text-sm">{opt.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
