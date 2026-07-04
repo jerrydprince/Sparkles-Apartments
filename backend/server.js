@@ -426,15 +426,43 @@ app.post('/api/auth/reset-password', async (req, res) => {
   }
 });
 
-// Contact Form Submission (Local stub)
+// Contact Form Submission
 app.post('/api/contact/submit', async (req, res) => {
   const { name, email, subject, message } = req.body;
-  console.log(`[Local Contact API] Received submission:`);
-  console.log(`- From: ${name} <${email}>`);
-  console.log(`- Subject: ${subject}`);
-  console.log(`- Message: ${message}`);
+  console.log(`[Contact API] Received submission from: ${name} <${email}>`);
   
-  res.json({ success: true });
+  try {
+    // Fetch system settings to get the contact email dynamically
+    const { data: settings } = await supabase
+      .from('system_settings')
+      .select('setting_value')
+      .eq('setting_key', 'contact_email')
+      .single();
+      
+    const contactEmail = settings?.setting_value || 'contact@sparklesapartments.ng';
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee;">
+        <h2 style="color: #DF6853; border-bottom: 2px solid #eee; padding-bottom: 10px;">New Contact Form Submission</h2>
+        <p><strong>From:</strong> ${name} (${email})</p>
+        <p><strong>Subject:</strong> ${subject}</p>
+        <div style="margin-top: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 5px;">
+          <p style="margin: 0; white-space: pre-wrap;">${message}</p>
+        </div>
+      </div>
+    `;
+
+    await sendAuthEmailInternal({ 
+      to: contactEmail, 
+      subject: `New Inquiry: ${subject}`, 
+      html 
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[Contact API] Failed to send contact email:', err);
+    res.status(500).json({ error: 'Failed to send message.' });
+  }
 });
 
 // Biometric Shift Clock-in and Clock-out API Integration
