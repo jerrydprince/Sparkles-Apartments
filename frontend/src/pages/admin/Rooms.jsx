@@ -555,7 +555,8 @@ const AdminRooms = () => {
       ];
     }
     
-    // Always add Green Area as a selectable option
+    // Always add these as selectable options globally
+    options.push({ value: '2 Queen Beds', label: '2 Queen Beds' });
     options.push({ value: 'Green Area', label: 'Green Area' });
     
     return options;
