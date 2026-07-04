@@ -581,7 +581,7 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
         const msgText = `Hi ${newBooking.firstName}, your booking at Sparkles Apartments is confirmed! Check-in: ${newBooking.checkIn}, Check-out: ${newBooking.checkOut}. Reference: ${bookingData.booking_reference}. We look forward to hosting you!`;
         
         if (newBooking.phone) {
-          sendSMSNotification({
+          await sendSMSNotification({
             to: newBooking.phone,
             message: msgText
           });
@@ -601,7 +601,7 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
               <p>We look forward to hosting you!</p>
             </div>
           `;
-          sendResendEmail({
+          await sendResendEmail({
             to: newBooking.email,
             subject: 'Sparkles Apartments - Booking Confirmation',
             from: 'booking@sparklesapartments.ng',
