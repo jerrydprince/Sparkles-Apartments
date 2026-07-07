@@ -103,17 +103,34 @@ const AdminRooms = () => {
         ? supabase.from('cms_pages').select('content').eq('slug', 'system_categories').single()
         : Promise.resolve({ data: null });
 
+      // Fetch active bookings to dynamically compute occupancy status
+      const activeBookingsPromise = (activeTab === 'inventory' || force)
+        ? supabase.from('bookings').select('room_id').eq('status', 'checked_in')
+        : Promise.resolve({ data: [] });
+
       // 2. Fetch in parallel to prevent sequential database query waterfall (latency is cut by up to 66%)
-      const [roomsRes, hallsRes, propertiesRes, cmsRes] = await Promise.all([
+      const [roomsRes, hallsRes, propertiesRes, cmsRes, activeBookingsRes] = await Promise.all([
         roomsPromise,
         hallsPromise,
         propertiesPromise,
-        cmsPromise
+        cmsPromise,
+        activeBookingsPromise
       ]);
 
       // 3. Batch process responses safely
       if (roomsRes && roomsRes.data) {
-        setRooms(roomsRes.data);
+        let fetchedRooms = roomsRes.data;
+        // Dynamically override status to 'occupied' if there is an active checked-in booking
+        if (activeBookingsRes && activeBookingsRes.data && activeBookingsRes.data.length > 0) {
+          const occupiedRoomIds = new Set(activeBookingsRes.data.map(b => b.room_id));
+          fetchedRooms = fetchedRooms.map(room => {
+            if (occupiedRoomIds.has(room.id)) {
+              return { ...room, status: 'occupied' };
+            }
+            return room;
+          });
+        }
+        setRooms(fetchedRooms);
       }
 
       if (hallsRes && hallsRes.data) {
