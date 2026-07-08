@@ -366,6 +366,14 @@ const AdminLayout = () => {
                   </div>
                 </Link>
               )}
+              {hasAnyAccess('Front Desk') && (
+                <Link onClick={closeMobileMenu} to="/admin/ad-hoc-invoices" className={linkClass('/admin/ad-hoc-invoices')}>
+                  <div className="flex items-center gap-2.5 relative z-10">
+                    <FileText size={16} />
+                    <span className="text-xs font-semibold">Ad-Hoc Invoices</span>
+                  </div>
+                </Link>
+              )}
               {hasAnyAccess('Reservations') && (
                 <Link onClick={closeMobileMenu} to="/admin/reservations" className={linkClass('/admin/reservations')}>
                   <div className="flex items-center gap-2.5 relative z-10">
@@ -436,12 +444,26 @@ const AdminLayout = () => {
                 </Link>
               )}
               {(hasAnyAccess('Store Keeping') || user?.role === 'super_admin') && (
-                <Link onClick={closeMobileMenu} to="/admin/store" className={linkClass('/admin/store')}>
-                  <div className="flex items-center gap-2.5 relative z-10">
-                    <Archive size={16} />
-                    <span className="text-xs font-semibold">Stores & Warehouses</span>
-                  </div>
-                </Link>
+                <>
+                  <Link onClick={closeMobileMenu} to="/admin/store" className={linkClass('/admin/store')}>
+                    <div className="flex items-center gap-2.5 relative z-10">
+                      <Archive size={16} />
+                      <span className="text-xs font-semibold">General Store</span>
+                    </div>
+                  </Link>
+                  <Link onClick={closeMobileMenu} to="/admin/kitchen-inventory" className={linkClass('/admin/kitchen-inventory')}>
+                    <div className="flex items-center gap-2.5 relative z-10">
+                      <ChefHat size={16} />
+                      <span className="text-xs font-semibold">Kitchen Inventory</span>
+                    </div>
+                  </Link>
+                  <Link onClick={closeMobileMenu} to="/admin/bar-inventory" className={linkClass('/admin/bar-inventory')}>
+                    <div className="flex items-center gap-2.5 relative z-10">
+                      <Store size={16} />
+                      <span className="text-xs font-semibold">Bar Inventory</span>
+                    </div>
+                  </Link>
+                </>
               )}
               {(hasAnyAccess('Restaurant Desk') || hasAnyAccess('Kitchen Desk') || hasAnyAccess('Order History') || user?.role === 'super_admin') && (
                 <Link onClick={closeMobileMenu} to="/admin/restaurant" className={linkClass('/admin/restaurant')}>

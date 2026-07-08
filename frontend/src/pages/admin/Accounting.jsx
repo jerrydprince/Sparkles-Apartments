@@ -49,6 +49,8 @@ const AdminAccounting = () => {
   const [expenses, setExpenses] = useState([]);
   const [salaries, setSalaries] = useState([]);
   const [inflows, setInflows] = useState([]);
+  const [refundRequests, setRefundRequests] = useState([]);
+  const [loadingRefunds, setLoadingRefunds] = useState(false);
   const [invoices, setInvoices] = useState([]);
 
   // Filter States
@@ -3022,6 +3024,12 @@ const AdminAccounting = () => {
           className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'close_of_day' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
         >
           <Clock size={18} className="text-amber-400" /> Close of Day & Audit
+        </button>
+        <button 
+          onClick={() => setActiveTab('refunds')} 
+          className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'refunds' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
+        >
+          <Wallet size={18} className="text-amber-400" /> Refund Requests
         </button>
         <button 
           onClick={() => setActiveTab('reports')} 

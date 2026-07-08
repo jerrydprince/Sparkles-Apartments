@@ -5,10 +5,7 @@ import { useRealtimeSync } from '../../lib/useRealtimeSync';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { 
-  Archive, Layers, PlusCircle, Search, ClipboardList, Clock, 
-  User, ShieldCheck, CheckCircle, XCircle, ArrowUpRight, ArrowDownLeft, X, 
-  AlertTriangle, Filter, DollarSign, ListOrdered, Check, ChevronDown, Calendar, Trash2
-} from 'lucide-react';
+  Archive, Layers, PlusCircle, Search, ClipboardList, Clock, User, ShieldCheck, CheckCircle, XCircle, ArrowUpRight, ArrowDownLeft, X, AlertTriangle, Filter, DollarSign, ListOrdered, Check, ChevronDown, Calendar, Trash2, Edit2, Settings } from 'lucide-react';
 
 const PaginationControl = ({ currentPage, totalItems, pageSize, onPageChange }) => {
   const totalPages = Math.ceil(totalItems / pageSize);
@@ -85,26 +82,30 @@ const PaginationControl = ({ currentPage, totalItems, pageSize, onPageChange }) 
   );
 };
 
-const STORE_TYPE = 'general';
+const STORE_TYPE = 'kitchen';
 
-const StoreKeeping = () => {
+const KitchenInventory = () => {
   const { user, profile, hasAccess } = useAuth();
   
   const hasStoreKeepingAdmin = hasAccess('Store Keeping') || hasAccess('Store Keeping - Register & Restock Items') || hasAccess('Store Keeping - Approve Outgoing Material Releases');
   
   // Tab control: 'inventory', 'request', 'approvals', 'logs'
   const [activeTab, setActiveTab] = useState(() => {
-    return (hasAccess('Store Keeping') || hasAccess('Store Keeping - Register & Restock Items') || hasAccess('Store Keeping - Approve Outgoing Material Releases')) ? 'inventory' : 'request';
+    return (hasAccess('Store Keeping') || hasAccess('Store Keeping - Register & Restock Items') || hasAccess('Store Keeping - Approve Outgoing Material Releases')) ? 'inventory' : 'inventory';
   });
 
   useEffect(() => {
     if (user && !hasAccess('Store Keeping') && !hasAccess('Store Keeping - Register & Restock Items') && !hasAccess('Store Keeping - Approve Outgoing Material Releases')) {
-      setActiveTab('request');
+      setActiveTab('inventory');
     }
   }, [user]);
   
   // Data States
   const [items, setItems] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
+  const [newCategoryLabel, setNewCategoryLabel] = useState('');
+  const [editingCategory, setEditingCategory] = useState(null);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -233,15 +234,6 @@ const StoreKeeping = () => {
     { value: 'bar', label: 'Lounge & Bar' },
     { value: 'restaurant', label: 'Restaurant' },
     { value: 'maintenance', label: 'Maintenance & Utility' }
-  ];
-
-  const CATEGORIES = [
-    { value: 'linen', label: 'Linens & Bedding' },
-    { value: 'toiletries', label: 'Toiletries & Amenities' },
-    { value: 'housekeeping', label: 'Cleaning & Housekeeping' },
-    { value: 'stationery', label: 'Stationery & Office' },
-    { value: 'beverages', label: 'F&B Beverages' },
-    { value: 'other', label: 'Other Consumables' }
   ];
 
   useEffect(() => {
@@ -571,6 +563,131 @@ const StoreKeeping = () => {
   };
 
   // Add entirely new item to registry
+  
+  const handlePrintLiveInventory = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return toast.error("Please allow popups to print reports.");
+    
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${STORE_TYPE.toUpperCase()} Inventory Report</title>
+          <style>
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #111827; margin: 0; padding: 20px; }
+            .header-container { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #df6853; padding-bottom: 20px; margin-bottom: 20px; }
+            .brand-name { font-size: 24px; font-weight: 900; color: #df6853; text-transform: uppercase; margin: 0; }
+            .report-title { font-size: 14px; font-weight: 700; color: #4b5563; margin-top: 5px; }
+            .metadata { text-align: right; font-size: 11px; color: #6b7280; line-height: 1.5; }
+            table { width: 100%; border-collapse: collapse; text-align: left; font-size: 11px; margin-top: 10px; }
+            th { background-color: #df6853; color: white; padding: 12px 10px; font-weight: bold; text-transform: uppercase; font-size: 10px; }
+            td { padding: 10px; border-bottom: 1px solid #e5e7eb; }
+            tr:nth-child(even) { background-color: #f9fafb; }
+            .text-right { text-align: right; }
+            .font-bold { font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="header-container">
+            <div>
+              <h1 class="brand-name">Sparkles Luxury Apartments</h1>
+              <div class="report-title">${STORE_TYPE.toUpperCase()} LIVE INVENTORY VALUATION REPORT</div>
+            </div>
+            <div class="metadata">
+              <p><b>Date of Report:</b> ${format(new Date(), 'yyyy-MM-dd HH:mm')}</p>
+              <p><b>Exported By:</b> ${profile?.first_name || user?.email || 'Admin'}</p>
+              <p><b>Total Active Items:</b> ${filteredItems.length}</p>
+              <p><b>Estimated Total Valuation:</b> NGN ${filteredItems.reduce((acc, i) => acc + (i.quantity * i.unit_price_ngn), 0).toLocaleString()}</p>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Item Name</th>
+                <th>Category</th>
+                <th class="text-right">Unit Price (NGN)</th>
+                <th class="text-right">Qty in Stock</th>
+                <th class="text-right">Total Value (NGN)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredItems.map(item => `
+                <tr>
+                  <td class="font-bold">${item.name}</td>
+                  <td style="text-transform: capitalize;">${categories.find(c => c.value === item.category)?.label || item.category}</td>
+                  <td class="text-right">${item.unit_price_ngn.toLocaleString()}</td>
+                  <td class="text-right ${item.quantity < 10 ? 'font-bold' : ''}" style="color: ${item.quantity < 10 ? '#dc2626' : '#111827'}">${item.quantity}</td>
+                  <td class="text-right font-bold">${(item.quantity * item.unit_price_ngn).toLocaleString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div style="margin-top: 50px; border-top: 1px dashed #ccc; padding-top: 20px; display: flex; justify-content: space-between; font-size: 10px; color: #666;">
+            <div>Authorized Signature: _______________________</div>
+            <div>Date: _______________________</div>
+          </div>
+        </body>
+      </html>
+    `;
+    
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); }, 500);
+  };
+
+  const saveCategories = async (newCats) => {
+    try {
+      await supabase.from('system_settings').upsert({
+        setting_key: `${STORE_TYPE}_categories`,
+        setting_value: newCats
+      }, { onConflict: 'setting_key' });
+      setCategories(newCats);
+    } catch (e) {
+      console.error("Failed to save categories", e);
+      toast.error("Failed to save category");
+    }
+  };
+
+  const handleAddCategory = async (e) => {
+    e.preventDefault();
+    if (!newCategoryLabel.trim()) return;
+    const val = newCategoryLabel.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    if (categories.some(c => c.value === val)) return toast.error("Category already exists");
+    
+    const updated = [...categories, { value: val, label: newCategoryLabel.trim() }];
+    await saveCategories(updated);
+    setNewCategoryLabel('');
+    toast.success("Category added!");
+  };
+
+  const handleDeleteCategory = async (catValue) => {
+    if (!window.confirm("Delete this category? Items in this category will be marked as 'Uncategorized'.")) return;
+    setIsProcessing(true);
+    try {
+      await supabase.from('store_items').update({ category: 'uncategorized' }).eq('store_type', STORE_TYPE).eq('category', catValue);
+      const updated = categories.filter(c => c.value !== catValue);
+      await saveCategories(updated);
+      toast.success("Category deleted");
+      fetchStoreData();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to delete category");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleUpdateCategory = async (e) => {
+    e.preventDefault();
+    if (!editingCategory.label.trim()) return;
+    const updated = categories.map(c => 
+      c.value === editingCategory.value ? { ...c, label: editingCategory.label.trim() } : c
+    );
+    await saveCategories(updated);
+    setEditingCategory(null);
+    toast.success("Category updated!");
+  };
   const handleAddNewItemSubmit = async (e) => {
     e.preventDefault();
     if (!isSuperAdminOrManager) {
@@ -623,6 +740,50 @@ const StoreKeeping = () => {
   };
 
   // Open restock incoming modal
+
+  const [isUsageModalOpen, setIsUsageModalOpen] = useState(false);
+  const [usageItem, setUsageItem] = useState('');
+  const [usageQuantity, setUsageQuantity] = useState(1);
+  const [usageNotes, setUsageNotes] = useState('');
+
+  const handleLogUsageSubmit = async (e) => {
+    e.preventDefault();
+    if (!usageItem || usageQuantity <= 0) return toast.error("Select item and valid quantity");
+
+    const targetItem = items.find(i => i.id === usageItem);
+    if (!targetItem) return;
+    if (targetItem.quantity < usageQuantity) return toast.error("Not enough stock available!");
+
+    setIsProcessing(true);
+    try {
+      const newQty = targetItem.quantity - usageQuantity;
+      await supabase.from('store_items').update({ quantity: newQty }).eq('id', targetItem.id);
+      
+      await supabase.from('store_logs').insert([{
+        store_type: STORE_TYPE,
+        item_id: targetItem.id,
+        log_type: 'outgoing',
+        quantity: usageQuantity,
+        price_at_transaction: targetItem.unit_price_ngn,
+        giver_name: currentStaffName,
+        notes: `Kitchen Material Usage: ${usageNotes}`,
+        status: 'approved'
+      }]);
+
+      toast.success(`✓ Logged ${usageQuantity}x "${targetItem.name}" as used.`);
+      setIsUsageModalOpen(false);
+      setUsageItem('');
+      setUsageQuantity(1);
+      setUsageNotes('');
+      fetchStoreData();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to log usage");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleOpenRestockModal = (item) => {
     setSelectedRestockItem(item);
     setRestockQty(1);
@@ -1172,7 +1333,7 @@ const StoreKeeping = () => {
         <div>
           <h1 className="text-3xl font-black text-white flex items-center gap-2 tracking-tight">
             <Archive className="text-brand-500" />
-            Store Keeping & Inventory Control
+            Kitchen Inventory
           </h1>
           <p className="text-gray-400 text-sm">
             Manage material inventories, track restocks, and log departmental release authorizations.
@@ -1189,27 +1350,10 @@ const StoreKeeping = () => {
               <span>Store Registry</span>
             </button>
           )}
-          <button 
-            onClick={() => setActiveTab('request')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 ${activeTab === 'request' ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
-          >
-            <ArrowUpRight size={14} />
-            <span>Material Request</span>
-          </button>
+          
           {hasStoreKeepingAdmin && (
             <>
-              <button 
-                onClick={() => setActiveTab('approvals')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 relative ${activeTab === 'approvals' ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
-              >
-                <ShieldCheck size={14} />
-                <span>Release Approvals</span>
-                {pendingApprovals.length > 0 && (
-                  <span className="absolute -top-1.5 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[8px] font-black text-white ring-2 ring-dark-900 animate-pulse">
-                    {pendingApprovals.length}
-                  </span>
-                )}
-              </button>
+              
               <button 
                 onClick={() => setActiveTab('procurement')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 relative ${activeTab === 'procurement' ? 'bg-gradient-to-tr from-brand-600 to-brand-400 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
@@ -1281,23 +1425,41 @@ const StoreKeeping = () => {
               </div>
 
               <select
-                value={filterCategory}
-                onChange={e => setFilterCategory(e.target.value)}
-                className="bg-dark-900 border border-dark-700/80 rounded-xl p-2.5 text-xs text-white outline-none focus:border-brand-500"
-              >
-                <option value="all">All Categories</option>
-                {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
+                  value={filterCategory}
+                  onChange={e => setFilterCategory(e.target.value)}
+                  className="bg-dark-900 border border-dark-700/80 rounded-xl p-2.5 text-xs text-white outline-none focus:border-brand-500"
+                >
+                  <option value="all">All Categories</option>
+                  {categories.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  <option value="uncategorized">Uncategorized</option>
+                </select>
             </div>
 
             {isSuperAdminOrManager && (
-              <button 
-                onClick={() => setIsAddModalOpen(true)}
-                className="w-full md:w-auto bg-brand-500/10 hover:bg-brand-500 border border-brand-500/20 text-brand-400 hover:text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow"
-              >
-                <PlusCircle size={16} />
-                Register New Stock Item
-              </button>
+              <>
+                <button 
+                  onClick={handlePrintLiveInventory}
+                  className="w-full md:w-auto bg-dark-800 hover:bg-dark-700 border border-dark-700 text-gray-300 hover:text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow"
+                >
+                  <ClipboardList size={16} />
+                  Print Stock Report
+                </button>
+                <button 
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="w-full md:w-auto bg-brand-500/10 hover:bg-brand-500 border border-brand-500/20 text-brand-400 hover:text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow"
+                >
+                  <PlusCircle size={16} />
+                  Register New Stock Item
+                </button>
+
+                <button 
+                  onClick={() => setIsUsageModalOpen(true)}
+                  className="w-full md:w-auto bg-orange-500/10 hover:bg-orange-500 border border-orange-500/20 text-orange-400 hover:text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow"
+                >
+                  <CheckCircle size={16} />
+                  Log Material Usage
+                </button>
+                </>
             )}
           </div>
 
@@ -1332,7 +1494,7 @@ const StoreKeeping = () => {
                       <td className="p-4 font-extrabold text-white">{item.name}</td>
                       <td className="p-4">
                         <span className="bg-dark-800 border border-dark-700/60 px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider text-gray-400">
-                          {CATEGORIES.find(c => c.value === item.category)?.label || item.category}
+                          {categories.find(c => c.value === item.category)?.label || item.category}
                         </span>
                       </td>
                       <td className="p-4 text-gray-400 max-w-xs truncate">{item.description}</td>
@@ -1369,273 +1531,6 @@ const StoreKeeping = () => {
         </div>
       )}
 
-      {/* TAB 2: REQUEST RELEASE / LOG OUTGOING */}
-      {activeTab === 'request' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start animate-fade-in">
-          {/* Outgoing Form Panel */}
-          <div className="lg:col-span-2 glass-panel border border-dark-700/60 p-6 rounded-3xl shadow-xl">
-            <div className="border-b border-dark-700/60 pb-4 mb-6">
-              <h2 className="text-xl font-black text-white flex items-center gap-2">
-                <ArrowUpRight size={20} className="text-purple-400" />
-                Log Material Release Request
-              </h2>
-              <p className="text-gray-400 text-xs mt-1">
-                Record material allocations requested by hotel staff. Needs approval from the Hotel Manager before release.
-              </p>
-            </div>
-
-            <form onSubmit={handleOutgoingRequestSubmit} className="space-y-4 text-xs">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-gray-400 font-bold mb-1.5 uppercase">Logged By (Giver)</label>
-                  <div className="w-full bg-dark-900 border border-dark-700/80 rounded-xl p-3 text-gray-400 font-semibold flex items-center gap-2 select-none">
-                    <User size={14} className="text-brand-500" />
-                    <span>{currentStaffName}</span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-gray-400 font-bold mb-1.5 uppercase">Department of Receiver *</label>
-                  <select
-                    value={outgoingForm.department}
-                    onChange={e => setOutgoingForm({ ...outgoingForm, department: e.target.value })}
-                    className="w-full bg-dark-900 border border-dark-700 rounded-xl p-3 text-white focus:border-brand-500 outline-none"
-                  >
-                    {DEPARTMENTS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-gray-400 font-bold mb-1.5 uppercase">Receiver Name (Full Name) *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Chef Emeka, housekeeper Sarah"
-                    value={outgoingForm.receiverName}
-                    onChange={e => setOutgoingForm({ ...outgoingForm, receiverName: e.target.value })}
-                    className="w-full bg-dark-900 border border-dark-700 rounded-xl p-3 text-white focus:border-brand-500 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-gray-400 font-bold mb-1.5 uppercase">Select Inventory Item *</label>
-                  <select
-                    required
-                    value={outgoingForm.itemId}
-                    onChange={e => setOutgoingForm({ ...outgoingForm, itemId: e.target.value })}
-                    className="w-full bg-dark-900 border border-dark-700 rounded-xl p-3 text-white focus:border-brand-500 outline-none font-semibold"
-                  >
-                    <option value="">-- Choose item from stock --</option>
-                    {items.map(item => (
-                      <option key={item.id} value={item.id} disabled={item.quantity <= 0}>
-                        {item.name} ({item.quantity} available — ₦{Number(item.unit_price_ngn).toLocaleString()}/unit)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-gray-400 font-bold mb-1.5 uppercase">Quantity to Release *</label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    value={outgoingForm.quantity}
-                    onChange={e => setOutgoingForm({ ...outgoingForm, quantity: Math.max(1, Number(e.target.value)) })}
-                    className="w-full bg-dark-900 border border-dark-700 rounded-xl p-3 text-white focus:border-brand-500 outline-none font-bold font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-gray-400 font-bold mb-1.5 uppercase">Request Date *</label>
-                  <input
-                    type="date"
-                    required
-                    value={outgoingForm.date}
-                    onChange={e => setOutgoingForm({ ...outgoingForm, date: e.target.value })}
-                    className="w-full bg-dark-900 border border-dark-700 rounded-xl p-2.5 text-white focus:border-brand-500 outline-none font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-gray-400 font-bold mb-1.5 uppercase">Request Time *</label>
-                  <input
-                    type="time"
-                    required
-                    value={outgoingForm.time}
-                    onChange={e => setOutgoingForm({ ...outgoingForm, time: e.target.value })}
-                    className="w-full bg-dark-900 border border-dark-700 rounded-xl p-2.5 text-white focus:border-brand-500 outline-none font-bold"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-gray-400 font-bold mb-1.5 uppercase">Reason / Notes (Optional)</label>
-                <textarea
-                  rows="3"
-                  placeholder="Describe material usage or event, e.g. Guest linen replacements Room 102..."
-                  value={outgoingForm.notes}
-                  onChange={e => setOutgoingForm({ ...outgoingForm, notes: e.target.value })}
-                  className="w-full bg-dark-900 border border-dark-700 rounded-xl p-3 text-white focus:border-brand-500 outline-none"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={isProcessing || !outgoingForm.itemId}
-                className="w-full bg-gradient-to-tr from-brand-600 to-brand-400 hover:from-brand-500 hover:to-brand-300 disabled:from-dark-800 disabled:to-dark-800 disabled:text-gray-500 text-white font-bold py-3 px-4 rounded-xl mt-4 transition-all duration-300 shadow-lg flex items-center justify-center gap-2"
-              >
-                {isProcessing ? (
-                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white" />
-                ) : (
-                  <>
-                    <ArrowUpRight size={16} />
-                    <span>Log Release Request</span>
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
-
-          {/* Stock Reference Panel */}
-          <div className="glass-panel border border-dark-700/60 p-6 rounded-3xl shadow-xl flex flex-col space-y-4">
-            <h3 className="font-extrabold text-white flex items-center gap-1.5 text-sm border-b border-dark-700 pb-3">
-              <ClipboardList className="text-brand-500" size={16} />
-              Stock Availability Helper
-            </h3>
-            <p className="text-gray-400 text-[10px] leading-relaxed">
-              Before submitting a request, verify that standard stores have sufficient stock. Requests exceeding physical balances cannot be processed.
-            </p>
-            <div className="overflow-y-auto max-h-[300px] space-y-2 pr-1 custom-scrollbar">
-              {items.map(i => (
-                <div key={i.id} className="bg-dark-900/60 border border-dark-700/40 p-2.5 rounded-xl flex justify-between items-center text-[10px]">
-                  <div className="min-w-0">
-                    <p className="font-bold text-white truncate">{i.name}</p>
-                    <p className="text-gray-500 capitalize">{i.category}</p>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded font-bold font-mono ${i.quantity < 10 ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-dark-800 text-gray-300 border border-dark-700'}`}>
-                    {i.quantity} Left
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: RELEASE APPROVALS QUEUE */}
-      {activeTab === 'approvals' && hasStoreKeepingAdmin && (
-        <div className="space-y-6 animate-fade-in">
-          {/* RLS/Role Restriction Warning if staff isn't Manager */}
-          {!isApprover ? (
-            <div className="min-h-[50vh] flex flex-col items-center justify-center p-6 text-center">
-              <div className="glass-panel max-w-md w-full p-8 border border-red-500/20 rounded-3xl shadow-2xl flex flex-col items-center">
-                <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center text-red-500 mb-6 animate-pulse">
-                  <ShieldCheck size={32} />
-                </div>
-                <h2 className="text-xl font-black text-white mb-2 font-serif">Approval Access Restricted</h2>
-                <p className="text-gray-400 text-xs mb-4 leading-relaxed">
-                  Only the **Hotel Manager**, **Super Admins**, or **Admins** have authority to authorize outgoing material releases from standard hotel stores.
-                </p>
-                <p className="text-[10px] text-gray-500">
-                  Standard staff can submit release requests, but they must be reviewed by the General Manager before items leave standard inventory.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="glass-panel border border-dark-700/60 p-6 rounded-3xl shadow-xl space-y-4">
-              <div className="border-b border-dark-700/60 pb-4">
-                <h2 className="text-xl font-black text-white flex items-center gap-2">
-                  <ShieldCheck className="text-brand-500" />
-                  General Manager Release Authorizations
-                </h2>
-                <p className="text-gray-400 text-xs mt-1">
-                  Approve pending outgoing requests to update the physical store balances, or decline requests.
-                </p>
-              </div>
-
-              {pendingApprovals.length === 0 ? (
-                <div className="py-24 text-center text-gray-500">
-                  <CheckCircle size={32} className="mx-auto mb-2 opacity-30 text-green-500 animate-pulse" />
-                  <p className="text-sm">Excellent! No pending material release requests awaiting review.</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto rounded-2xl border border-dark-700 bg-dark-900/20">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-dark-900/60 border-b border-dark-700 text-gray-400 uppercase tracking-wider">
-                      <tr>
-                        <th className="p-4 font-bold">Request Date</th>
-                        <th className="p-4 font-bold">Giver (Staff)</th>
-                        <th className="p-4 font-bold">Receiver Account</th>
-                        <th className="p-4 font-bold">Target Department</th>
-                        <th className="p-4 font-bold">Item Requested</th>
-                        <th className="p-4 font-bold text-center">Qty</th>
-                        <th className="p-4 font-bold">Total Cost</th>
-                        <th className="p-4 font-bold">Notes</th>
-                        <th className="p-4 font-bold text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-dark-700">
-                      {paginatedApprovals.map(log => {
-                        const totalVal = log.quantity * log.price_at_transaction;
-                        return (
-                          <tr key={log.id} className="hover:bg-dark-700/20 transition-colors">
-                            <td className="p-4 text-gray-400 font-mono text-[10px]">
-                              {format(new Date(log.transaction_date), 'MMM dd, HH:mm')}
-                            </td>
-                            <td className="p-4 text-gray-300 font-medium">{log.giver_name}</td>
-                            <td className="p-4 text-white font-extrabold">{log.receiver_name}</td>
-                            <td className="p-4 text-gray-400 uppercase text-[9px] font-bold">
-                              {log.department}
-                            </td>
-                            <td className="p-4">
-                              <p className="font-extrabold text-white text-xs">{log.store_items?.name || 'F&B Item'}</p>
-                              <span className="inline-block bg-brand-500/10 border border-brand-500/20 text-brand-400 text-[9px] px-2 py-0.5 rounded-full font-bold mt-1 font-sans">
-                                Qty: {log.quantity}
-                              </span>
-                            </td>
-                            <td className="p-4 text-center font-bold text-white font-mono">{log.quantity}</td>
-                            <td className="p-4 font-black text-brand-400">₦{totalVal.toLocaleString()}</td>
-                            <td className="p-4 text-gray-500 max-w-xs truncate" title={log.notes}>{log.notes}</td>
-                            <td className="p-4 text-right">
-                              <div className="flex gap-2 justify-end">
-                                <button 
-                                  onClick={() => handleDeclineRelease(log)}
-                                  className="bg-dark-850 hover:bg-red-500/10 text-gray-500 hover:text-red-400 p-2 rounded-lg border border-dark-700 transition-all font-bold"
-                                  title="Decline request"
-                                >
-                                  <XCircle size={14} />
-                                </button>
-                                <button 
-                                  onClick={() => handleApproveRelease(log)}
-                                  className="bg-brand-500/10 hover:bg-brand-500 text-brand-400 hover:text-white px-3 py-2 rounded-lg border border-brand-500/20 transition-all font-bold flex items-center gap-1 text-[10px] shadow"
-                                >
-                                  <CheckCircle size={12} />
-                                  Approve & Release
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  <PaginationControl
-                    currentPage={currentPageApprovals}
-                    totalItems={pendingApprovals.length}
-                    pageSize={pageSize}
-                    onPageChange={setCurrentPageApprovals}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
       {/* TAB 5: PROCUREMENT WORKSPACE */}
       {activeTab === 'procurement' && hasStoreKeepingAdmin && (
         <div className="space-y-6 animate-fade-in">
@@ -1981,6 +1876,72 @@ const StoreKeeping = () => {
       )}
 
       {/* 3. REGISTER NEW INVENTORY ITEM MODAL */}
+      {isUsageModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fade-in print:hidden">
+          <div className="glass-panel max-w-md w-full border border-dark-700/80 p-6 rounded-3xl shadow-2xl relative">
+            <button onClick={() => setIsUsageModalOpen(false)} className="absolute right-4 top-4 p-1.5 bg-dark-800 hover:bg-dark-700 text-gray-400 hover:text-white rounded-full transition-colors"><X size={18} /></button>
+            <h2 className="text-xl font-black text-white mb-6">Log Kitchen Material Usage</h2>
+            <form onSubmit={handleLogUsageSubmit} className="space-y-4">
+              <div>
+                <label className="block text-gray-400 text-xs font-bold mb-1.5 uppercase">Select Raw Material</label>
+                <select required value={usageItem} onChange={e => setUsageItem(e.target.value)} className="w-full bg-dark-800 border border-dark-700 rounded-xl p-3 text-white focus:border-orange-500 outline-none text-xs">
+                  <option value="">-- Choose item --</option>
+                  {items.filter(i => i.quantity > 0).map(i => (
+                    <option key={i.id} value={i.id}>{i.name} (In stock: {i.quantity})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-gray-400 text-xs font-bold mb-1.5 uppercase">Quantity Consumed</label>
+                <input type="number" required min="0.1" step="0.1" value={usageQuantity} onChange={e => setUsageQuantity(Number(e.target.value))} className="w-full bg-dark-800 border border-dark-700 rounded-xl p-3 text-white focus:border-orange-500 outline-none text-xs" />
+              </div>
+              <div>
+                <label className="block text-gray-400 text-xs font-bold mb-1.5 uppercase">Notes (Recipe/Meal)</label>
+                <input type="text" required placeholder="e.g. For Buffet Prep" value={usageNotes} onChange={e => setUsageNotes(e.target.value)} className="w-full bg-dark-800 border border-dark-700 rounded-xl p-3 text-white focus:border-orange-500 outline-none text-xs" />
+              </div>
+              <button disabled={isProcessing} type="submit" className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl mt-4">Confirm Usage</button>
+            </form>
+          </div>
+        </div>
+      )}
+      {isCategoryManagerOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fade-in print:hidden">
+          <div className="glass-panel max-w-md w-full border border-dark-700/80 p-6 rounded-3xl shadow-2xl relative">
+            <button onClick={() => setIsCategoryManagerOpen(false)} className="absolute right-4 top-4 p-1.5 bg-dark-800 hover:bg-dark-700 text-gray-400 hover:text-white rounded-full transition-colors"><X size={18} /></button>
+            <h2 className="text-xl font-black text-white mb-6">Manage Categories</h2>
+            
+            <form onSubmit={handleAddCategory} className="flex gap-2 mb-6">
+              <input type="text" value={newCategoryLabel} onChange={e => setNewCategoryLabel(e.target.value)} placeholder="New category name..." className="flex-1 bg-dark-900 border border-dark-700 rounded-xl p-3 text-xs text-white outline-none focus:border-brand-500" required />
+              <button type="submit" className="bg-brand-600 hover:bg-brand-500 text-white px-4 rounded-xl text-xs font-bold">Add</button>
+            </form>
+
+            <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+              {categories.map(c => (
+                <div key={c.value} className="bg-dark-900/50 border border-dark-700/50 rounded-xl p-3 flex justify-between items-center text-xs">
+                  {editingCategory?.value === c.value ? (
+                    <form onSubmit={handleUpdateCategory} className="flex flex-1 gap-2 mr-2">
+                      <input type="text" value={editingCategory.label} onChange={e => setEditingCategory({...editingCategory, label: e.target.value})} className="flex-1 bg-dark-800 border border-brand-500 rounded p-1.5 text-white outline-none" autoFocus required />
+                      <button type="submit" className="text-green-400 hover:text-green-300"><CheckCircle size={16} /></button>
+                      <button type="button" onClick={() => setEditingCategory(null)} className="text-gray-400 hover:text-white"><XCircle size={16} /></button>
+                    </form>
+                  ) : (
+                    <span className="font-semibold text-white">{c.label}</span>
+                  )}
+                  
+                  {editingCategory?.value !== c.value && (
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => setEditingCategory(c)} className="text-gray-400 hover:text-brand-400"><Edit2 size={14} /></button>
+                      <button type="button" onClick={() => handleDeleteCategory(c.value)} disabled={isProcessing} className="text-gray-400 hover:text-red-400 disabled:opacity-50"><Trash2 size={14} /></button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {categories.length === 0 && <p className="text-center text-gray-500 text-xs py-4">No categories configured.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+      
       {isAddModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in print:hidden">
           <div className="glass-panel max-w-md w-full border border-dark-700/80 p-6 rounded-3xl shadow-2xl relative">
@@ -2026,15 +1987,23 @@ const StoreKeeping = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-gray-400 font-bold mb-1.5 uppercase">Select Category</label>
-                  <select
-                    value={newItem.category}
-                    onChange={e => setNewItem({ ...newItem, category: e.target.value })}
-                    className="w-full bg-dark-800 border border-dark-700 rounded-xl p-3 text-white focus:border-brand-500 outline-none font-semibold"
-                  >
-                    {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </select>
-                </div>
+                  <label className="block text-gray-400 font-bold mb-1.5 uppercase flex justify-between items-center">
+                      <span>Category</span>
+                      <button type="button" onClick={() => setIsCategoryManagerOpen(true)} className="text-[10px] text-brand-400 hover:text-brand-300 font-bold flex items-center gap-1">
+                        <Settings size={10} /> Manage Categories
+                      </button>
+                    </label>
+                    <select
+                      value={newItem.category}
+                      onChange={e => setNewItem({ ...newItem, category: e.target.value })}
+                      className="w-full bg-dark-800 border border-dark-700 rounded-xl p-3 text-white focus:border-brand-500 outline-none font-semibold mb-2"
+                      required
+                    >
+                      <option value="">-- Select Category --</option>
+                      {categories.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                      <option value="uncategorized">Uncategorized</option>
+                    </select>
+                  </div>
               </div>
 
               <div>
@@ -2368,4 +2337,4 @@ const StoreKeeping = () => {
   );
 };
 
-export default StoreKeeping;
+export default KitchenInventory;

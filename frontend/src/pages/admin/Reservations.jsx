@@ -395,7 +395,13 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
       return;
     }
     setCurrentBooking(booking);
-    setEditBookingForm({ status: booking.status });
+    setEditBookingForm({ 
+      status: booking.status,
+      guest_name: booking.crm_guests ? `${booking.crm_guests.first_name || ''} ${booking.crm_guests.last_name || ''}`.trim() || booking.crm_guests.guest_name : booking.guest_name || '',
+      check_in_date: booking.check_in_date,
+      check_out_date: booking.check_out_date,
+      room_id: booking.room_id
+    });
     setIsEditModalOpen(true);
   };
 
@@ -943,11 +949,38 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
             return (
               <div className="bg-dark-800 border border-dark-700 p-6 w-full max-w-lg relative animate-in fade-in zoom-in-95">
                 <button onClick={() => setIsEditModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white"><X size={24}/></button>
-                <h2 className="text-xl font-semibold mb-6">Edit Reservation Status</h2>
-                
-                <form onSubmit={handleUpdate} className="space-y-4">
-                  <div>
-                    <label className="block text-sm text-gray-400 mb-1">Status</label>
+                  <h2 className="text-xl font-semibold mb-6">Edit Reservation</h2>
+                  
+                  <form onSubmit={handleUpdate} className="space-y-4">
+                    {['pending', 'confirmed'].includes(currentBooking?.status) && (
+                      <>
+                        <div>
+                          <label className="block text-sm text-gray-400 mb-1">Guest Name</label>
+                          <input type="text" value={editBookingForm.guest_name} onChange={e => setEditBookingForm({ ...editBookingForm, guest_name: e.target.value })} className="w-full bg-dark-900 border border-dark-700 p-2 rounded text-white outline-none focus:border-gold-500" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm text-gray-400 mb-1">Check-In</label>
+                            <input type="date" value={editBookingForm.check_in_date} onChange={e => setEditBookingForm({ ...editBookingForm, check_in_date: e.target.value })} className="w-full bg-dark-900 border border-dark-700 p-2 rounded text-white outline-none focus:border-gold-500" />
+                          </div>
+                          <div>
+                            <label className="block text-sm text-gray-400 mb-1">Check-Out</label>
+                            <input type="date" value={editBookingForm.check_out_date} onChange={e => setEditBookingForm({ ...editBookingForm, check_out_date: e.target.value })} className="w-full bg-dark-900 border border-dark-700 p-2 rounded text-white outline-none focus:border-gold-500" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-400 mb-1">Room Assignment</label>
+                          <select value={editBookingForm.room_id} onChange={e => setEditBookingForm({ ...editBookingForm, room_id: e.target.value })} className="w-full bg-dark-900 border border-dark-700 p-2 rounded text-white outline-none focus:border-gold-500">
+                            {rooms.map(room => (
+                              <option key={room.id} value={room.id}>Room {room.room_number} - {room.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </>
+                    )}
+
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Status</label>
                     <select value={editBookingForm.status} onChange={e => setEditBookingForm({ status: e.target.value })} className="w-full bg-dark-900 border border-dark-700 p-2 text-white outline-none focus:border-gold-500">
                       <option value="pending">Pending</option>
                       <option value="confirmed" disabled={isConfirmedDisabled}>

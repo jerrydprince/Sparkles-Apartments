@@ -11,6 +11,10 @@ const TopbarAttendanceClock = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeShift, setActiveShift] = useState(null);
+  const [showOverrideModal, setShowOverrideModal] = useState(false);
+  const [overridePin, setOverridePin] = useState('');
+  const [systemPin, setSystemPin] = useState('123456');
+  const [isCheckingOthers, setIsCheckingOthers] = useState(false);
   const [elapsed, setElapsed] = useState('');
   const [notes, setNotes] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -44,6 +48,12 @@ const TopbarAttendanceClock = () => {
   }, [user]);
 
   // Event listener for attendance updates elsewhere to sync automatically
+  useEffect(() => {
+    supabase.from('system_settings').select('setting_value').eq('setting_key', 'manager_override_pin').maybeSingle().then(({data}) => {
+      if (data && data.setting_value) setSystemPin(data.setting_value);
+    });
+  }, []);
+
   useEffect(() => {
     const handleSync = () => {
       fetchActiveShift();
@@ -144,8 +154,28 @@ const TopbarAttendanceClock = () => {
     }
   };
 
-  const handleClockOut = async () => {
+  const handleClockOut = async (forceOverride = false) => {
     if (!activeShift) return;
+    
+    // Check for other active staff if not admin/super_admin and not overridden
+    const isManager = profile?.role === 'super_admin' || profile?.role === 'admin' || profile?.role === 'manager';
+    if (!isManager && forceOverride !== true) {
+      setLoading(true);
+      const { data: others, error: checkErr } = await supabase
+        .from('staff_attendance')
+        .select('id')
+        .is('clock_out', null)
+        .neq('staff_id', profile?.id);
+        
+      setLoading(false);
+      
+      if (!checkErr && others && others.length === 0) {
+        // No one else is clocked in! Block the handover.
+        setShowOverrideModal(true);
+        return; // Stop execution
+      }
+    }
+    
     setLoading(true);
     const toastId = toast.loading("Clocking out shift...");
     try {

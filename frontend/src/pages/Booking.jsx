@@ -233,6 +233,7 @@ const BookingEngine = () => {
   const [bookingRules, setBookingRules] = useState({
     payment_rule: 'partial_deposit',
     deposit_percentage: 30,
+    caution_fee: 0,
     cancellation_policy: 'Flexible',
     auto_confirmation: true
   });
@@ -246,7 +247,7 @@ const BookingEngine = () => {
         supabase.from('rate_plans').select('*').eq('is_active', true),
         supabase.from('coupons').select('*').eq('is_active', true),
         supabase.from('cms_pages').select('content').eq('slug', 'system_categories').maybeSingle(),
-        supabase.from('system_settings').select('setting_key, setting_value').in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo', 'payment_rule', 'deposit_percentage', 'cancellation_policy', 'auto_confirmation', 'paystack_public']),
+        supabase.from('system_settings').select('setting_key, setting_value').in('setting_key', ['contact_address', 'contact_phone', 'contact_email', 'contact_logo', 'payment_rule', 'deposit_percentage', 'caution_fee', 'cancellation_policy', 'auto_confirmation', 'paystack_public']),
         supabase.from('halls').select('*').eq('is_active', true),
         supabase.from('hall_meal_options').select('*').eq('is_active', true)
       ]);
@@ -286,6 +287,7 @@ const BookingEngine = () => {
         setBookingRules({
           payment_rule: settingsMap.payment_rule || 'partial_deposit',
           deposit_percentage: parseFloat(settingsMap.deposit_percentage) || 30,
+          caution_fee: parseFloat(settingsMap.caution_fee) || 0,
           cancellation_policy: settingsMap.cancellation_policy || 'Flexible',
           auto_confirmation: settingsMap.auto_confirmation !== false
         });
@@ -478,7 +480,7 @@ const BookingEngine = () => {
 
       const subtotal = hallPrice + mealsPrice;
       const vat = subtotal * 0.075;
-      return subtotal + vat;
+      return subtotal + vat + bookingRules.caution_fee;
     }
 
     let roomPrice = 0;
@@ -507,7 +509,7 @@ const BookingEngine = () => {
 
     const subtotal = Math.max(0, (roomPrice - discountAmount) + servicesPrice);
     const vat = subtotal * 0.075;
-    return subtotal + vat;
+    return subtotal + vat + bookingRules.caution_fee;
   };
 
   const toggleService = (service) => {
@@ -564,10 +566,10 @@ const BookingEngine = () => {
       return total;
     }
     if (bookingRules.payment_rule === 'partial_deposit') {
-      return parseFloat((total * (bookingRules.deposit_percentage / 100)).toFixed(2));
+      return parseFloat(((total - bookingRules.caution_fee) * (bookingRules.deposit_percentage / 100) + bookingRules.caution_fee).toFixed(2));
     }
     return total;
-  }, [calculateTotal(), bookingMode, bookingRules.payment_rule, bookingRules.deposit_percentage]);
+  }, [calculateTotal(), bookingMode, bookingRules.payment_rule, bookingRules.deposit_percentage, bookingRules.caution_fee]);
 
   const [bookingRef, setBookingRef] = useState(null);
   const [shouldTriggerPaystack, setShouldTriggerPaystack] = useState(false);
@@ -962,8 +964,9 @@ const BookingEngine = () => {
             check_out_date: checkOutDateStr,
             total_room_price_ngn: roomPriceDetails.totalRoomPrice,
             total_amount_ngn: calculateTotal(),
-            total_extras_price_ngn: calculateTotal() - (roomPriceDetails.totalRoomPrice - calculatedDiscount),
+            total_extras_price_ngn: calculateTotal() - (roomPriceDetails.totalRoomPrice - calculatedDiscount) - bookingRules.caution_fee,
             discount_amount_ngn: calculatedDiscount,
+            caution_fee_ngn: bookingRules.caution_fee,
             special_requests: guestForm.specialRequests || ''
           })
           .eq('booking_reference', pendingBookingRef.current)
@@ -989,8 +992,9 @@ const BookingEngine = () => {
           status: 'pending',
           total_room_price_ngn: roomPriceDetails.totalRoomPrice,
           total_amount_ngn: calculateTotal(),
-          total_extras_price_ngn: calculateTotal() - (roomPriceDetails.totalRoomPrice - calculatedDiscount),
+          total_extras_price_ngn: calculateTotal() - (roomPriceDetails.totalRoomPrice - calculatedDiscount) - bookingRules.caution_fee,
           discount_amount_ngn: calculatedDiscount,
+          caution_fee_ngn: bookingRules.caution_fee,
           amount_paid_ngn: 0,
           payment_status: 'unpaid',
           special_requests: guestForm.specialRequests || ''
@@ -1054,6 +1058,7 @@ const BookingEngine = () => {
           .update({
             amount_paid_ngn: paidAmount,
             payment_status: statusPayment,
+            caution_fee_status: bookingRules.caution_fee > 0 ? (paidAmount >= calculateTotal() ? 'held' : 'unpaid') : 'unpaid',
             status: 'confirmed'
           })
           .eq('id', insertedBooking.id);
@@ -1226,7 +1231,7 @@ const BookingEngine = () => {
               const roomTotalWithTax = roomBase + roomTax;
 
               const grandTotal = calculateTotal();
-              const amountPaid = paymentMethod === 'pay_online' ? grandTotal : (paymentMethod === 'pay_ar_deposit' ? (grandTotal * (bookingRules.deposit_percentage / 100)) : 0);
+              const amountPaid = paymentMethod === 'pay_online' ? grandTotal : (paymentMethod === 'pay_ar_deposit' ? (((grandTotal - bookingRules.caution_fee) * (bookingRules.deposit_percentage / 100)) + bookingRules.caution_fee) : 0);
               let remainingPaid = amountPaid;
 
               // Pay room first
@@ -1339,6 +1344,13 @@ const BookingEngine = () => {
                       </tr>
                     );
                   })}
+                  {bookingRules.caution_fee > 0 && (
+                    <tr>
+                      <td className="py-3 px-4 italic text-gray-500">Refundable Caution Fee</td>
+                      <td className="py-3 px-4 text-center">{renderStatusBadge(remainingPaid >= bookingRules.caution_fee ? 'paid' : (remainingPaid > 0 ? 'partial' : 'unpaid'))}</td>
+                      <td className="py-3 px-4 text-right font-medium">₦{bookingRules.caution_fee.toLocaleString()}</td>
+                    </tr>
+                  )}
                 </>
               );
             })()}
@@ -1348,7 +1360,7 @@ const BookingEngine = () => {
         {/* Totals Summary */}
         {(() => {
           const grandTotal = calculateTotal();
-          const amountPaid = paymentMethod === 'pay_online' ? grandTotal : (paymentMethod === 'pay_ar_deposit' ? (grandTotal * (bookingRules.deposit_percentage / 100)) : 0);
+          const amountPaid = paymentMethod === 'pay_online' ? grandTotal : (paymentMethod === 'pay_ar_deposit' ? (((grandTotal - bookingRules.caution_fee) * (bookingRules.deposit_percentage / 100)) + bookingRules.caution_fee) : 0);
           const balance = Math.max(0, grandTotal - amountPaid);
           
           const roomPrice = roomPriceDetails.totalRoomPrice;

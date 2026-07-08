@@ -208,6 +208,7 @@ const AdminFrontDesk = () => {
   const [checkoutARProfile, setCheckoutARProfile] = useState(null);
   const [pendingCheckoutPayments, setPendingCheckoutPayments] = useState([]);
   const [checkoutProcessing, setCheckoutProcessing] = useState(false);
+  const [checkoutNoDamages, setCheckoutNoDamages] = useState(true);
   const [unpaidServices, setUnpaidServices] = useState([]);
   const [loadingUnpaidServices, setLoadingUnpaidServices] = useState(false);
   const [activeVisitorRegistration, setActiveVisitorRegistration] = useState(null);

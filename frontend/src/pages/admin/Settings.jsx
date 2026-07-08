@@ -57,6 +57,7 @@ const AdminSettings = () => {
     cancellation_policy: 'Flexible',
     payment_rule: 'partial_deposit',
     deposit_percentage: 30,
+    caution_fee: 0,
     auto_confirmation: true,
     booking_approval_workflow: 'instant',
     min_advance_notice_hours: 24,
@@ -1277,6 +1278,11 @@ const AdminSettings = () => {
                             <input type="number" min="1" max="99" value={settings.deposit_percentage} onChange={e => setSettings({...settings, deposit_percentage: parseInt(e.target.value)})} className="w-full bg-dark-800 text-white border border-dark-700 rounded p-3 focus:border-gold-500 outline-none" />
                           </div>
                         )}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-300 mb-1">Standard Caution Fee (NGN)</label>
+                          <input type="number" min="0" value={settings.caution_fee} onChange={e => setSettings({...settings, caution_fee: parseInt(e.target.value) || 0})} className="w-full bg-dark-800 text-white border border-dark-700 rounded p-3 focus:border-gold-500 outline-none" />
+                          <p className="text-xs text-gray-500 mt-1">Fee charged per booking for damages. Refunded on checkout if room is clear.</p>
+                        </div>
                       </div>
                     </div>
 
