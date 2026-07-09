@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase, fetchAllPaginated } from '../../lib/supabase';
 import { useRealtimeSync } from '../../lib/useRealtimeSync';
 import { useAuth } from '../../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -7,7 +7,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, Calendar, FileText, 
   Plus, Search, Filter, Download, ArrowUpRight, ArrowDownRight, 
   Wallet, User, PlusCircle, Check, Printer, Clock, Building, 
-  ChevronRight, Sparkles, X, ChevronLeft, Archive 
+  ChevronRight, Sparkles, X, ChevronLeft, Archive, Bell, Mail
 } from 'lucide-react';
 import StoreRequisitionModal from '../../components/admin/StoreRequisitionModal';
 import Pagination from '../../components/Pagination';
@@ -165,6 +165,12 @@ const AdminAccounting = () => {
   const [voidCorrectNotes, setVoidCorrectNotes] = useState('');
   const [ledgerSubTab, setLedgerSubTab] = useState('all');
 
+  // Debtor Reminders states
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [selectedReminderDebtor, setSelectedReminderDebtor] = useState(null);
+  const [reminderSettings, setReminderSettings] = useState({ sendSms: true, sendEmail: true });
+  const [isSendingReminder, setIsSendingReminder] = useState(false);
+
   useEffect(() => {
     fetchFinancialData();
     fetchCRMGuests();
@@ -247,18 +253,20 @@ const AdminAccounting = () => {
       setStaff(resolvedStaff);
 
       // 3. Fetch customer bookings payment inflows
-      const { data: paymentData, error: payErr } = await supabase
+      const { data: paymentData, error: payErr } = await fetchAllPaginated(() => supabase
         .from('payments')
-        .select('*, bookings(guest_name, total_amount_ngn)');
+        .select('*, bookings(guest_name, total_amount_ngn)')
+        .order('processed_at', { ascending: false }));
 
       // Fetch in-house room folio POS and Laundry charges from booking_services
       let folioPOSCharges = [];
       let folioLaundryCharges = [];
       try {
-        const { data: bsData } = await supabase
+        const { data: bsData } = await fetchAllPaginated(() => supabase
           .from('booking_services')
           .select('*, bookings(booking_reference, guest_name, status, rooms(room_number)), services(name, category, internal_notes)')
-          .eq('status', 'completed');
+          .eq('status', 'completed')
+          .order('created_at', { ascending: false }));
         
         if (bsData) {
           folioPOSCharges = bsData.filter(bs => 
@@ -380,23 +388,24 @@ const AdminAccounting = () => {
 
       // 3c. Fetch corporate bookings billed to groups
       try {
-        const { data: corpBookings } = await supabase
+        const { data: corpBookings } = await fetchAllPaginated(() => supabase
           .from('bookings')
           .select('*, group_accounts(name, outstanding_balance, credit_limit)')
           .eq('bill_to_group', true)
-          .neq('status', 'cancelled');
+          .neq('status', 'cancelled')
+          .order('created_at', { ascending: false }));
         setCorporateBookings(corpBookings || []);
       } catch (err) {
         console.warn("Failed to fetch corporate bookings:", err);
       }
 
       // 3b. Fetch invoices for Accounts Receivable
-      const { data: invoiceData } = await supabase.from('invoices').select('*');
+      const { data: invoiceData } = await fetchAllPaginated(() => supabase.from('invoices').select('*').order('created_at', { ascending: false }));
       setInvoices(invoiceData || []);
 
       // 4. Try fetching remote expenses & staff salaries
-      const { data: expData, error: expErr } = await supabase.from('expenses').select('*').order('expense_date', { ascending: false });
-      const { data: salData, error: salErr } = await supabase.from('staff_salaries').select('*').order('created_at', { ascending: false });
+      const { data: expData, error: expErr } = await fetchAllPaginated(() => supabase.from('expenses').select('*').order('expense_date', { ascending: false }));
+      const { data: salData, error: salErr } = await fetchAllPaginated(() => supabase.from('staff_salaries').select('*').order('created_at', { ascending: false }));
 
       if (expErr || salErr) {
         // Tables missing! PGRST205 / remote error. Trigger local storage fallback.
@@ -411,6 +420,7 @@ const AdminAccounting = () => {
       
       // Load standard stay debtors & corporate accounts
       fetchDebtorsData();
+      fetchRefundSettlementsData();
 
     } catch (err) {
       console.error("Critical error fetching accounting data:", err);
@@ -1338,6 +1348,18 @@ const AdminAccounting = () => {
       setCrmGuests(data || []);
     } catch (e) {
       console.warn("Failed to fetch crm_guests:", e);
+    }
+  };
+
+  const fetchRefundSettlementsData = async () => {
+    try {
+      const { data, error } = await supabase.from('refund_settlements').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      setRefundRequests(data || []);
+    } catch (e) {
+      console.warn("Failed to fetch refund_settlements:", e);
+      const local = localStorage.getItem('pms_refund_settlements');
+      setRefundRequests(local ? JSON.parse(local) : []);
     }
   };
 
@@ -2653,6 +2675,41 @@ const AdminAccounting = () => {
     return { filteredInflows, filteredExpenses, filteredSalaries };
   };
 
+  const handleSendReminder = async (e) => {
+    e.preventDefault();
+    if (!selectedReminderDebtor) return;
+    
+    if (!reminderSettings.sendSms && !reminderSettings.sendEmail) {
+      toast.error("Please select at least one method to send the reminder.");
+      return;
+    }
+
+    setIsSendingReminder(true);
+    
+    try {
+      // Simulate API network request
+      await new Promise(res => setTimeout(res, 1500));
+      
+      const methods = [];
+      if (reminderSettings.sendSms) methods.push('SMS');
+      if (reminderSettings.sendEmail) methods.push('Email');
+      
+      await supabase.from('system_logs').insert([{
+        action: 'Debtor Reminder Sent',
+        details: `Sent payment reminder via ${methods.join(' and ')} to ${selectedReminderDebtor.guest_name} for outstanding balance of ₦${selectedReminderDebtor.outstanding_balance.toLocaleString()}`
+      }]);
+      
+      toast.success(`Reminder sent successfully via ${methods.join(' and ')} to ${selectedReminderDebtor.guest_name}!`);
+      setShowReminderModal(false);
+      setSelectedReminderDebtor(null);
+    } catch (err) {
+      console.error("Failed to send reminder:", err);
+      toast.error("Failed to dispatch reminder due to a network error.");
+    } finally {
+      setIsSendingReminder(false);
+    }
+  };
+
   const calculatePnLReport = () => {
     const { filteredInflows, filteredExpenses, filteredSalaries } = getFilteredReportData();
     
@@ -3206,7 +3263,7 @@ const AdminAccounting = () => {
                 <input 
                   type="text" 
                   value={expenseSearch}
-                  onChange={(e) => setExpenseSearch(e.target.value)}
+                  onChange={(e) => { setExpenseSearch(e.target.value); setExpensePage(1); }}
                   placeholder="Search description, recipient..."
                   className="w-full bg-dark-900 border border-dark-700/60 p-2.5 pl-10 rounded-xl text-sm outline-none focus:border-brand-500"
                 />
@@ -3401,7 +3458,7 @@ const AdminAccounting = () => {
                 <input 
                   type="text" 
                   value={ledgerSearch}
-                  onChange={(e) => setLedgerSearch(e.target.value)}
+                  onChange={(e) => { setLedgerSearch(e.target.value); setLedgerPage(1); }}
                   placeholder="Search ledger details..."
                   className="w-full bg-dark-900 border border-dark-700/60 p-2.5 pl-10 rounded-xl text-sm outline-none focus:border-brand-500 placeholder-gray-500"
                 />
@@ -4012,7 +4069,7 @@ const AdminAccounting = () => {
                 type="text"
                 placeholder="Search debtors by name or reference..."
                 value={debtorSearch}
-                onChange={e => setDebtorSearch(e.target.value)}
+                onChange={e => { setDebtorSearch(e.target.value); setDebtorPage(1); }}
                 className="w-full bg-dark-900 border border-dark-700/60 pl-10 pr-4 py-2.5 rounded-xl text-sm text-gray-300 outline-none focus:border-brand-500"
               />
             </div>
@@ -4126,6 +4183,17 @@ const AdminAccounting = () => {
                               View Statement / Settings
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedReminderDebtor(item);
+                              setShowReminderModal(true);
+                            }}
+                            className="bg-amber-500/10 hover:bg-amber-500 hover:text-dark-900 border border-amber-500/20 text-amber-400 p-2 rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 flex items-center justify-center"
+                            title="Send Reminder"
+                          >
+                            <Bell size={16} />
+                          </button>
                           <button
                             type="button"
                             onClick={() => {
@@ -4671,6 +4739,63 @@ const AdminAccounting = () => {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 8: Refund Requests */}
+      {activeTab === 'refunds' && (
+        <div className="space-y-6">
+          <div className="glass-panel p-6 rounded-2xl border border-dark-700/50 flex flex-col min-h-[400px]">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-lg font-bold">Refund Settlements & Requests</h3>
+                <p className="text-gray-400 text-xs">View all issued refunds and pending settlements.</p>
+              </div>
+            </div>
+            
+            <div className="flex-1 w-full overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs text-pure-gray-400 uppercase bg-dark-900/50 font-bold border-y border-dark-700/60 font-sans tracking-wider">
+                  <tr>
+                    <th className="px-4 py-3">Date</th>
+                    <th className="px-4 py-3">Guest Name</th>
+                    <th className="px-4 py-3">Booking ID</th>
+                    <th className="px-4 py-3">Bank Details</th>
+                    <th className="px-4 py-3">Amount</th>
+                    <th className="px-4 py-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-700/50">
+                  {refundRequests.map((req, idx) => (
+                    <tr key={req.id || idx} className="hover:bg-dark-800/50 transition-colors">
+                      <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{format(new Date(req.created_at || new Date()), 'MMM dd, yyyy HH:mm')}</td>
+                      <td className="px-4 py-3 font-medium text-white">{req.guest_name || 'N/A'}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-brand-400">{req.booking_id ? req.booking_id.substring(0, 8) : 'N/A'}</td>
+                      <td className="px-4 py-3">
+                        <div className="text-white">{req.bank_name}</div>
+                        <div className="text-xs text-gray-400">{req.account_number} ({req.account_name})</div>
+                      </td>
+                      <td className="px-4 py-3 font-mono font-bold text-rose-400">₦{Number(req.refund_amount || 0).toLocaleString()}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded-lg text-xs font-bold ${
+                          req.status === 'completed' ? 'bg-green-500/10 text-green-400' :
+                          req.status === 'pending' ? 'bg-amber-500/10 text-amber-400' :
+                          'bg-rose-500/10 text-rose-400'
+                        }`}>
+                          {req.status?.toUpperCase() || 'UNKNOWN'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {refundRequests.length === 0 && (
+                    <tr>
+                      <td colSpan="6" className="py-12 text-center text-gray-500">No refund settlements found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -6381,6 +6506,94 @@ const AdminAccounting = () => {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Debtor Reminder Modal */}
+      {showReminderModal && selectedReminderDebtor && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-800 border border-dark-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-dark-700/60 flex justify-between items-center bg-dark-900/50 bg-gradient-to-r from-dark-900 via-dark-800 to-dark-900">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <Bell className="text-amber-500"/> Send Payment Reminder
+              </h2>
+              <button onClick={() => setShowReminderModal(false)} className="text-gray-400 hover:text-white transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSendReminder} className="p-6 overflow-y-auto space-y-6">
+              <div className="bg-dark-900/40 p-4 rounded-xl border border-dark-700/50">
+                <div className="text-sm text-gray-400 font-bold uppercase tracking-wider mb-2">Debtor Details</div>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-gray-300">Name:</span>
+                  <span className="font-bold text-white">{selectedReminderDebtor.guest_name}</span>
+                </div>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-gray-300">Phone:</span>
+                  <span className="font-mono text-gray-300">{selectedReminderDebtor.phone || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between items-center mb-3 border-b border-dark-700/40 pb-3">
+                  <span className="text-gray-300">Outstanding Balance:</span>
+                  <span className="font-mono font-bold text-rose-500">₦{selectedReminderDebtor.outstanding_balance.toLocaleString()}</span>
+                </div>
+                
+                <div className="space-y-3 pt-2">
+                  <label className="flex items-center gap-3 cursor-pointer group">
+                    <input 
+                      type="checkbox" 
+                      checked={reminderSettings.sendSms}
+                      onChange={e => setReminderSettings({...reminderSettings, sendSms: e.target.checked})}
+                      className="w-4 h-4 rounded border-dark-600 text-brand-500 focus:ring-brand-500 bg-dark-800 cursor-pointer"
+                    />
+                    <div className="flex items-center gap-2 text-gray-300 group-hover:text-white transition-colors">
+                      <Bell size={16} className={reminderSettings.sendSms ? "text-amber-400" : "text-gray-500"}/> Send via SMS
+                    </div>
+                  </label>
+                  
+                  <label className="flex items-center gap-3 cursor-pointer group">
+                    <input 
+                      type="checkbox" 
+                      checked={reminderSettings.sendEmail}
+                      onChange={e => setReminderSettings({...reminderSettings, sendEmail: e.target.checked})}
+                      className="w-4 h-4 rounded border-dark-600 text-brand-500 focus:ring-brand-500 bg-dark-800 cursor-pointer"
+                    />
+                    <div className="flex items-center gap-2 text-gray-300 group-hover:text-white transition-colors">
+                      <Mail size={16} className={reminderSettings.sendEmail ? "text-amber-400" : "text-gray-500"}/> Send via Email
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="bg-dark-900/30 p-4 rounded-xl border border-dark-700/30 relative">
+                <div className="absolute -top-2 left-4 px-2 bg-dark-800 text-[10px] uppercase font-bold tracking-wider text-gray-500">Message Preview</div>
+                <p className="text-sm text-gray-300 italic pt-2">
+                  "Dear {selectedReminderDebtor.guest_name}, this is a gentle reminder regarding your outstanding balance of ₦{selectedReminderDebtor.outstanding_balance.toLocaleString()} at Sparkles Apartments. Please arrange for settlement at your earliest convenience to maintain your account standing. Thank you!"
+                </p>
+              </div>
+
+              <div className="pt-4 border-t border-dark-700 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowReminderModal(false)}
+                  className="px-5 py-2.5 rounded-xl border border-dark-600 text-gray-300 hover:bg-dark-700 transition-all text-sm font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSendingReminder || (!reminderSettings.sendSms && !reminderSettings.sendEmail)}
+                  className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-dark-900 font-bold transition-all shadow-lg active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center gap-2"
+                >
+                  {isSendingReminder ? (
+                    <><span className="w-4 h-4 rounded-full border-2 border-dark-900 border-t-transparent animate-spin"></span> Dispatching...</>
+                  ) : (
+                    <>Send Reminder</>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

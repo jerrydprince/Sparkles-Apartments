@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase, fetchAllPaginated } from '../../lib/supabase';
 import { useRealtimeSync } from '../../lib/useRealtimeSync';
 import toast from 'react-hot-toast';
 import { FileText, CreditCard, Download, Search, CheckCircle, RefreshCcw, DollarSign, Wallet, ArrowRightLeft, Printer, Eye, X, AlertTriangle, Wrench, CalendarClock, Landmark } from 'lucide-react';
-import { format, addMonths, addYears } from 'date-fns';
+import { format, addMonths, addYears, differenceInDays } from 'date-fns';
 import { useAuth } from '../../context/AuthContext';
 import Accounting from './Accounting';
 import Pagination from '../../components/Pagination';
@@ -232,7 +232,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
 
       if (error) throw error;
       
-      const { data: bookingsData } = await supabase.from('bookings').select('amount_paid_ngn');
+      const { data: bookingsData } = await fetchAllPaginated(() => supabase.from('bookings').select('amount_paid_ngn').order('id', { ascending: false }));
 
       setInvoices(data || []);
 
@@ -3129,7 +3129,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                             Accommodation Charges (Rent + Tax) {booking.rooms ? `(${booking.rooms.name} - Room ${booking.rooms.room_number})` : ''}
                           </p>
                           <p className="text-gray-400 print:text-gray-500 text-xs mt-0.5">
-                            Check-in: {booking.check_in_date || 'N/A'} | Check-out: {booking.check_out_date || 'N/A'}
+                            Check-in: {booking.check_in_date || 'N/A'} | Check-out: {booking.check_out_date || 'N/A'} {booking.check_in_date && booking.check_out_date && `| Nights Booked: ${Math.max(1, differenceInDays(new Date(booking.check_out_date), new Date(booking.check_in_date)))}`}
                           </p>
                           <p className="text-[10px] text-gray-500 mt-1">
                             Rate: ₦{roomPrice.toLocaleString()} {discount > 0 && `| Discount: -₦${discount.toLocaleString()}`} | Taxable Base: ₦{roomBase.toLocaleString()} | VAT (7.5%): ₦{roomTax.toLocaleString()}

@@ -202,6 +202,9 @@ const AdminFrontDesk = () => {
   // Advanced Modals & Check-in / Visitor states
   const [activeCheckIn, setActiveCheckIn] = useState(null); // stores booking obj
   const [activeCheckOut, setActiveCheckOut] = useState(null);
+  const [activeExtendStay, setActiveExtendStay] = useState(null);
+  const [newExtendCheckoutDate, setNewExtendCheckoutDate] = useState('');
+  const [isExtendingStay, setIsExtendingStay] = useState(false);
   const [activeNoShowModal, setActiveNoShowModal] = useState(null);
   const [checkoutSettleMode, setCheckoutSettleMode] = useState('ar_wallet');
   const [cautionFeeOutcome, setCautionFeeOutcome] = useState('refund');
@@ -2366,6 +2369,181 @@ const AdminFrontDesk = () => {
     }
   };
 
+  const canWaiveBalance = profile?.role === 'super_admin' || profile?.role === 'admin' || profile?.role === 'manager' || hasAccess('Front Desk - Waive Balance');
+
+  const canExtendStay = profile?.role === 'super_admin' || profile?.role === 'admin' || profile?.role === 'manager' || hasAccess('Front Desk - Extend Stay');
+
+  const handleExtendStay = async () => {
+    if (!activeExtendStay || !newExtendCheckoutDate) return;
+    if (!canExtendStay) return toast.error("You do not have permission to extend stays.");
+    
+    const originalCheckIn = new Date(activeExtendStay.check_in_date);
+    const originalCheckOut = new Date(activeExtendStay.check_out_date);
+    const newCheckOut = new Date(newExtendCheckoutDate);
+    
+    if (newCheckOut <= originalCheckOut) {
+      return toast.error("New check-out date must be after the original check-out date.");
+    }
+    
+    const originalNights = Math.max(1, differenceInDays(originalCheckOut, originalCheckIn)) || 1;
+    const dailyRoomRate = Number(activeExtendStay.total_room_price_ngn || 0) / originalNights;
+    
+    const extraNights = differenceInDays(newCheckOut, originalCheckOut);
+    const extraCost = extraNights * dailyRoomRate;
+    
+    setIsExtendingStay(true);
+    const toastId = toast.loading(`Extending stay by ${extraNights} night(s)...`);
+    
+    try {
+      const { data: conflicts, error: conflictErr } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('room_id', activeExtendStay.room_id)
+        .in('status', ['confirmed', 'checked_in'])
+        .neq('id', activeExtendStay.id)
+        .lt('check_in_date', newExtendCheckoutDate)
+        .gt('check_out_date', activeExtendStay.check_out_date);
+        
+      if (conflictErr) throw conflictErr;
+      
+      if (conflicts && conflicts.length > 0) {
+        throw new Error("Room is already booked for the requested extension dates. Please transfer room first.");
+      }
+
+      const newTotalRoomPrice = Number(activeExtendStay.total_room_price_ngn || 0) + extraCost;
+      const newTotalAmount = Number(activeExtendStay.total_amount_ngn || 0) + extraCost;
+
+      const { error: updateErr } = await supabase
+        .from('bookings')
+        .update({
+          check_out_date: newExtendCheckoutDate,
+          total_room_price_ngn: newTotalRoomPrice,
+          total_amount_ngn: newTotalAmount,
+          payment_status: Number(activeExtendStay.amount_paid_ngn || 0) >= newTotalAmount ? 'paid' : (Number(activeExtendStay.amount_paid_ngn || 0) > 0 ? 'partial' : 'unpaid')
+        })
+        .eq('id', activeExtendStay.id);
+
+      if (updateErr) throw updateErr;
+
+      await supabase.from('payments').insert([{
+        booking_id: activeExtendStay.id,
+        amount: extraCost,
+        method: 'system',
+        status: 'completed',
+        notes: `Stay extended by ${extraNights} night(s) to ${newExtendCheckoutDate}. Added room charge: ₦${extraCost.toLocaleString()}`,
+        transaction_ref: `EXT-${activeExtendStay.id.substring(0,6)}-${Date.now().toString().slice(-4)}`
+      }]);
+
+      toast.success('Stay extended successfully!', { id: toastId });
+      setActiveExtendStay(null);
+      setNewExtendCheckoutDate('');
+      fetchCalendarData();
+    } catch (err) {
+      toast.error(err.message, { id: toastId });
+    } finally {
+      setIsExtendingStay(false);
+    }
+  };
+
+  const handleWaiveAndCheckout = async (amountToWaive, unusedNightsValue) => {
+    if (!activeCheckOut) return;
+    if (!canWaiveBalance) return toast.error("You do not have permission to waive checkout balances.");
+    
+    setCheckoutProcessing(true);
+    const toastId = toast.loading(`Waiving ₦${amountToWaive.toLocaleString()} outstanding folio and checking out...`);
+    try {
+      // 1. Log a completed payment in payments table as 'waiver'
+      const txnRef = `WAIV-BK-FD-CO-${Math.random().toString(36).substring(2, 8).toUpperCase()}-${Date.now().toString().slice(-6)}`;
+      const { error: payErr } = await supabase
+        .from('payments')
+        .insert([{
+          booking_id: activeCheckOut.id,
+          amount: amountToWaive,
+          method: 'waiver',
+          status: 'completed',
+          notes: `Checkout outstanding balance waived by ${profile?.first_name || 'Staff'} | Ref: ${activeCheckOut.booking_reference}`,
+          transaction_ref: txnRef
+        }]);
+
+      if (payErr) throw payErr;
+
+      // 2. Update booking paid amount (treat waiver as paid amount to balance the folio)
+      const currentPaid = Number(activeCheckOut.amount_paid_ngn || 0);
+      const newPaid = currentPaid + amountToWaive;
+
+      const { error: bookingUpdateErr } = await supabase
+        .from('bookings')
+        .update({ amount_paid_ngn: newPaid })
+        .eq('id', activeCheckOut.id);
+
+      if (bookingUpdateErr) throw bookingUpdateErr;
+
+      // 3. Finalize the checkout!
+      const scheduledNights = Math.max(1, differenceInDays(new Date(activeCheckOut.check_out_date), new Date(activeCheckOut.check_in_date))) || 1;
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const finalCheckOutDate = activeCheckOut.check_out_date > todayStr ? todayStr : activeCheckOut.check_out_date;
+      const actualNights = Math.max(1, differenceInDays(new Date(finalCheckOutDate), new Date(activeCheckOut.check_in_date))) || 1;
+      const dailyRoomRate = Number(activeCheckOut.total_room_price_ngn || 0) / scheduledNights;
+      const actualRoomPrice = dailyRoomRate * actualNights;
+      const originalTotal = Number(activeCheckOut.total_amount_ngn || 0);
+      const newTotal = originalTotal - unusedNightsValue;
+      
+      // Award loyalty points
+      await awardLoyaltyPoints(activeCheckOut, actualNights, newTotal);
+
+      const { error: finalCheckoutErr } = await supabase.from('bookings').update({ 
+        status: 'checked_out',
+        check_out_date: finalCheckOutDate,
+        total_room_price_ngn: actualRoomPrice,
+        total_amount_ngn: newTotal,
+        amount_paid_ngn: newPaid,
+        payment_status: 'paid'
+      }).eq('id', activeCheckOut.id);
+
+      if (finalCheckoutErr) throw finalCheckoutErr;
+
+      // Trigger checkout automation SMS
+      try {
+        const guestPhone = activeCheckOut.profiles?.phone || activeCheckOut.guest_phone;
+        if (guestPhone) {
+          sendTermiiSms(guestPhone, `Thank you for staying at Sparkles Apartments! Your checkout from Room ${activeCheckOut.rooms?.room_number || ''} is complete. We hope to see you again soon.`);
+        }
+      } catch(e) {
+        console.warn("SMS error on checkout", e);
+      }
+
+      // Mark all booking services under this booking as paid on checkout
+      await supabase
+        .from('booking_services')
+        .update({ payment_status: 'paid' })
+        .eq('booking_id', activeCheckOut.id);
+
+      // Release Room
+      await supabase.from('rooms').update({ status: 'available' }).eq('id', activeCheckOut.room_id);
+      
+      // Auto-schedule housekeeping task
+      await supabase.from('housekeeping_tasks').insert([{
+        room_id: activeCheckOut.room_id,
+        task_type: 'checkout_cleaning',
+        status: 'pending',
+        assigned_date: format(new Date(), 'yyyy-MM-dd'),
+        notes: `Auto-generated upon checkout of booking ${activeCheckOut.booking_reference}`
+      }]);
+
+      triggerAutomationRules('checkout', activeCheckOut);
+
+      toast.success('Balance waived and Checkout complete!', { id: toastId });
+      setActiveCheckOut(null);
+      fetchCalendarData();
+      fetchPendingCheckoutPayments();
+    } catch (err) {
+      toast.error(`Checkout waiver failed: ${err.message}`, { id: toastId });
+      console.error(err);
+    } finally {
+      setCheckoutProcessing(false);
+    }
+  };
+
   const handleSettleARAndCheckout = async (amountToDeduct, unusedNightsValue) => {
     if (!activeCheckOut || !checkoutARProfile) return;
     setCheckoutProcessing(true);
@@ -4166,6 +4344,18 @@ const AdminFrontDesk = () => {
                     >
                       <Users size={13} /> Register Guest Visitor
                     </button>
+                    <button 
+                      disabled={isFrontOfficeClosed}
+                      onClick={() => {
+                        if (isFrontOfficeClosed) return toast.error("Front Office operations are locked due to daily ledger closure.");
+                        setActiveExtendStay(selectedCalendarBooking);
+                        setNewExtendCheckoutDate(addDays(new Date(selectedCalendarBooking.check_out_date), 1).toISOString().split('T')[0]);
+                        setSelectedCalendarBooking(null);
+                      }}
+                      className="w-full bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-white font-medium py-2.5 rounded border border-emerald-500/20 transition-all text-xs flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <CalendarDays size={13} /> Request Stay Extension
+                    </button>
                   </>
                 )}
                 {(selectedCalendarBooking.status === 'confirmed' || selectedCalendarBooking.status === 'pending') && (
@@ -4355,6 +4545,73 @@ const AdminFrontDesk = () => {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- Extend Stay Modal --- */}
+      {activeExtendStay && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-800 border border-dark-700 w-full max-w-md rounded-xl shadow-2xl animate-in zoom-in-95 overflow-hidden flex flex-col">
+            <div className="bg-dark-900 p-5 border-b border-dark-700 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <CalendarDays className="text-brand-500"/> Extend Stay
+              </h2>
+              <button onClick={() => setActiveExtendStay(null)} className="text-gray-400 hover:text-white"><X size={24}/></button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="bg-dark-900 border border-dark-700 rounded p-4 text-sm">
+                <p className="text-gray-400 mb-1">Guest: <strong className="text-white">{activeExtendStay.profiles ? `${activeExtendStay.profiles.first_name} ${activeExtendStay.profiles.last_name}` : activeExtendStay.guest_name}</strong></p>
+                <p className="text-gray-400">Room: <strong className="text-brand-500">{activeExtendStay.rooms?.room_number}</strong></p>
+                <p className="text-gray-400 mt-2">Original Check-Out: <strong className="text-white">{activeExtendStay.check_out_date}</strong></p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">New Check-Out Date</label>
+                <input 
+                  type="date"
+                  min={addDays(new Date(activeExtendStay.check_out_date), 1).toISOString().split('T')[0]}
+                  value={newExtendCheckoutDate}
+                  onChange={(e) => setNewExtendCheckoutDate(e.target.value)}
+                  className="w-full bg-dark-950 border border-dark-700 rounded p-3 text-white focus:outline-none focus:border-brand-500"
+                />
+              </div>
+
+              {(() => {
+                const origOut = new Date(activeExtendStay.check_out_date);
+                const newOut = new Date(newExtendCheckoutDate);
+                const extraNights = newOut > origOut ? differenceInDays(newOut, origOut) : 0;
+                const origNights = Math.max(1, differenceInDays(origOut, new Date(activeExtendStay.check_in_date))) || 1;
+                const dailyRate = Number(activeExtendStay.total_room_price_ngn || 0) / origNights;
+                const extraCost = extraNights * dailyRate;
+
+                return extraNights > 0 ? (
+                  <div className="bg-brand-500/10 border border-brand-500/20 p-4 rounded text-sm space-y-2">
+                    <div className="flex justify-between items-center text-gray-300">
+                      <span>Additional Nights:</span>
+                      <span className="font-bold text-white">{extraNights}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-gray-300">
+                      <span>Additional Room Charge:</span>
+                      <span className="font-bold text-white font-mono">₦{extraCost.toLocaleString()}</span>
+                    </div>
+                    <p className="text-xs text-brand-400 mt-2">This amount will be added to the guest's folio.</p>
+                  </div>
+                ) : null;
+              })()}
+
+              <div className="flex gap-4 mt-6">
+                <button onClick={() => setActiveExtendStay(null)} className="flex-1 bg-dark-700 hover:bg-dark-600 text-white font-medium py-3 rounded transition-colors text-sm">Cancel</button>
+                <button 
+                  onClick={handleExtendStay}
+                  disabled={isExtendingStay || new Date(newExtendCheckoutDate) <= new Date(activeExtendStay.check_out_date)}
+                  className="flex-1 bg-brand-500 hover:bg-brand-400 text-dark-900 font-bold py-3 rounded transition-colors text-sm flex justify-center items-center gap-2 disabled:opacity-50"
+                >
+                  {isExtendingStay ? 'Processing...' : 'Confirm Extension'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -4594,6 +4851,21 @@ const AdminFrontDesk = () => {
                                 <ArrowUpRight size={18} className="mb-1" />
                                 <span className="text-[10px]">Transfer</span>
                               </label>
+
+                              {canWaiveBalance && (
+                                <label className={`flex flex-col items-center justify-center p-3 rounded-lg border text-center cursor-pointer transition-all ${checkoutPaymentMethod === 'waiver' ? 'border-red-500 bg-red-500/10 text-white font-semibold shadow-sm' : 'border-dark-700 bg-dark-800/50 text-gray-400 hover:border-dark-600'}`}>
+                                  <input 
+                                    type="radio" 
+                                    name="checkout_payment" 
+                                    value="waiver"
+                                    checked={checkoutPaymentMethod === 'waiver'}
+                                    onChange={() => setCheckoutPaymentMethod('waiver')}
+                                    className="sr-only"
+                                  />
+                                  <ShieldCheck size={18} className="mb-1" />
+                                  <span className="text-[10px]">Waive</span>
+                                </label>
+                              )}
                             </div>
 
                             {checkoutPaymentMethod === 'ar' && (
@@ -4630,7 +4902,21 @@ const AdminFrontDesk = () => {
                               </div>
                             )}
 
-                            {checkoutPaymentMethod !== 'ar' && (
+                            {checkoutPaymentMethod === 'waiver' && (
+                              <div className="pt-2 border-t border-dark-750">
+                                <button
+                                  type="button"
+                                  disabled={checkoutProcessing}
+                                  onClick={() => handleWaiveAndCheckout(totalOwed, unusedNightsValue)}
+                                  className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 px-3 rounded-lg text-xs transition-all shadow-md mt-1 flex items-center justify-center gap-1.5 active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <ShieldCheck size={13} />
+                                  <span>Waive Balance & Check Out</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {checkoutPaymentMethod !== 'ar' && checkoutPaymentMethod !== 'waiver' && (
                               <div className="pt-2 border-t border-dark-750">
                                 <button
                                   type="button"

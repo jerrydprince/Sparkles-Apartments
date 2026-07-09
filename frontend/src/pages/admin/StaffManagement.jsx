@@ -130,6 +130,8 @@ const DEFAULT_MODULES = [
   'Front Desk',
   'Front Desk - Create Booking & Check-in',
   'Front Desk - Override Room Rates & Invoicing',
+  'Front Desk - Extend Stay',
+  'Front Desk - Waive Balance',
 
   // Housekeeping
   'Housekeeping',
@@ -281,7 +283,11 @@ const getRolePermissionDefault = (roleId, permissionName) => {
     case 'Front Desk - Create Booking & Check-in':
       return ['front_desk_lead', 'receptionist_manager', 'receptionist'].includes(roleId);
     
+    case 'Front Desk - Extend Stay':
+      return ['front_desk_lead', 'receptionist_manager', 'receptionist'].includes(roleId);
+
     case 'Front Desk - Override Room Rates & Invoicing':
+    case 'Front Desk - Waive Balance':
       return ['front_desk_lead', 'receptionist_manager'].includes(roleId);
     
     case 'Housekeeping':
@@ -2642,7 +2648,7 @@ const AdminStaffManagement = () => {
                       type="text" 
                       placeholder="Search employee..." 
                       value={shiftAuditSearch}
-                      onChange={e => setShiftAuditSearch(e.target.value)}
+                      onChange={e => { setShiftAuditSearch(e.target.value); setCurrentPageStaff(1); }}
                       className="w-full bg-dark-950 border border-dark-750 text-white text-xs pl-8 pr-3 py-1.5 rounded-lg outline-none focus:border-brand-500 transition-all font-semibold"
                     />
                   </div>
