@@ -640,6 +640,12 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
               <span>Balance</span>
               <span>₦{Math.max(0, Number(viewBooking.total_amount_ngn) - Number(viewBooking.amount_paid_ngn || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
+            {Number(viewBooking.caution_fee_ngn) > 0 && (
+              <div className="flex justify-between font-bold text-amber-600 pt-3 border-t border-gray-100 mt-2">
+                <span className="flex items-center gap-1">Caution Fee Deposit <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full uppercase">{viewBooking.caution_fee_status}</span></span>
+                <span>₦{Number(viewBooking.caution_fee_ngn).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            )}
           </div>
         </div>
 

@@ -204,6 +204,7 @@ const AdminFrontDesk = () => {
   const [activeCheckOut, setActiveCheckOut] = useState(null);
   const [activeNoShowModal, setActiveNoShowModal] = useState(null);
   const [checkoutSettleMode, setCheckoutSettleMode] = useState('ar_wallet');
+  const [cautionFeeOutcome, setCautionFeeOutcome] = useState('refund');
   const [checkoutPaymentMethod, setCheckoutPaymentMethod] = useState('ar');
   const [checkoutARProfile, setCheckoutARProfile] = useState(null);
   const [pendingCheckoutPayments, setPendingCheckoutPayments] = useState([]);
@@ -1770,13 +1771,45 @@ const AdminFrontDesk = () => {
       // Award loyalty points
       await awardLoyaltyPoints(activeCheckOut, actualNights, newTotal);
 
+      // --- CAUTION FEE LOGIC ---
+      let finalCautionStatus = activeCheckOut.caution_fee_status;
+      if (activeCheckOut.caution_fee_ngn > 0 && activeCheckOut.caution_fee_status === 'held') {
+        finalCautionStatus = cautionFeeOutcome;
+        
+        if (cautionFeeOutcome === 'refund') {
+          // Log refund in expenses
+          await supabase.from('expenses').insert([{
+            category: 'Refunds & Reversals',
+            description: `Refund of Caution Fee Deposit for Booking Ref: ${activeCheckOut.booking_reference} (No Damages)`,
+            amount: activeCheckOut.caution_fee_ngn,
+            payment_method: 'bank_transfer',
+            paid_to: activeCheckOut.guest_name,
+            status: 'paid'
+          }]);
+          toast.success(`Caution Fee of ₦${activeCheckOut.caution_fee_ngn.toLocaleString()} marked as Refunded.`);
+        } else if (cautionFeeOutcome === 'forfeit') {
+          // Log revenue in payments
+          await supabase.from('payments').insert([{
+            booking_id: activeCheckOut.id,
+            amount: activeCheckOut.caution_fee_ngn,
+            method: 'cash', // Assumed collected and kept
+            status: 'completed',
+            notes: `Forfeited Caution Fee Revenue (Damages/Fines) | Ref: ${activeCheckOut.booking_reference}`,
+            transaction_ref: `CAUTION-REV-${Date.now()}`
+          }]);
+          toast.success(`Caution Fee of ₦${activeCheckOut.caution_fee_ngn.toLocaleString()} forfeited and recorded as revenue.`);
+        }
+      }
+      // -------------------------
+
       await supabase.from('bookings').update({ 
         status: 'checked_out',
         check_out_date: finalCheckOutDate,
         total_room_price_ngn: actualRoomPrice,
         total_amount_ngn: newTotal,
         amount_paid_ngn: newPaid,
-        payment_status: 'paid'
+        payment_status: 'paid',
+        caution_fee_status: finalCautionStatus
       }).eq('id', activeCheckOut.id);
 
       try {

@@ -1079,8 +1079,9 @@ const AdminStaffManagement = () => {
   const [loadingStructures, setLoadingStructures] = useState(false);
 
   const paginatedStaff = useMemo(() => {
+    const filteredStaff = staff.filter(s => s.role !== 'super_admin');
     const start = (currentPageStaff - 1) * pageSize;
-    return staff.slice(start, start + pageSize);
+    return filteredStaff.slice(start, start + pageSize);
   }, [staff, currentPageStaff]);
 
   const paginatedRoleStructures = useMemo(() => {
@@ -1246,7 +1247,7 @@ const AdminStaffManagement = () => {
         }
       });
       
-      const seededRoles = currentAllRoles.map(role => {
+      const seededRoles = currentAllRoles.filter(role => role.id !== 'super_admin').map(role => {
         const dbMatch = (data || []).find(d => d.role === role.id);
         let list = roleDedsMap[role.id] || [];
         if (typeof list === 'string') {
@@ -2967,6 +2968,10 @@ const AdminStaffManagement = () => {
                         </td>
                         <td className="p-4 text-gray-300">
                           {(() => {
+                            if (s.role === 'super_admin') {
+                              return <span className="text-gray-500 italic text-[11px] font-bold tracking-wider">N/A</span>;
+                            }
+                            
                             const base = parseFloat(s.base_salary) || 0;
                             const allow = parseFloat(s.allowances) || 0;
                             const ded = parseFloat(s.deductions) || 0;
@@ -3052,7 +3057,7 @@ const AdminStaffManagement = () => {
               </div>
               <PaginationControl
                 currentPage={currentPageStaff}
-                totalItems={staff.length}
+                totalItems={staff.filter(s => s.role !== 'super_admin').length}
                 pageSize={pageSize}
                 onPageChange={setCurrentPageStaff}
               />
@@ -5384,7 +5389,7 @@ const AdminStaffManagement = () => {
                   </p>
 
                   <div className="space-y-4">
-                    {staff.map((s) => {
+                    {staff.filter(s => s.role !== 'super_admin').map((s) => {
                       const roleLabel = ROLES.find(r => r.id === s.role)?.label || s.role.replace(/_/g, ' ');
                       return (
                         <div key={s.id} className="bg-dark-950/40 border border-dark-750/70 p-5 rounded-2xl hover:border-dark-700 transition-all flex flex-col space-y-4">

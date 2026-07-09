@@ -2737,6 +2737,69 @@ const AdminAccounting = () => {
     return { inflowsByMethod, outflowsByMethod, totalCashInflows, totalCashOutflows, netCashFlow };
   };
 
+  const calculateTaxReport = () => {
+    const start = new Date(reportStartDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(reportEndDate);
+    end.setHours(23, 59, 59, 999);
+
+    const filteredInvoices = invoices.filter(inv => {
+      const d = new Date(inv.issue_date || inv.created_at);
+      return d >= start && d <= end && inv.status !== 'void';
+    });
+
+    let totalGross = 0;
+    let totalTaxCollected = 0;
+    let totalVat = 0;
+    let totalConsumptionTax = 0;
+
+    const itemized = filteredInvoices.map(inv => {
+      const gross = Number(inv.total_amount) || 0;
+      const taxAmount = Number(inv.tax_amount) || 0;
+      const subtotal = Number(inv.subtotal) || (gross - taxAmount);
+
+      const vat = taxAmount * (7.5 / 12.5);
+      const consumption = taxAmount * (5.0 / 12.5);
+
+      totalGross += gross;
+      totalTaxCollected += taxAmount;
+      totalVat += vat;
+      totalConsumptionTax += consumption;
+
+      return {
+        id: inv.id,
+        invoice_number: inv.invoice_number,
+        date: inv.issue_date || inv.created_at,
+        gross,
+        subtotal,
+        taxAmount,
+        vat,
+        consumption,
+        status: inv.status
+      };
+    }).filter(item => item.taxAmount > 0).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    return {
+      totalGross,
+      totalTaxCollected,
+      totalVat,
+      totalConsumptionTax,
+      itemized
+    };
+  };
+
+  const handleExportTaxCSV = (data) => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += `TAX REMITTANCE REPORT (${reportStartDate} to ${reportEndDate})\r\n\r\n`;
+    csvContent += "Date,Invoice Number,Subtotal (NGN),VAT 7.5% (NGN),Consumption Tax 5% (NGN),Total Tax (NGN),Gross Amount (NGN),Status\r\n";
+    data.itemized.forEach(item => {
+      const dateStr = item.date ? format(new Date(item.date), 'yyyy-MM-dd HH:mm') : 'N/A';
+      csvContent += `${dateStr},${item.invoice_number},${item.subtotal},${item.vat.toFixed(2)},${item.consumption.toFixed(2)},${item.taxAmount},${item.gross},${item.status}\r\n`;
+    });
+    csvContent += `\r\nTOTALS,,${(data.totalGross - data.totalTaxCollected).toFixed(2)},${data.totalVat.toFixed(2)},${data.totalConsumptionTax.toFixed(2)},${data.totalTaxCollected.toFixed(2)},${data.totalGross.toFixed(2)},\r\n`;
+    downloadCSV(csvContent, `Tax_Report_${reportStartDate}_to_${reportEndDate}.csv`);
+  };
+
   const calculateBalanceSheetReport = () => {
     const end = new Date(reportEndDate);
 
@@ -3245,7 +3308,7 @@ const AdminAccounting = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-dark-700/40">
-                    {staff.map(s => (
+                    {staff.filter(s => s.role !== 'super_admin').map(s => (
                       <tr key={s.id} className="hover:bg-dark-700/10 transition-colors">
                         <td className="p-4">
                           <div className="font-bold text-white">{s.first_name} {s.last_name}</div>
@@ -3266,7 +3329,7 @@ const AdminAccounting = () => {
                         </td>
                       </tr>
                     ))}
-                    {staff.length === 0 && (
+                    {staff.filter(s => s.role !== 'super_admin').length === 0 && (
                       <tr>
                         <td colSpan="3" className="p-12 text-center text-gray-500 text-sm">No registered staff found.</td>
                       </tr>
@@ -3545,9 +3608,10 @@ const AdminAccounting = () => {
             <div className="flex gap-3 justify-end items-end pt-5 lg:pt-0">
               <button 
                 onClick={() => {
-                  const data = reportSubTab === 'pnl' ? calculatePnLReport() : reportSubTab === 'cashflow' ? calculateCashFlowReport() : calculateBalanceSheetReport();
+                  const data = reportSubTab === 'pnl' ? calculatePnLReport() : reportSubTab === 'cashflow' ? calculateCashFlowReport() : reportSubTab === 'tax' ? calculateTaxReport() : calculateBalanceSheetReport();
                   if (reportSubTab === 'pnl') handleExportPnLCSV(data);
                   else if (reportSubTab === 'cashflow') handleExportCashFlowCSV(data);
+                  else if (reportSubTab === 'tax') handleExportTaxCSV(data);
                   else handleExportBalanceSheetCSV(data);
                 }}
                 className="bg-dark-900 border border-dark-700/60 hover:bg-dark-800 text-gray-300 font-bold py-2.5 px-5 text-sm flex items-center justify-center gap-2 rounded-xl transition-all"
@@ -3556,7 +3620,7 @@ const AdminAccounting = () => {
               </button>
               <button 
                 onClick={() => {
-                  const data = reportSubTab === 'pnl' ? calculatePnLReport() : reportSubTab === 'cashflow' ? calculateCashFlowReport() : calculateBalanceSheetReport();
+                  const data = reportSubTab === 'pnl' ? calculatePnLReport() : reportSubTab === 'cashflow' ? calculateCashFlowReport() : reportSubTab === 'tax' ? calculateTaxReport() : calculateBalanceSheetReport();
                   setActiveReportModal({ type: reportSubTab, data });
                 }}
                 className="btn-primary py-2.5 px-5 text-sm font-bold flex items-center justify-center gap-2 rounded-xl"
@@ -3585,6 +3649,12 @@ const AdminAccounting = () => {
               className={`pb-2.5 px-4 font-bold text-sm flex items-center gap-2 border-b-2 transition-all duration-300 ${reportSubTab === 'balancesheet' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
             >
               <Building size={16} /> Balance Sheet
+            </button>
+            <button 
+              onClick={() => setReportSubTab('tax')} 
+              className={`pb-2.5 px-4 font-bold text-sm flex items-center gap-2 border-b-2 transition-all duration-300 ${reportSubTab === 'tax' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
+            >
+              <FileText size={16} /> Tax Reports
             </button>
           </div>
 
@@ -3830,6 +3900,56 @@ const AdminAccounting = () => {
                     <span className="text-[10px] text-green-500 font-bold tracking-widest font-mono">DOUBLE ENTRY OK</span>
                   </div>
                 )}
+              </motion.div>
+            )}
+
+            {reportSubTab === 'tax' && (
+              <motion.div 
+                key="tax"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                className="glass-panel p-6 rounded-2xl border border-dark-700/50 space-y-6"
+              >
+                <div className="flex justify-between items-start border-b border-dark-700/40 pb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-white">Tax Remittance Report</h3>
+                    <p className="text-gray-400 text-xs mt-1">Calculated VAT and Consumption Tax split for invoices issued from {reportStartDate} to {reportEndDate}</p>
+                  </div>
+                  <span className="bg-purple-500/10 text-purple-400 border border-purple-500/20 px-3 py-1 rounded-full text-xs font-bold font-mono">
+                    Tax Engine
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-dark-900 border border-dark-700/50 p-4 rounded-xl">
+                    <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Gross Invoiced</p>
+                    <h4 className="text-2xl font-black text-white mt-1 font-mono">₦{calculateTaxReport().totalGross.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h4>
+                    <p className="text-xs text-gray-500 mt-2">Total invoiced value</p>
+                  </div>
+                  <div className="bg-dark-900 border border-dark-700/50 p-4 rounded-xl border-t-2 border-t-brand-500">
+                    <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">VAT (7.5%)</p>
+                    <h4 className="text-2xl font-black text-brand-500 mt-1 font-mono">₦{calculateTaxReport().totalVat.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h4>
+                    <p className="text-xs text-brand-500/50 mt-2">Value Added Tax collected</p>
+                  </div>
+                  <div className="bg-dark-900 border border-dark-700/50 p-4 rounded-xl border-t-2 border-t-blue-500">
+                    <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Consumption Tax (5%)</p>
+                    <h4 className="text-2xl font-black text-blue-500 mt-1 font-mono">₦{calculateTaxReport().totalConsumptionTax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h4>
+                    <p className="text-xs text-blue-500/50 mt-2">State Consumption Tax</p>
+                  </div>
+                  <div className="bg-dark-900 border border-dark-700/50 p-4 rounded-xl border-t-2 border-t-rose-500">
+                    <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Total Tax Liability</p>
+                    <h4 className="text-2xl font-black text-rose-500 mt-1 font-mono">₦{calculateTaxReport().totalTaxCollected.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h4>
+                    <p className="text-xs text-rose-500/50 mt-2">Total remittance due</p>
+                  </div>
+                </div>
+                
+                <div className="bg-dark-900/50 border border-dark-700/40 p-4 rounded-xl flex justify-between items-center">
+                  <div>
+                    <span className="text-sm font-bold text-gray-300">Click "Print Report" to view itemized breakdown.</span>
+                    <span className="text-xs text-gray-500 block mt-0.5">The printable view displays the full ledger of all taxable invoices.</span>
+                  </div>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -5102,6 +5222,62 @@ const AdminAccounting = () => {
               </div>
 
               {/* REPORT CONTENT TYPES */}
+              {activeReportModal.type === 'tax' && (
+                <div className="space-y-6">
+                  {/* Summary Grid */}
+                  <div className="grid grid-cols-4 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100 text-xs">
+                    <div>
+                      <p className="text-gray-500 uppercase tracking-wider font-bold mb-1">Gross Invoiced</p>
+                      <span className="font-bold text-pure-black text-sm font-mono block">₦{activeReportModal.data.totalGross.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div>
+                      <p className="text-gray-500 uppercase tracking-wider font-bold mb-1">VAT (7.5%)</p>
+                      <span className="font-bold text-blue-600 text-sm font-mono block">₦{activeReportModal.data.totalVat.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div>
+                      <p className="text-gray-500 uppercase tracking-wider font-bold mb-1">Consumption Tax (5%)</p>
+                      <span className="font-bold text-blue-600 text-sm font-mono block">₦{activeReportModal.data.totalConsumptionTax.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div>
+                      <p className="text-gray-500 uppercase tracking-wider font-bold mb-1">Total Tax Liability</p>
+                      <span className="font-bold text-rose-600 text-sm font-mono block">₦{activeReportModal.data.totalTaxCollected.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+
+                  <div className="text-xs">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-gray-100 text-pure-black uppercase text-[10px] tracking-wider border-b border-gray-200">
+                          <th className="p-2 font-bold">Date</th>
+                          <th className="p-2 font-bold">Invoice #</th>
+                          <th className="p-2 font-bold text-right">Subtotal</th>
+                          <th className="p-2 font-bold text-right">VAT (7.5%)</th>
+                          <th className="p-2 font-bold text-right">Cons. Tax (5%)</th>
+                          <th className="p-2 font-bold text-right">Gross Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 text-pure-black">
+                        {activeReportModal.data.itemized.length === 0 && (
+                          <tr>
+                            <td colSpan="6" className="p-4 text-center text-gray-500 italic">No taxable invoices found for this period.</td>
+                          </tr>
+                        )}
+                        {activeReportModal.data.itemized.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50">
+                            <td className="p-2 font-mono text-gray-500">{item.date ? format(new Date(item.date), 'yyyy-MM-dd HH:mm') : 'N/A'}</td>
+                            <td className="p-2 font-semibold">{item.invoice_number}</td>
+                            <td className="p-2 text-right font-mono">₦{item.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                            <td className="p-2 text-right font-mono text-blue-600">₦{item.vat.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                            <td className="p-2 text-right font-mono text-blue-600">₦{item.consumption.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                            <td className="p-2 text-right font-mono font-bold">₦{item.gross.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               {activeReportModal.type === 'pnl' && (
                 <div className="space-y-6">
                   {/* Summary Grid */}

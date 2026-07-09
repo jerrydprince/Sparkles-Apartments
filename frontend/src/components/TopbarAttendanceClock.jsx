@@ -367,8 +367,74 @@ const TopbarAttendanceClock = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Shift Clock-Out Override Modal */}
+      {showOverrideModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[999] p-4">
+          <div className="bg-dark-900 border border-dark-700 w-full max-w-md rounded-2xl shadow-2xl p-6 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-rose-600"></div>
+            
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center text-red-500 border border-red-500/20">
+                <LogOut size={28} />
+              </div>
+              
+              <div>
+                <h3 className="text-lg font-black text-white">System Handover Warning</h3>
+                <p className="text-sm text-gray-400 mt-2">
+                  You are the <strong>only active staff member</strong> currently clocked into the system. Clocking out now will leave the hotel unstaffed.
+                </p>
+                <p className="text-xs text-brand-400 mt-2 font-bold uppercase tracking-wider">
+                  Manager override required to proceed
+                </p>
+              </div>
+
+              <div className="w-full pt-4 space-y-3">
+                <div className="text-left">
+                  <label className="text-xs font-bold text-gray-400 mb-1 block">Authorization PIN</label>
+                  <input 
+                    type="password" 
+                    placeholder="Enter 6-digit System PIN"
+                    value={overridePin}
+                    onChange={e => setOverridePin(e.target.value)}
+                    className="w-full bg-dark-950 border border-dark-700/80 p-3 rounded-xl text-center text-xl tracking-widest text-white outline-none focus:border-red-500 transition-colors"
+                    maxLength={6}
+                  />
+                </div>
+                
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setShowOverrideModal(false);
+                      setOverridePin('');
+                    }}
+                    className="flex-1 bg-dark-800 hover:bg-dark-700 text-white font-bold py-3 px-4 rounded-xl text-sm transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (overridePin === systemPin) {
+                        setShowOverrideModal(false);
+                        setOverridePin('');
+                        handleClockOut(true);
+                      } else {
+                        toast.error('Invalid Authorization PIN');
+                      }
+                    }}
+                    className="flex-1 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-lg shadow-red-500/20 active:scale-[0.98]"
+                  >
+                    Force Clock Out
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default TopbarAttendanceClock;
+
