@@ -3643,14 +3643,14 @@ const AdminFrontDesk = () => {
                   <div className="flex overflow-auto max-h-[70vh] custom-scrollbar select-none relative w-full flex-1">
                     
                     {/* Fixed Left Sidebar: Accommodation List */}
-                    <div className="w-[280px] min-w-[280px] bg-dark-900 border-r border-dark-700 flex-shrink-0 z-[40] sticky left-0 shadow-[4px_0_10px_rgba(0,0,0,0.3)]">
+                    <div className="w-[280px] min-w-[280px] bg-dark-900 border-r border-dark-700 flex-shrink-0 z-[40] sticky left-0 shadow-[4px_0_10px_rgba(0,0,0,0.3)] flex flex-col min-h-full h-max">
                       {/* Left Header */}
-                      <div className="h-[76px] bg-dark-900 !opacity-100 border-b border-dark-700 p-4 flex items-center justify-start sticky top-0 z-[50]">
+                      <div className="h-[76px] bg-dark-900 !opacity-100 border-b border-dark-700 p-4 flex items-center justify-start sticky top-0 z-[50] flex-shrink-0">
                         <span className="text-xs uppercase font-bold tracking-wider text-gray-400">Accommodation</span>
                       </div>
                       
                       {/* Left Groups & Rooms */}
-                      <div className="divide-y divide-dark-800">
+                      <div className="divide-y divide-dark-800 flex-grow bg-dark-900">
                         {Object.entries(roomsGroupedByType).map(([type, roomsList]) => (
                           <div key={type} className="flex flex-col">
                             {/* Group Label */}
