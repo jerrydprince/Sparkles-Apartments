@@ -1267,7 +1267,7 @@ const AdminRooms = () => {
                   <input type="number" value={newRoom.size_sqm} onChange={e => setNewRoom({...newRoom, size_sqm: parseInt(e.target.value)})} className="w-full bg-dark-900 border border-dark-700 p-2 text-white outline-none focus:border-gold-500" />
                 </div>
                 <div className="col-span-2 md:col-span-1">
-                  <label className="block text-sm text-gray-400 mb-1">Price/Night (Base)</label>
+                  <label className="block text-sm text-gray-400 mb-1">Price/Night (Base) <span className="text-gray-500 text-[10px]">(Exclusive of 12.5% Tax)</span></label>
                   <input type="number" step="any" required value={newRoom.base_price_ngn} onChange={e => setNewRoom({...newRoom, base_price_ngn: parseFloat(e.target.value) || 0})} className="w-full bg-dark-900 border border-dark-700 p-2 text-white outline-none focus:border-gold-500" />
                 </div>
                 <div className="col-span-2 md:col-span-1">

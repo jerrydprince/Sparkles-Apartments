@@ -48,6 +48,8 @@ const AdminAccounting = () => {
   const [staff, setStaff] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [salaries, setSalaries] = useState([]);
+  const [allBookings, setAllBookings] = useState([]);
+  const [allHallBookings, setAllHallBookings] = useState([]);
   const [inflows, setInflows] = useState([]);
   const [refundRequests, setRefundRequests] = useState([]);
   const [loadingRefunds, setLoadingRefunds] = useState(false);
@@ -395,8 +397,14 @@ const AdminAccounting = () => {
           .neq('status', 'cancelled')
           .order('created_at', { ascending: false }));
         setCorporateBookings(corpBookings || []);
+        
+        const { data: bookingsData } = await fetchAllPaginated(() => supabase.from('bookings').select('*').order('created_at', { ascending: false }));
+        setAllBookings(bookingsData || []);
+        
+        const { data: hallData } = await fetchAllPaginated(() => supabase.from('hall_bookings').select('*').order('created_at', { ascending: false }));
+        setAllHallBookings(hallData || []);
       } catch (err) {
-        console.warn("Failed to fetch corporate bookings:", err);
+        console.warn("Failed to fetch corporate/all bookings:", err);
       }
 
       // 3b. Fetch invoices for Accounts Receivable
@@ -2520,23 +2528,42 @@ const AdminAccounting = () => {
   };
 
   const calculateFinancialMetrics = () => {
-    const standardInflows = inflows.filter(i => {
-      const isCorpSettlement = i.transaction_ref?.startsWith('DEBT-SET-CORP-') || (i.notes?.includes('Debt settlement payout') && i.notes?.includes('Ref: CORP-'));
-      return !isCorpSettlement && (i.status === 'completed' || i.status === 'paid' || i.status === 'success');
-    });
-    const standardInflowsSum = standardInflows.reduce((sum, item) => sum + item.amount, 0);
-    const corporateStaysSum = corporateBookings.reduce((sum, item) => sum + Number(item.total_amount_ngn || 0), 0);
-    const grossIncome = standardInflowsSum + corporateStaysSum;
+    const start = new Date(reportStartDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(reportEndDate);
+    end.setHours(23, 59, 59, 999);
 
-    const nonDuplicateExpenses = expenses.filter(exp => {
-      return !(exp.category === 'Salaries' && (exp.description || '').toLowerCase().includes('salary payout'));
+    const filteredBookings = allBookings.filter(b => {
+      const date = new Date(b.created_at);
+      return date >= start && date <= end;
     });
 
-    const standardExpenses = nonDuplicateExpenses
+    const bookingRevenue = filteredBookings.reduce((sum, b) => {
+        const paid = Number(b.amount_paid_ngn || 0);
+        const total = Number(b.total_amount_ngn || 1);
+        const subtotal = Number(b.total_room_price_ngn || 0) + Number(b.total_extras_price_ngn || 0);
+        if (paid === 0) return sum;
+        const baseFraction = total > 0 ? (subtotal / total) : 1;
+        return sum + (paid * baseFraction);
+    }, 0);
+
+    const grossIncome = bookingRevenue;
+
+    const filteredExpenses = expenses.filter(exp => {
+      const date = new Date(exp.expense_date || exp.created_at);
+      return date >= start && date <= end && !(exp.category === 'Salaries' && (exp.description || '').toLowerCase().includes('salary payout'));
+    });
+
+    const standardExpenses = filteredExpenses
       .filter(e => e.status === 'paid')
       .reduce((sum, item) => sum + item.amount, 0);
 
-    const paidSalariesSum = salaries
+    const filteredSalaries = salaries.filter(s => {
+      const date = new Date(s.payment_date || s.created_at);
+      return date >= start && date <= end;
+    });
+
+    const paidSalariesSum = filteredSalaries
       .filter(s => s.status === 'paid')
       .reduce((sum, item) => sum + (item.net_salary || (Number(item.base_salary) + Number(item.bonuses) - Number(item.deductions))), 0);
 
@@ -2544,11 +2571,21 @@ const AdminAccounting = () => {
 
     const netProfit = grossIncome - totalExpenses;
 
-    const outstandingPayrollLiabilities = salaries
+    const outstandingPayrollLiabilities = filteredSalaries
       .filter(s => s.status !== 'paid')
       .reduce((sum, item) => sum + (item.net_salary || (item.base_salary + item.bonuses - item.deductions)), 0);
 
-    return { grossIncome, totalExpenses, netProfit, outstandingPayrollLiabilities };
+    const standardInflows = inflows.filter(i => {
+      const date = new Date(i.payment_date || i.created_at);
+      if (date < start || date > end) return false;
+      const isCorpSettlement = i.transaction_ref?.startsWith('DEBT-SET-CORP-') || (i.notes?.includes('Debt settlement payout') && i.notes?.includes('Ref: CORP-'));
+      const isMockFolioCharge = i.method === 'room_charge'; // These are unpaid folio additions, not real cash inflows
+      return !isCorpSettlement && !isMockFolioCharge && (i.status === 'completed' || i.status === 'paid' || i.status === 'success');
+    });
+    
+    const totalSystemRevenue = standardInflows.reduce((sum, item) => sum + item.amount, 0);
+
+    return { grossIncome, totalExpenses, netProfit, outstandingPayrollLiabilities, totalSystemRevenue };
   };
 
   const metrics = calculateFinancialMetrics();
@@ -2713,37 +2750,64 @@ const AdminAccounting = () => {
   const calculatePnLReport = () => {
     const { filteredInflows, filteredExpenses, filteredSalaries } = getFilteredReportData();
     
+    const start = new Date(reportStartDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(reportEndDate);
+    end.setHours(23, 59, 59, 999);
+
+    // 1. REVENUE
     const standardInflows = filteredInflows.filter(i => {
       const isCorpSettlement = i.transaction_ref?.startsWith('DEBT-SET-CORP-') || (i.notes?.includes('Debt settlement payout') && i.notes?.includes('Ref: CORP-'));
-      return !isCorpSettlement && ['completed', 'paid', 'success'].includes(i.status);
+      const isMockFolioCharge = i.method === 'room_charge'; 
+      return !isCorpSettlement && !isMockFolioCharge && ['completed', 'paid', 'success'].includes(i.status);
     });
 
-    const standardInflowsSum = standardInflows.reduce((sum, item) => sum + item.amount, 0);
-    
-    // Filter corporate bookings to report date range
-    const start = new Date(reportStartDate);
-    const end = new Date(reportEndDate);
-    const filteredCorpBookings = corporateBookings.filter(b => {
-      const d = new Date(b.created_at || b.check_in_date);
+    const totalSystemRevenue = standardInflows.reduce((sum, item) => sum + item.amount, 0);
+
+    // 2. TAXES (Cost)
+    const filteredBookings = allBookings.filter(b => {
+      const d = new Date(b.created_at);
       return d >= start && d <= end;
     });
-    const corporateStaysSum = filteredCorpBookings.reduce((sum, item) => sum + Number(item.total_amount_ngn || 0), 0);
+    
+    let taxesCollected = 0;
+    filteredBookings.forEach(b => {
+        const paid = Number(b.amount_paid_ngn || 0);
+        const total = Number(b.total_amount_ngn || 1);
+        const subtotal = Number(b.total_room_price_ngn || 0) + Number(b.total_extras_price_ngn || 0);
+        if (paid > 0 && total > subtotal) {
+            const taxFraction = (total - subtotal) / total;
+            taxesCollected += (paid * taxFraction);
+        }
+    });
 
-    const bookingRevenue = standardInflowsSum + corporateStaysSum;
+    const netRevenue = totalSystemRevenue - taxesCollected;
 
+    // REFUNDS
+    const completedRefunds = refundRequests.filter(r => {
+      const d = new Date(r.created_at);
+      return d >= start && d <= end && r.status === 'completed';
+    });
+    
+    const refundsIssued = completedRefunds.reduce((sum, r) => sum + Number(r.refund_amount || 0), 0);
+
+    // 3. EXPENSES
     const expensesByCategory = {};
     CATEGORIES.forEach(cat => {
       expensesByCategory[cat] = 0;
     });
+    
+    const nonDuplicateExpenses = filteredExpenses.filter(exp => {
+      return !(exp.category === 'Salaries' && (exp.description || '').toLowerCase().includes('salary payout'));
+    });
 
-    filteredExpenses
+    nonDuplicateExpenses
       .filter(e => e.status === 'paid')
       .forEach(e => {
         const cat = e.category || 'Other';
         expensesByCategory[cat] = (expensesByCategory[cat] || 0) + Number(e.amount);
       });
 
-    // Populate Salaries from salaries state
     filteredSalaries
       .filter(s => s.status === 'paid')
       .forEach(s => {
@@ -2751,12 +2815,13 @@ const AdminAccounting = () => {
         expensesByCategory['Salaries'] = (expensesByCategory['Salaries'] || 0) + Number(netSalary);
       });
 
-    const totalRevenue = bookingRevenue;
-    const totalExpenses = Object.values(expensesByCategory).reduce((sum, val) => sum + val, 0);
-    const netProfit = totalRevenue - totalExpenses;
-    const margin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+    expensesByCategory['Taxes (VAT & Consumption)'] = taxesCollected;
 
-    return { bookingRevenue, totalRevenue, expensesByCategory, totalExpenses, netProfit, margin };
+    const totalExpenses = Object.values(expensesByCategory).reduce((sum, val) => sum + val, 0);
+    const netProfit = totalSystemRevenue - totalExpenses - refundsIssued;
+    const margin = totalSystemRevenue > 0 ? (netProfit / totalSystemRevenue) * 100 : 0;
+
+    return { totalSystemRevenue, netRevenue: netRevenue - refundsIssued, taxesCollected, refundsIssued, expensesByCategory, totalExpenses, netProfit, margin };
   };
 
   const calculateCashFlowReport = () => {
@@ -2764,21 +2829,27 @@ const AdminAccounting = () => {
     const inflowsByMethod = {};
     const outflowsByMethod = {};
 
-    filteredInflows
-      .filter(i => ['completed', 'paid', 'success'].includes(i.status))
-      .forEach(i => {
+    const standardInflows = filteredInflows.filter(i => {
+      const isMockFolioCharge = i.method === 'room_charge'; 
+      return !isMockFolioCharge && ['completed', 'paid', 'success'].includes(i.status);
+    });
+
+    standardInflows.forEach(i => {
         const m = i.method || 'bank_transfer';
         inflowsByMethod[m] = (inflowsByMethod[m] || 0) + Number(i.amount);
-      });
+    });
 
-    filteredExpenses
+    const nonDuplicateExpenses = filteredExpenses.filter(exp => {
+      return !(exp.category === 'Salaries' && (exp.description || '').toLowerCase().includes('salary payout'));
+    });
+
+    nonDuplicateExpenses
       .filter(e => e.status === 'paid')
       .forEach(e => {
         const m = e.payment_method || 'bank_transfer';
         outflowsByMethod[m] = (outflowsByMethod[m] || 0) + Number(e.amount);
       });
 
-    // Accumulate paid salaries outflows grouped by payment method
     filteredSalaries
       .filter(s => s.status === 'paid')
       .forEach(s => {
@@ -2786,6 +2857,20 @@ const AdminAccounting = () => {
         const netSalary = s.net_salary || (Number(s.base_salary) + Number(s.bonuses) - Number(s.deductions));
         outflowsByMethod[m] = (outflowsByMethod[m] || 0) + Number(netSalary);
       });
+
+    const start = new Date(reportStartDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(reportEndDate);
+    end.setHours(23, 59, 59, 999);
+
+    const completedRefunds = refundRequests.filter(r => {
+      const d = new Date(r.created_at);
+      return d >= start && d <= end && r.status === 'completed';
+    });
+
+    completedRefunds.forEach(r => {
+      outflowsByMethod['customer_refund'] = (outflowsByMethod['customer_refund'] || 0) + Number(r.refund_amount || 0);
+    });
 
     const totalCashInflows = Object.values(inflowsByMethod).reduce((sum, val) => sum + val, 0);
     const totalCashOutflows = Object.values(outflowsByMethod).reduce((sum, val) => sum + val, 0);
@@ -2859,49 +2944,79 @@ const AdminAccounting = () => {
 
   const calculateBalanceSheetReport = () => {
     const end = new Date(reportEndDate);
+    end.setHours(23, 59, 59, 999);
 
-    const pastInflows = inflows.filter(i => new Date(i.date) <= end && ['completed', 'paid', 'success'].includes(i.status));
+    const pastInflows = inflows.filter(i => {
+      const date = new Date(i.payment_date || i.created_at);
+      const isMockFolioCharge = i.method === 'room_charge'; 
+      return date <= end && !isMockFolioCharge && ['completed', 'paid', 'success'].includes(i.status);
+    });
     
     const nonDuplicateExpenses = expenses.filter(exp => {
       return !(exp.category === 'Salaries' && (exp.description || '').toLowerCase().includes('salary payout'));
     });
 
-    const pastExpensesPaid = nonDuplicateExpenses.filter(e => new Date(e.expense_date) <= end && e.status === 'paid');
+    const pastExpensesPaid = nonDuplicateExpenses.filter(e => {
+      const date = new Date(e.expense_date || e.created_at);
+      return date <= end && e.status === 'paid';
+    });
     
-    // Paid salaries up to report end date
-    const pastSalariesPaid = salaries.filter(s => new Date(s.payment_date || s.created_at) <= end && s.status === 'paid');
+    const pastSalariesPaid = salaries.filter(s => {
+      const date = new Date(s.payment_date || s.created_at);
+      return date <= end && s.status === 'paid';
+    });
     
-    const totalPaidInflows = pastInflows.reduce((sum, item) => sum + item.amount, 0);
-    
-    const totalPaidExpenses = pastExpensesPaid.reduce((sum, item) => sum + item.amount, 0);
+    const totalPaidInflows = pastInflows.reduce((sum, item) => sum + Number(item.amount), 0);
+    const totalPaidExpenses = pastExpensesPaid.reduce((sum, item) => sum + Number(item.amount), 0);
     const totalPaidSalaries = pastSalariesPaid.reduce((sum, item) => {
       const netSalary = item.net_salary || (Number(item.base_salary) + Number(item.bonuses) - Number(item.deductions));
       return sum + netSalary;
     }, 0);
 
-    const totalPaidOutflows = totalPaidExpenses + totalPaidSalaries;
+    const pastCompletedRefunds = refundRequests.filter(r => {
+       const date = new Date(r.created_at);
+       return date <= end && r.status === 'completed';
+    });
+    const totalPaidRefunds = pastCompletedRefunds.reduce((sum, r) => sum + Number(r.refund_amount || 0), 0);
+
+    const totalPaidOutflows = totalPaidExpenses + totalPaidSalaries + totalPaidRefunds;
     const cash = Math.max(0, totalPaidInflows - totalPaidOutflows);
 
     const corporateDebtsSum = groupAccounts.reduce((sum, g) => sum + Number(g.outstanding_balance || 0), 0);
 
     const receivables = invoices
-      .filter(inv => new Date(inv.issue_date) <= end && inv.status !== 'paid')
+      .filter(inv => {
+        const date = new Date(inv.issue_date || inv.created_at);
+        return date <= end && inv.status !== 'paid';
+      })
       .reduce((sum, inv) => sum + (Number(inv.total_amount) - Number(inv.amount_paid)), 0) + corporateDebtsSum;
 
     const totalAssets = cash + receivables;
 
     const payableExpenses = nonDuplicateExpenses
-      .filter(e => new Date(e.expense_date) <= end && e.status !== 'paid')
+      .filter(e => {
+        const date = new Date(e.expense_date || e.created_at);
+        return date <= end && e.status !== 'paid' && e.status !== 'cancelled';
+      })
       .reduce((sum, e) => sum + Number(e.amount), 0);
 
     const payableSalaries = salaries
-      .filter(s => new Date(s.payment_date || s.created_at) <= end && s.status !== 'paid')
-      .reduce((sum, s) => sum + (s.net_salary || (s.base_salary + s.bonuses - s.deductions)), 0);
+      .filter(s => {
+        const date = new Date(s.payment_date || s.created_at);
+        return date <= end && s.status !== 'paid';
+      })
+      .reduce((sum, s) => sum + (s.net_salary || (Number(s.base_salary) + Number(s.bonuses) - Number(s.deductions))), 0);
 
-    const totalLiabilities = payableExpenses + payableSalaries;
+    const pastPendingRefunds = refundRequests.filter(r => {
+       const date = new Date(r.created_at);
+       return date <= end && r.status === 'pending';
+    });
+    const payableRefunds = pastPendingRefunds.reduce((sum, r) => sum + Number(r.refund_amount || 0), 0);
+
+    const totalLiabilities = payableExpenses + payableSalaries + payableRefunds;
     const equity = totalAssets - totalLiabilities;
 
-    return { cash, receivables, totalAssets, payableExpenses, payableSalaries, totalLiabilities, equity };
+    return { cash, receivables, totalAssets, payableExpenses, payableSalaries, payableRefunds, totalLiabilities, equity };
   };
 
   const downloadCSV = (content, filename) => {
@@ -2920,15 +3035,19 @@ const AdminAccounting = () => {
     csvContent += `PROFIT AND LOSS STATEMENT (${reportStartDate} to ${reportEndDate})\r\n\r\n`;
     csvContent += "Line Item,Amount (NGN)\r\n";
     csvContent += `REVENUE,,\r\n`;
-    csvContent += `  Booking Revenue,${data.bookingRevenue}\r\n`;
-    csvContent += `  TOTAL REVENUE,${data.totalRevenue}\r\n\r\n`;
+    csvContent += `  Gross System Revenue (Inclusive of Taxes),${data.totalSystemRevenue.toFixed(2)}\r\n`;
+    csvContent += `  Less: Taxes Collected (VAT & Consumption),-${data.taxesCollected.toFixed(2)}\r\n`;
+    csvContent += `  Less: Refunds Issued,-${data.refundsIssued.toFixed(2)}\r\n`;
+    csvContent += `  NET OPERATING REVENUE,${data.netRevenue.toFixed(2)}\r\n\r\n`;
     csvContent += `OPERATING EXPENSES,,\r\n`;
     Object.entries(data.expensesByCategory).forEach(([cat, val]) => {
-      csvContent += `  ${cat},${val}\r\n`;
+      if (cat !== 'Taxes (VAT & Consumption)' && val > 0) {
+          csvContent += `  ${cat},${val.toFixed(2)}\r\n`;
+      }
     });
-    csvContent += `  TOTAL EXPENSES,${data.totalExpenses}\r\n\r\n`;
-    csvContent += `NET OPERATING INCOME,${data.netProfit}\r\n`;
-    csvContent += `OPERATING MARGIN %,${data.margin.toFixed(2)}%\r\n`;
+    csvContent += `  TOTAL OPERATING EXPENSES,${(data.totalExpenses - data.taxesCollected).toFixed(2)}\r\n\r\n`;
+    csvContent += `NET PROFIT / LOSS,${data.netProfit.toFixed(2)}\r\n`;
+    csvContent += `NET PROFIT MARGIN %,${data.margin.toFixed(2)}%\r\n`;
 
     downloadCSV(csvContent, `Profit_Loss_Statement_${reportStartDate}_to_${reportEndDate}.csv`);
   };
@@ -2939,15 +3058,15 @@ const AdminAccounting = () => {
     csvContent += "Cash Flow Type,Payment Mode,Amount (NGN)\r\n";
     csvContent += "CASH INFLOWS,,\r\n";
     Object.entries(data.inflowsByMethod).forEach(([method, val]) => {
-      csvContent += `  Customer Booking,${method.toUpperCase()},${val}\r\n`;
+      csvContent += `  System Inflow,${method.toUpperCase()},${val.toFixed(2)}\r\n`;
     });
-    csvContent += `  TOTAL CASH INFLOWS,,${data.totalCashInflows}\r\n\r\n`;
+    csvContent += `  TOTAL CASH INFLOWS,,${data.totalCashInflows.toFixed(2)}\r\n\r\n`;
     csvContent += "CASH OUTFLOWS,,\r\n";
     Object.entries(data.outflowsByMethod).forEach(([method, val]) => {
-      csvContent += `  Operations Outflow,${method.toUpperCase()},${val}\r\n`;
+      csvContent += `  Operating Outflow,${method.toUpperCase()},${val.toFixed(2)}\r\n`;
     });
-    csvContent += `  TOTAL CASH OUTFLOWS,,${data.totalCashOutflows}\r\n\r\n`;
-    csvContent += `NET INCREASE IN CASH,,${data.netCashFlow}\r\n`;
+    csvContent += `  TOTAL CASH OUTFLOWS,,${data.totalCashOutflows.toFixed(2)}\r\n\r\n`;
+    csvContent += `NET INCREASE/DECREASE IN CASH,,${data.netCashFlow.toFixed(2)}\r\n`;
 
     downloadCSV(csvContent, `Cash_Flow_Statement_${reportStartDate}_to_${reportEndDate}.csv`);
   };
@@ -2957,17 +3076,18 @@ const AdminAccounting = () => {
     csvContent += `BALANCE SHEET (As of ${reportEndDate})\r\n\r\n`;
     csvContent += "Account Category,Account Type,Amount (NGN)\r\n";
     csvContent += "ASSETS,,\r\n";
-    csvContent += `  Current Assets,Cash & Cash Equivalents,${data.cash}\r\n`;
-    csvContent += `  Current Assets,Accounts Receivable,${data.receivables}\r\n`;
-    csvContent += `  TOTAL ASSETS,,${data.totalAssets}\r\n\r\n`;
+    csvContent += `  Current Assets,Cash & Cash Equivalents,${data.cash.toFixed(2)}\r\n`;
+    csvContent += `  Current Assets,Accounts Receivable,${data.receivables.toFixed(2)}\r\n`;
+    csvContent += `  TOTAL ASSETS,,${data.totalAssets.toFixed(2)}\r\n\r\n`;
     csvContent += "LIABILITIES,,\r\n";
-    csvContent += `  Current Liabilities,Accounts Payable (Pending Expenses),${data.payableExpenses}\r\n`;
-    csvContent += `  Current Liabilities,Accrued Payroll (Pending Salaries),${data.payableSalaries}\r\n`;
-    csvContent += `  TOTAL LIABILITIES,,${data.totalLiabilities}\r\n\r\n`;
+    csvContent += `  Current Liabilities,Accounts Payable (Pending Expenses),${data.payableExpenses.toFixed(2)}\r\n`;
+    csvContent += `  Current Liabilities,Accrued Payroll (Pending Salaries),${data.payableSalaries.toFixed(2)}\r\n`;
+    csvContent += `  Current Liabilities,Accounts Payable (Pending Refunds),${data.payableRefunds.toFixed(2)}\r\n`;
+    csvContent += `  TOTAL LIABILITIES,,${data.totalLiabilities.toFixed(2)}\r\n\r\n`;
     csvContent += "EQUITY,,\r\n";
-    csvContent += `  Owner Equity,Retained Earnings,${data.equity}\r\n`;
-    csvContent += `  TOTAL EQUITY,,${data.equity}\r\n\r\n`;
-    csvContent += `TOTAL EQUITY & LIABILITIES,,${data.totalLiabilities + data.equity}\r\n`;
+    csvContent += `  Owner Equity,Retained Earnings,${data.equity.toFixed(2)}\r\n`;
+    csvContent += `  TOTAL EQUITY,,${data.equity.toFixed(2)}\r\n\r\n`;
+    csvContent += `TOTAL EQUITY & LIABILITIES,,${(data.totalLiabilities + data.equity).toFixed(2)}\r\n`;
 
     downloadCSV(csvContent, `Balance_Sheet_${reportEndDate}.csv`);
   };
@@ -3023,13 +3143,32 @@ const AdminAccounting = () => {
       </div>
 
       {/* Summary KPI Widgets */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+        {/* KPI 0: Total System Revenue */}
+        <div className="glass-panel p-6 rounded-2xl border border-dark-700/50 relative overflow-hidden">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Total System Revenue</p>
+              <h3 className="text-xl font-black mt-2 text-white font-mono">
+                ₦{metrics.totalSystemRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </h3>
+            </div>
+            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20">
+              <Sparkles size={20} />
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 mt-4 text-xs text-blue-400 font-semibold">
+            <ArrowUpRight size={14} />
+            <span>Inclusive of all services & tax</span>
+          </div>
+        </div>
+
         {/* KPI 1 */}
         <div className="glass-panel p-6 rounded-2xl border border-dark-700/50 relative overflow-hidden">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-gray-400 text-sm font-semibold uppercase tracking-wider">Gross Booking Income</p>
-              <h3 className="text-2xl font-black mt-2 text-white font-mono">
+              <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Gross Booking Income</p>
+              <h3 className="text-xl font-black mt-2 text-white font-mono">
                 ₦{metrics.grossIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </h3>
             </div>
@@ -3047,8 +3186,8 @@ const AdminAccounting = () => {
         <div className="glass-panel p-6 rounded-2xl border border-dark-700/50 relative overflow-hidden">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-gray-400 text-sm font-semibold uppercase tracking-wider">Total Expenses</p>
-              <h3 className="text-2xl font-black mt-2 text-white font-mono">
+              <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Total Expenses</p>
+              <h3 className="text-xl font-black mt-2 text-white font-mono">
                 ₦{metrics.totalExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </h3>
             </div>
@@ -3066,8 +3205,8 @@ const AdminAccounting = () => {
         <div className="glass-panel p-6 rounded-2xl border border-dark-700/50 relative overflow-hidden">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-gray-400 text-sm font-semibold uppercase tracking-wider">Net Profit / Loss</p>
-              <h3 className={`text-2xl font-black mt-2 font-mono ${metrics.netProfit >= 0 ? 'text-green-400' : 'text-rose-500'}`}>
+              <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Net Profit / Loss</p>
+              <h3 className={`text-xl font-black mt-2 font-mono ${metrics.netProfit >= 0 ? 'text-green-400' : 'text-rose-500'}`}>
                 ₦{metrics.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </h3>
             </div>
@@ -3085,8 +3224,8 @@ const AdminAccounting = () => {
         <div className="glass-panel p-6 rounded-2xl border border-dark-700/50 relative overflow-hidden">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-gray-400 text-sm font-semibold uppercase tracking-wider">Payroll Liabilities</p>
-              <h3 className="text-2xl font-black mt-2 text-white font-mono">
+              <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Payroll Liabilities</p>
+              <h3 className="text-xl font-black mt-2 text-white font-mono">
                 ₦{metrics.outstandingPayrollLiabilities.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </h3>
             </div>
@@ -3739,16 +3878,16 @@ const AdminAccounting = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="bg-dark-900 border border-dark-700/50 p-4 rounded-xl">
                     <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Gross Operating Revenue</p>
-                    <h4 className="text-xl font-black mt-1 text-green-400 font-mono">₦{calculatePnLReport().totalRevenue.toLocaleString()}</h4>
+                    <h4 className="text-xl font-black mt-1 text-green-400 font-mono">₦{calculatePnLReport().totalSystemRevenue?.toLocaleString()}</h4>
                   </div>
                   <div className="bg-dark-900 border border-dark-700/50 p-4 rounded-xl">
                     <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Total Operating Costs</p>
-                    <h4 className="text-xl font-black mt-1 text-rose-400 font-mono">₦{calculatePnLReport().totalExpenses.toLocaleString()}</h4>
+                    <h4 className="text-xl font-black mt-1 text-rose-400 font-mono">₦{(calculatePnLReport().totalExpenses - calculatePnLReport().taxesCollected)?.toLocaleString()}</h4>
                   </div>
                   <div className="bg-dark-900 border border-dark-700/50 p-4 rounded-xl">
                     <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Net Operating Income</p>
                     <h4 className={`text-xl font-black mt-1 font-mono ${calculatePnLReport().netProfit >= 0 ? 'text-green-400' : 'text-rose-500'}`}>
-                      ₦{calculatePnLReport().netProfit.toLocaleString()}
+                      ₦{calculatePnLReport().netProfit?.toLocaleString()}
                     </h4>
                   </div>
                 </div>
@@ -3758,20 +3897,30 @@ const AdminAccounting = () => {
                   <div>
                     <div className="text-sm font-bold text-gray-300 uppercase tracking-wide border-b border-dark-700/30 pb-2 mb-3">Revenues</div>
                     <div className="flex justify-between items-center text-sm p-2 hover:bg-dark-700/10 rounded-lg">
-                      <span className="text-gray-400">Room Booking Income Receipts</span>
-                      <span className="font-semibold text-white font-mono">₦{calculatePnLReport().bookingRevenue.toLocaleString()}</span>
+                      <span className="text-gray-400">Gross System Revenue (Inc. Taxes)</span>
+                      <span className="font-semibold text-white font-mono">₦{calculatePnLReport().totalSystemRevenue?.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm p-2 hover:bg-dark-700/10 rounded-lg">
+                      <span className="text-rose-400">Less: Taxes Collected (VAT & Consumption)</span>
+                      <span className="font-semibold text-rose-400 font-mono">-₦{calculatePnLReport().taxesCollected?.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm p-2 hover:bg-dark-700/10 rounded-lg">
+                      <span className="text-rose-400">Less: Refunds Issued</span>
+                      <span className="font-semibold text-rose-400 font-mono">-₦{calculatePnLReport().refundsIssued?.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm font-bold bg-dark-900/50 p-3 rounded-lg mt-1 border-t border-dark-700/30">
-                      <span className="text-gray-300">Total Operating Revenues</span>
-                      <span className="text-green-400 font-mono">₦{calculatePnLReport().totalRevenue.toLocaleString()}</span>
+                      <span className="text-gray-300">Net Operating Revenue</span>
+                      <span className="text-green-400 font-mono">₦{calculatePnLReport().netRevenue?.toLocaleString()}</span>
                     </div>
                   </div>
 
                   <div>
                     <div className="text-sm font-bold text-gray-300 uppercase tracking-wide border-b border-dark-700/30 pb-2 mb-3">Operational Expenditures</div>
                     <div className="space-y-2">
-                      {Object.entries(calculatePnLReport().expensesByCategory).map(([cat, val]) => {
-                        const totalExpenses = calculatePnLReport().totalExpenses;
+                      {Object.entries(calculatePnLReport().expensesByCategory)
+                        .filter(([cat, val]) => cat !== 'Taxes (VAT & Consumption)' && Number(val) > 0)
+                        .map(([cat, val]) => {
+                        const totalExpenses = calculatePnLReport().totalExpenses - calculatePnLReport().taxesCollected;
                         const pct = totalExpenses > 0 ? (val / totalExpenses) * 100 : 0;
                         return (
                           <div key={cat} className="space-y-1.5 p-2 hover:bg-dark-700/10 rounded-lg">
@@ -3791,7 +3940,7 @@ const AdminAccounting = () => {
                     </div>
                     <div className="flex justify-between items-center text-sm font-bold bg-dark-900/50 p-3 rounded-lg mt-3 border-t border-dark-700/30">
                       <span className="text-gray-300">Total Operating Expenses</span>
-                      <span className="text-rose-400 font-mono">₦{calculatePnLReport().totalExpenses.toLocaleString()}</span>
+                      <span className="text-rose-400 font-mono">₦{(calculatePnLReport().totalExpenses - calculatePnLReport().taxesCollected)?.toLocaleString()}</span>
                     </div>
                   </div>
 
@@ -5435,12 +5584,20 @@ const AdminAccounting = () => {
                       </thead>
                       <tbody className="divide-y divide-gray-100 text-pure-black">
                         <tr>
-                          <td className="p-2">Guest Room Booking Revenue</td>
-                          <td className="p-2 text-right font-mono">₦{activeReportModal.data.bookingRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className="p-2">Gross System Revenue (Inc. Taxes)</td>
+                          <td className="p-2 text-right font-mono">₦{activeReportModal.data.totalSystemRevenue?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2 text-rose-600">Less: Taxes Collected (VAT & Consumption)</td>
+                          <td className="p-2 text-right font-mono text-rose-600">-₦{activeReportModal.data.taxesCollected?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2 text-rose-600">Less: Refunds Issued</td>
+                          <td className="p-2 text-right font-mono text-rose-600">-₦{activeReportModal.data.refundsIssued?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                         </tr>
                         <tr className="font-bold bg-gray-50 text-pure-black border-t-2 border-gray-200">
-                          <td className="p-2">Total Revenue (A)</td>
-                          <td className="p-2 text-right font-mono">₦{activeReportModal.data.totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className="p-2">Net Operating Revenue (A)</td>
+                          <td className="p-2 text-right font-mono">₦{activeReportModal.data.netRevenue?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -5457,7 +5614,9 @@ const AdminAccounting = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 text-pure-black">
-                        {Object.entries(activeReportModal.data.expensesByCategory).map(([cat, val]) => (
+                        {Object.entries(activeReportModal.data.expensesByCategory)
+                          .filter(([cat, val]) => cat !== 'Taxes (VAT & Consumption)' && Number(val) > 0)
+                          .map(([cat, val]) => (
                           <tr key={cat}>
                             <td className="p-2">{cat} Costs</td>
                             <td className="p-2 text-right font-mono">₦{Number(val).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
@@ -5465,7 +5624,7 @@ const AdminAccounting = () => {
                         ))}
                         <tr className="font-bold bg-gray-50 text-pure-black border-t-2 border-gray-200">
                           <td className="p-2">Total Operating Expenses (B)</td>
-                          <td className="p-2 text-right font-mono text-rose-600">₦{activeReportModal.data.totalExpenses.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className="p-2 text-right font-mono text-rose-600">₦{(activeReportModal.data.totalExpenses - activeReportModal.data.taxesCollected).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -5632,6 +5791,10 @@ const AdminAccounting = () => {
                           <tr>
                             <td className="p-2">Accrued Payroll</td>
                             <td className="p-2 text-right font-mono">₦{activeReportModal.data.payableSalaries.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                          <tr>
+                            <td className="p-2">Accounts Payable (Pending Refunds)</td>
+                            <td className="p-2 text-right font-mono">₦{activeReportModal.data.payableRefunds?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                           </tr>
                           <tr>
                             <td className="p-2 font-semibold">Retained Earnings (Equity)</td>

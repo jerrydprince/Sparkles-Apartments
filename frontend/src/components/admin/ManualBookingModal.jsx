@@ -430,14 +430,16 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
       }
       calculatedDiscount = Math.max(0, Math.min(roomTotal, calculatedDiscount));
       
-      const subtotal = Math.max(0, (roomTotal - calculatedDiscount) + servicesTotal);
-      const taxRate = 7.5;
-      const vatAmount = subtotal * (taxRate / 100);
-      const finalAmount = subtotal + vatAmount;
+      const roomTaxRate = 12.5;
+      const servicesTaxRate = 7.5;
       
       const roomTotalNet = Math.max(0, roomTotal - calculatedDiscount);
-      const roomVat = roomTotalNet * (taxRate / 100);
-      const servicesVat = servicesTotal * (taxRate / 100);
+      const roomVat = Math.round(roomTotalNet * (roomTaxRate / 100));
+      const servicesVat = Math.round(servicesTotal * (servicesTaxRate / 100));
+      
+      const subtotal = roomTotalNet + servicesTotal;
+      const vatAmount = roomVat + servicesVat;
+      const finalAmount = subtotal + vatAmount;
 
       setRoomCostWithVat(roomTotalNet + roomVat);
       setServicesCostWithVat(servicesTotal + servicesVat);
@@ -1262,8 +1264,8 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
                   <label className="block text-sm font-medium text-brand-400 mb-1">Final Amount (₦)</label>
                   <input required type="number" step="any" min="0" value={newBooking.totalAmount} onChange={e => setNewBooking({...newBooking, totalAmount: parseFloat(e.target.value) || 0})} className="w-full bg-dark-800 border border-brand-500 rounded p-2.5 text-white outline-none focus:border-brand-500 transition-colors font-bold text-lg" />
                   <p className="text-xs text-gray-500 mt-1">
-                    Calculated as Room Cost (₦{roomCostWithVat.toLocaleString()} including 7.5% VAT)
-                    {selectedServices.length > 0 && ` + Services (₦${servicesCostWithVat.toLocaleString()} including 7.5% VAT)`}
+                    Calculated as Room Cost (₦{roomCostWithVat.toLocaleString(undefined, {maximumFractionDigits:0})} including 12.5% Tax)
+                    {selectedServices.length > 0 && ` + Services (₦${servicesCostWithVat.toLocaleString(undefined, {maximumFractionDigits:0})} including 7.5% VAT)`}
                     {cautionFee > 0 && ` + Caution Fee (₦${cautionFee.toLocaleString()})`}
                     {discountValue > 0 && ` [Discount of ${discountType === 'amount' ? `₦${discountValue.toLocaleString()}` : `${discountValue}%`} applied to room rate]`}
                     {newBooking.purpose !== 'Leisure' && newBooking.purpose !== 'Other' && ` [Purpose of stay (${newBooking.purpose}) adjusts base pricing]`}

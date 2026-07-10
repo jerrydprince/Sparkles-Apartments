@@ -500,7 +500,9 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
               const roomPrice = Number(booking.total_room_price_ngn || 0);
               const discount = Number(booking.discount_amount_ngn || 0);
               const roomBase = Math.max(0, roomPrice - discount);
-              const roomTax = roomBase * 0.075;
+              const roomVat = roomBase * 0.075;
+              const roomConsumptionTax = roomBase * 0.05;
+              const roomTax = roomVat + roomConsumptionTax;
               const roomTotalWithTax = roomBase + roomTax;
 
               const amountPaidTotal = Number(booking.amount_paid_ngn || 0);
@@ -578,14 +580,14 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
                       <p className="font-bold text-black">{booking.rooms?.name || 'Luxury Room Stay'} (Room {booking.rooms?.room_number})</p>
                       <p className="text-gray-500 text-[10px] mt-0.5">Accommodation Charges (Rent + Tax)</p>
                           <p className="text-[9px] text-gray-400">
-                            Rate: ₦{roomPrice.toLocaleString()} {discount > 0 && `| Discount: -₦${discount.toLocaleString()}`} | Taxable Base: ₦{roomBase.toLocaleString()} | VAT (7.5%): ₦{roomTax.toLocaleString()}
+                            Rate: ₦{roomPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {discount > 0 && `| Discount: -₦${discount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} | Taxable Base: ₦{roomBase.toLocaleString(undefined, { maximumFractionDigits: 0 })} | VAT (7.5%): ₦{roomVat.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Cons. Tax (5%): ₦{roomConsumptionTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                           </p>
                     </td>
                     <td className="py-3 px-4 text-center">
                       {renderStatusBadge(roomPaymentStatus)}
                     </td>
                     <td className="py-3 px-4 text-right font-medium text-black">
-                      ₦{roomTotalWithTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₦{roomTotalWithTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </td>
                   </tr>
                   {servicesWithStatus.map((extra) => {
@@ -594,17 +596,17 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
                         <td className="py-3 px-4">
                           <p className="font-bold text-black">{extra.services?.name || 'Guest Service'}</p>
                           <p className="text-gray-500 text-[10px] mt-0.5">
-                            Unit Price: ₦{extra.uPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Quantity: {extra.quantity}
+                            Unit Price: ₦{extra.uPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Quantity: {extra.quantity}
                           </p>
                           <p className="text-[9px] text-gray-400">
-                            Base: ₦{extra.sBasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {extra.isTaxable ? `| VAT (7.5%): ₦${extra.sTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '(VAT Exempt)'}
+                            Base: ₦{extra.sBasePrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {extra.isTaxable ? `| VAT (7.5%): ₦${extra.sTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '(VAT Exempt)'}
                           </p>
                         </td>
                         <td className="py-3 px-4 text-center">
                           {renderStatusBadge(extra.calculatedStatus)}
                         </td>
                         <td className="py-3 px-4 text-right font-medium text-black">
-                          ₦{extra.sTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          ₦{extra.sTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </td>
                       </tr>
                     );
@@ -620,30 +622,30 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
           <div className="w-64 space-y-2 border-t pt-4">
             <div className="flex justify-between text-gray-600">
               <span>Subtotal</span>
-              <span>₦{(Number(viewBooking.total_amount_ngn) + discount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span>₦{(Number(viewBooking.total_amount_ngn) + discount).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
             </div>
             {discount > 0 && (
               <div className="flex justify-between text-yellow-600 font-bold">
                 <span>Room Discount</span>
-                <span>-₦{discount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span>-₦{discount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
               </div>
             )}
             <div className="flex justify-between font-black text-sm border-t pt-2 text-black">
               <span>Total Due</span>
-              <span>₦{Number(viewBooking.total_amount_ngn).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span>₦{Number(viewBooking.total_amount_ngn).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
             </div>
             <div className="flex justify-between font-bold text-green-600 pt-1">
               <span>Amount Paid</span>
-              <span>₦{Number(viewBooking.amount_paid_ngn || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span>₦{Number(viewBooking.amount_paid_ngn || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
             </div>
             <div className="flex justify-between font-bold text-red-650 pt-1 border-t border-gray-100">
               <span>Balance</span>
-              <span>₦{Math.max(0, Number(viewBooking.total_amount_ngn) - Number(viewBooking.amount_paid_ngn || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              <span>₦{Math.max(0, Number(viewBooking.total_amount_ngn) - Number(viewBooking.amount_paid_ngn || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
             </div>
             {Number(viewBooking.caution_fee_ngn) > 0 && (
               <div className="flex justify-between font-bold text-amber-600 pt-3 border-t border-gray-100 mt-2">
                 <span className="flex items-center gap-1">Caution Fee Deposit <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full uppercase">{viewBooking.caution_fee_status}</span></span>
-                <span>₦{Number(viewBooking.caution_fee_ngn).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span>₦{Number(viewBooking.caution_fee_ngn).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
               </div>
             )}
           </div>

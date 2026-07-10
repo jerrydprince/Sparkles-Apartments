@@ -4697,11 +4697,11 @@ const AdminFrontDesk = () => {
                               <div key={srv.id} className="flex flex-col py-1.5 border-b border-dark-700/30 last:border-b-0">
                                 <div className="flex justify-between items-center">
                                   <span className="text-gray-300 font-medium truncate max-w-[220px]">{srv.services?.name || 'Guest Charge'}</span>
-                                  <span className="font-bold text-white font-mono">₦{total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                  <span className="font-bold text-white font-mono">₦{total.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-[9px] text-gray-500 mt-0.5">
-                                  <span>Qty: {qty} | Unit: ₦{unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                  <span>Base: ₦{basePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {isTaxable ? `| VAT (7.5%): ₦${tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '(VAT Exempt)'}</span>
+                                  <span>Qty: {qty} | Unit: ₦{unitPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                  <span>Base: ₦{basePrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {isTaxable ? `| VAT (7.5%): ₦${tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '(VAT Exempt)'}</span>
                                 </div>
                               </div>
                             );
@@ -4709,7 +4709,7 @@ const AdminFrontDesk = () => {
                         </div>
                         <div className="flex justify-between items-center text-[11px] pt-1.5 font-bold text-red-400 border-t border-red-500/10">
                           <span>Total Unpaid Services:</span>
-                          <span className="font-mono">₦{unpaidServicesTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span className="font-mono">₦{unpaidServicesTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>
                     )}
