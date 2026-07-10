@@ -498,12 +498,11 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
             {(() => {
               const booking = viewBooking;
               const roomPrice = Number(booking.total_room_price_ngn || 0);
-              const discount = Number(booking.discount_amount_ngn || 0);
-              const roomBase = Math.max(0, roomPrice - discount);
-              const roomVat = roomBase * 0.125;
-              const roomConsumptionTax = roomBase * 0.05;
-              const roomTax = roomVat + roomConsumptionTax;
-              const roomTotalWithTax = roomBase + roomTax;
+              const discountVal = Math.max(0, Math.min(roomPrice, Number(booking.discount_amount_ngn || 0)));
+              const roomBase = Math.max(0, roomPrice - discountVal);
+              const roomVat = Math.round(roomBase * 0.075);
+              const roomConsTax = Math.round(roomBase * 0.05);
+              const roomTotalWithTax = roomBase + roomVat + roomConsTax;
 
               const amountPaidTotal = Number(booking.amount_paid_ngn || 0);
               let remainingPaid = amountPaidTotal;
@@ -547,9 +546,11 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
 
               // Calculate status for each service sequentially
               const servicesWithStatus = activeServices.map(extra => {
-                const isTaxable = extra.services?.tax_inclusive !== false;
+                const isTaxable = typeof extra.services?.is_taxable !== 'undefined' ? extra.services?.is_taxable : true;
                 const sBasePrice = Number(extra.total_price_ngn || 0);
-                const sTax = isTaxable ? sBasePrice * 0.125 : 0;
+                const sVat = isTaxable ? Math.round(sBasePrice * 0.075) : 0;
+                const sConsTax = isTaxable ? Math.round(sBasePrice * 0.05) : 0;
+                const sTax = sVat + sConsTax;
                 const sTotal = sBasePrice + sTax;
                 const uPrice = Number(extra.unit_price_ngn || (extra.quantity > 0 ? sBasePrice / extra.quantity : sBasePrice));
 
@@ -580,7 +581,7 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
                       <p className="font-bold text-black">{booking.rooms?.name || 'Luxury Room Stay'} (Room {booking.rooms?.room_number})</p>
                       <p className="text-gray-500 text-[10px] mt-0.5">Accommodation Charges (Rent + Tax)</p>
                           <p className="text-[9px] text-gray-400">
-                            Rate: ₦{roomPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {discount > 0 && `| Discount: -₦${discount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} | Taxable Base: ₦{roomBase.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Taxes (12.5%): ₦{roomVat.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Cons. Tax (5%): ₦{roomConsumptionTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            Rate: ₦{roomPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {discount > 0 && `| Discount: -₦${discount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} | Taxable Base: ₦{roomBase.toLocaleString(undefined, { maximumFractionDigits: 0 })} | VAT (7.5%): ₦{roomVat.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Ent. Tax (5%): ₦{roomConsTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                           </p>
                     </td>
                     <td className="py-3 px-4 text-center">
@@ -599,7 +600,7 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
                             Unit Price: ₦{extra.uPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Quantity: {extra.quantity}
                           </p>
                           <p className="text-[9px] text-gray-400">
-                            Base: ₦{extra.sBasePrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {extra.isTaxable ? `| Taxes (12.5%): ₦${extra.sTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '(VAT Exempt)'}
+                            Base: ₦{extra.sBasePrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {extra.isTaxable ? `| VAT (7.5%): ₦${extra.sVat.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Ent. Tax (5%): ₦${extra.sConsTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '(VAT Exempt)'}
                           </p>
                         </td>
                         <td className="py-3 px-4 text-center">
@@ -618,22 +619,52 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
         </table>
 
         {/* Totals Summary */}
-        <div className="flex justify-end text-xs">
-          <div className="w-64 space-y-2 border-t pt-4">
-            <div className="flex justify-between text-gray-600">
-              <span>Subtotal</span>
-              <span>₦{(Number(viewBooking.total_amount_ngn) + discount).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-            </div>
-            {discount > 0 && (
-              <div className="flex justify-between text-yellow-600 font-bold">
-                <span>Room Discount</span>
-                <span>-₦{discount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-              </div>
-            )}
-            <div className="flex justify-between font-black text-sm border-t pt-2 text-black">
-              <span>Total Due</span>
-              <span>₦{Number(viewBooking.total_amount_ngn).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-            </div>
+        {(() => {
+          const booking = viewBooking;
+          const roomPrice = Number(booking.total_room_price_ngn || 0);
+          const discountVal = Math.max(0, Math.min(roomPrice, Number(booking.discount_amount_ngn || 0)));
+          const roomBase = Math.max(0, roomPrice - discountVal);
+          const roomVat = Math.round(roomBase * 0.075);
+          const roomConsTax = Math.round(roomBase * 0.05);
+          
+          const activeServices = booking.booking_services?.filter(s => s.status !== 'cancelled') || [];
+          const servicesSummary = activeServices.reduce((acc, extra) => {
+            const isTaxable = typeof extra.services?.is_taxable !== 'undefined' ? extra.services.is_taxable : true;
+            const sBasePrice = Number(extra.total_price_ngn || 0);
+            const sVat = isTaxable ? Math.round(sBasePrice * 0.075) : 0;
+            const sConsTax = isTaxable ? Math.round(sBasePrice * 0.05) : 0;
+            return { base: acc.base + sBasePrice, vat: acc.vat + sVat, consTax: acc.consTax + sConsTax };
+          }, { base: 0, vat: 0, consTax: 0 });
+
+          const totalRate = roomPrice + servicesSummary.base;
+          const totalVat = roomVat + servicesSummary.vat;
+          const totalConsTax = roomConsTax + servicesSummary.consTax;
+
+          return (
+            <div className="flex justify-end text-xs">
+              <div className="w-64 space-y-2 border-t pt-4">
+                <div className="flex justify-between text-gray-600">
+                  <span>Subtotal (Base)</span>
+                  <span>₦{totalRate.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                </div>
+                {discountVal > 0 && (
+                  <div className="flex justify-between text-yellow-600 font-bold">
+                    <span>Room Discount</span>
+                    <span>-₦{discountVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-gray-600 font-medium">
+                  <span>VAT (7.5%)</span>
+                  <span>₦{totalVat.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                </div>
+                <div className="flex justify-between text-gray-600 font-medium">
+                  <span>Entertainment Tax (5%)</span>
+                  <span>₦{totalConsTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                </div>
+                <div className="flex justify-between font-black text-sm border-t pt-2 text-black">
+                  <span>Total Due</span>
+                  <span>₦{Number(viewBooking.total_amount_ngn).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                </div>
             <div className="flex justify-between font-bold text-green-600 pt-1">
               <span>Amount Paid</span>
               <span>₦{Number(viewBooking.amount_paid_ngn || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
@@ -650,6 +681,8 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
             )}
           </div>
         </div>
+        );
+        })()}
 
         {cleanNotes && (
           <div className="mt-8 border-t pt-4 text-left">

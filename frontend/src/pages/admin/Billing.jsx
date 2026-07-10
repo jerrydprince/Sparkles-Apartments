@@ -954,9 +954,11 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
     }
     const toastId = toast.loading('Confirming stay enhancement payment...');
     try {
-      const isTaxable = req.services?.tax_inclusive !== false;
+      const isTaxable = typeof req.services?.is_taxable !== 'undefined' ? req.services.is_taxable : true;
       const baseAmount = Number(req.total_price_ngn || 0);
-      const taxAmount = isTaxable ? baseAmount * 0.125 : 0;
+      const vatAmount = isTaxable ? Math.round(baseAmount * 0.075) : 0;
+      const consTaxAmount = isTaxable ? Math.round(baseAmount * 0.05) : 0;
+      const taxAmount = vatAmount + consTaxAmount;
       const amount = baseAmount + taxAmount;
 
       let guestProfile = null;
@@ -1872,16 +1874,10 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
 
   const sortedInvoices = [...filteredInvoices].sort((a, b) => {
     if (sortBy === 'created_at_desc') {
-      const dateB = new Date(b.due_date || b.created_at).getTime();
-      const dateA = new Date(a.due_date || a.created_at).getTime();
-      if (dateB !== dateA) return dateB - dateA;
-      return new Date(b.created_at) - new Date(a.created_at);
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     }
     if (sortBy === 'created_at_asc') {
-      const dateA = new Date(a.due_date || a.created_at).getTime();
-      const dateB = new Date(b.due_date || b.created_at).getTime();
-      if (dateA !== dateB) return dateA - dateB;
-      return new Date(a.created_at) - new Date(b.created_at);
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
     }
     if (sortBy === 'status_custom') {
       const getStatusPriority = (status) => {
@@ -1909,7 +1905,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
     if (sortBy === 'amount_desc') {
       return Number(b.total_amount || 0) - Number(a.total_amount || 0);
     }
-    return 0;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
   useEffect(() => {
@@ -3079,12 +3075,11 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
 
                   const booking = activeInvoiceModal.bookings || {};
                   const roomPrice = Number(booking.total_room_price_ngn || activeInvoiceModal.subtotal || 0);
-                  const discount = Number(booking.discount_amount_ngn || 0);
-                  const roomBase = Math.max(0, roomPrice - discount);
-                  const roomVat = roomBase * 0.125;
-                  const roomConsumptionTax = roomBase * 0.05;
-                  const roomTax = roomVat + roomConsumptionTax;
-                  const roomTotalWithTax = roomBase + roomTax;
+                  const discountVal = Number(booking.discount_amount_ngn || 0);
+                  const roomBase = Math.max(0, roomPrice - discountVal);
+                  const roomVat = Math.round(roomBase * 0.075);
+                  const roomConsTax = Math.round(roomBase * 0.05);
+                  const roomTotalWithTax = roomBase + roomVat + roomConsTax;
 
                   const amountPaidTotal = Number(activeInvoiceModal.amount_paid || 0);
                   let remainingPaid = amountPaidTotal;
@@ -3104,9 +3099,11 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
 
                   // Calculate status for each service sequentially
                   const servicesWithStatus = activeServices.map(extra => {
-                    const isTaxable = extra.services?.tax_inclusive !== false;
+                    const isTaxable = typeof extra.services?.is_taxable !== 'undefined' ? extra.services.is_taxable : true;
                     const sBasePrice = Number(extra.total_price_ngn || 0);
-                    const sTax = isTaxable ? sBasePrice * 0.125 : 0;
+                    const sVat = isTaxable ? Math.round(sBasePrice * 0.075) : 0;
+                    const sConsTax = isTaxable ? Math.round(sBasePrice * 0.05) : 0;
+                    const sTax = sVat + sConsTax;
                     const sTotal = sBasePrice + sTax;
                     const uPrice = Number(extra.unit_price_ngn || (extra.quantity > 0 ? sBasePrice / extra.quantity : sBasePrice));
 
@@ -3141,7 +3138,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                             Check-in: {booking.check_in_date || 'N/A'} | Check-out: {booking.check_out_date || 'N/A'} {booking.check_in_date && booking.check_out_date && `| Nights Booked: ${Math.max(1, differenceInDays(new Date(booking.check_out_date), new Date(booking.check_in_date)))}`}
                           </p>
                           <p className="text-[10px] text-gray-500 mt-1">
-                            Rate: ₦{roomPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {discount > 0 && `| Discount: -₦${discount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} | Taxable Base: ₦{roomBase.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Taxes (12.5%): ₦{roomVat.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Cons. Tax (5%): ₦{roomConsumptionTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            Rate: ₦{roomPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {discountVal > 0 && `| Discount: -₦${discountVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} | Taxable Base: ₦{roomBase.toLocaleString(undefined, { maximumFractionDigits: 0 })} | VAT (7.5%): ₦{roomVat.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Ent. Tax (5%): ₦{roomConsTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                           </p>
                         </td>
                         <td className="py-4 px-4 text-center">
@@ -3162,7 +3159,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                                 Unit Price: ₦{extra.uPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Quantity: {extra.quantity}
                               </p>
                               <p className="text-[10px] text-gray-500 mt-1">
-                                Base: ₦{extra.sBasePrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {extra.isTaxable ? `| Taxes (12.5%): ₦${extra.sTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '(VAT Exempt)'}
+                                Base: ₦{extra.sBasePrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {extra.isTaxable ? `| VAT (7.5%): ₦${extra.sVat.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Ent. Tax (5%): ₦${extra.sConsTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '(VAT Exempt)'}
                               </p>
                             </td>
                             <td className="py-4 px-4 text-center">
@@ -3185,25 +3182,58 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
               const totalAmount = Number(activeInvoiceModal.total_amount || 0);
               const amountPaid = Number(activeInvoiceModal.amount_paid || 0);
               const balance = Math.max(0, totalAmount - amountPaid);
-              const discount = Number(activeInvoiceModal.bookings?.discount_amount_ngn || 0);
+              
+              // Calculate actual Subtotal (Sum of Room Rate + Services Rate)
+              const booking = activeInvoiceModal.bookings || {};
+              const roomPrice = Number(booking.total_room_price_ngn || activeInvoiceModal.subtotal || 0);
+              const discount = Number(booking.discount_amount_ngn || 0);
+              const discountVal = Math.max(0, Math.min(roomPrice, discount));
+              const roomBase = Math.max(0, roomPrice - discountVal);
+              const roomVat = Math.round(roomBase * 0.075);
+              const roomConsTax = Math.round(roomBase * 0.05);
+              
+              const activeServices = activeInvoiceModal.booking_services?.filter(s => s.status !== 'cancelled') || [];
+              const servicesSummary = activeServices.reduce((acc, extra) => {
+                const isTaxable = typeof extra.services?.is_taxable !== 'undefined' ? extra.services.is_taxable : true;
+                const sBasePrice = Number(extra.total_price_ngn || 0);
+                const sVat = isTaxable ? Math.round(sBasePrice * 0.075) : 0;
+                const sConsTax = isTaxable ? Math.round(sBasePrice * 0.05) : 0;
+                return { base: acc.base + sBasePrice, vat: acc.vat + sVat, consTax: acc.consTax + sConsTax };
+              }, { base: 0, vat: 0, consTax: 0 });
+
+              const totalRate = roomPrice + servicesSummary.base;
+              const totalVat = roomVat + servicesSummary.vat;
+              const totalConsTax = roomConsTax + servicesSummary.consTax;
 
               return (
                 <div className="flex justify-end">
                   <div className="w-64 space-y-3 text-sm">
                     <div className="flex justify-between text-gray-400 print:text-gray-600">
-                      <span>Subtotal</span>
+                      <span>Subtotal (Base)</span>
                       <span className="text-white print:text-black font-medium">
-                        ₦{(totalAmount + discount).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        ₦{totalRate.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </span>
                     </div>
-                    {discount > 0 && (
+                    {discountVal > 0 && (
                       <div className="flex justify-between text-yellow-500 print:text-yellow-600 font-medium">
                         <span>Room Discount</span>
                         <span>
-                          -₦{discount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          -₦{discountVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </span>
                       </div>
                     )}
+                    <div className="flex justify-between text-gray-400 print:text-gray-600 font-medium">
+                      <span>VAT (7.5%)</span>
+                      <span className="text-white print:text-black font-medium">
+                        ₦{totalVat.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-gray-400 print:text-gray-600 font-medium">
+                      <span>Entertainment Tax (5%)</span>
+                      <span className="text-white print:text-black font-medium">
+                        ₦{totalConsTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                    </div>
                     <div className="flex justify-between font-bold text-lg border-t border-dark-700 print:border-gray-200 pt-2 text-white print:text-black">
                       <span>Total Due</span>
                       <span>₦{totalAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>

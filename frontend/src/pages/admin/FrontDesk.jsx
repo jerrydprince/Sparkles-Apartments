@@ -2245,9 +2245,11 @@ const AdminFrontDesk = () => {
   const handleSettleFolioViaAR = async () => {
     if (!activeCheckOut) return;
     const unpaidServicesTotal = (unpaidServices || []).reduce((sum, s) => {
-      const isTaxable = s.services?.tax_inclusive !== false;
+      const isTaxable = typeof s.services?.is_taxable !== 'undefined' ? s.services.is_taxable : true;
       const basePrice = Number(s.total_price_ngn || 0);
-      const tax = isTaxable ? basePrice * 0.125 : 0;
+      const vat = isTaxable ? Math.round(basePrice * 0.075) : 0;
+      const consTax = isTaxable ? Math.round(basePrice * 0.05) : 0;
+      const tax = vat + consTax;
       return sum + basePrice + tax;
     }, 0);
     if (unpaidServicesTotal <= 0) return;
@@ -4646,9 +4648,11 @@ const AdminFrontDesk = () => {
                 const accommodationCharges = Math.max(0, newTotal - totalExtras);
                 
                 const unpaidServicesTotal = (unpaidServices || []).reduce((sum, s) => {
-                  const isTaxable = s.services?.tax_inclusive !== false;
+                  const isTaxable = typeof s.services?.is_taxable !== 'undefined' ? s.services.is_taxable : true;
                   const basePrice = Number(s.total_price_ngn || 0);
-                  const tax = isTaxable ? basePrice * 0.125 : 0;
+                  const sVat = isTaxable ? Math.round(basePrice * 0.075) : 0;
+                  const sConsTax = isTaxable ? Math.round(basePrice * 0.05) : 0;
+                  const tax = sVat + sConsTax;
                   return sum + basePrice + tax;
                 }, 0);
                 
@@ -4687,9 +4691,11 @@ const AdminFrontDesk = () => {
                         </p>
                         <div className="divide-y divide-dark-750 bg-dark-900/50 p-2 rounded-lg border border-dark-700/50 max-h-[160px] overflow-y-auto space-y-1">
                           {unpaidServices.map(srv => {
-                            const isTaxable = srv.services?.tax_inclusive !== false;
+                            const isTaxable = typeof srv.services?.is_taxable !== 'undefined' ? srv.services.is_taxable : true;
                             const basePrice = Number(srv.total_price_ngn || 0);
-                            const tax = isTaxable ? basePrice * 0.125 : 0;
+                            const sVat = isTaxable ? Math.round(basePrice * 0.075) : 0;
+                            const sConsTax = isTaxable ? Math.round(basePrice * 0.05) : 0;
+                            const tax = sVat + sConsTax;
                             const total = basePrice + tax;
                             const qty = srv.quantity || 1;
                             const unitPrice = srv.unit_price_ngn || (qty > 0 ? basePrice / qty : basePrice);

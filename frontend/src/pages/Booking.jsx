@@ -479,8 +479,10 @@ const BookingEngine = () => {
       });
 
       const subtotal = hallPrice + mealsPrice;
-      const vat = subtotal * 0.125;
-      return Math.round(subtotal + vat + bookingRules.caution_fee);
+      const vat = Math.round(subtotal * 0.075);
+      const consTax = Math.round(subtotal * 0.05);
+      const tax = vat + consTax;
+      return Math.round(subtotal + tax + bookingRules.caution_fee);
     }
 
     let roomPrice = 0;
@@ -502,14 +504,14 @@ const BookingEngine = () => {
     const allAvailableServices = [...services, ...foodServices];
     selectedServices.forEach(sData => {
       const service = allAvailableServices.find(s => s.id === sData.service_id);
-      if(service) {
         servicesPrice += getServicePrice(service, sData.quantity);
       }
     });
 
     const subtotal = Math.max(0, (roomPrice - discountAmount) + servicesPrice);
-    const vat = subtotal * 0.125;
-    return Math.round(subtotal + vat + bookingRules.caution_fee);
+    const vat = Math.round(subtotal * 0.075);
+    const consTax = Math.round(subtotal * 0.05);
+    return Math.round(subtotal + vat + consTax + bookingRules.caution_fee);
   };
 
   const toggleService = (service) => {
@@ -1227,8 +1229,25 @@ const BookingEngine = () => {
                 discountVal = Math.max(0, Math.min(roomPrice, discountVal));
               }
               const roomBase = Math.max(0, roomPrice - discountVal);
-              const roomTax = roomBase * 0.125;
-              const roomTotalWithTax = roomBase + roomTax;
+              const roomVat = Math.round(roomBase * 0.075);
+              const roomConsTax = Math.round(roomBase * 0.05);
+              
+              const activeServices = selectedServices.map(sData => ({
+                service: [...services, ...foodServices].find(s => s.id === sData.service_id),
+                sData
+              })).filter(extra => extra.service);
+              
+              const servicesSummary = activeServices.reduce((acc, extra) => {
+                const isTaxable = typeof extra.service?.is_taxable !== 'undefined' ? extra.service?.is_taxable : true;
+                const sBasePrice = getServicePrice(extra.service, extra.sData.quantity);
+                const sVat = isTaxable ? Math.round(sBasePrice * 0.075) : 0;
+                const sConsTax = isTaxable ? Math.round(sBasePrice * 0.05) : 0;
+                return { base: acc.base + sBasePrice, vat: acc.vat + sVat, consTax: acc.consTax + sConsTax };
+              }, { base: 0, vat: 0, consTax: 0 });
+
+              const roomTotalWithTax = roomBase + roomVat + roomConsTax;
+              const totalVat = roomVat + servicesSummary.vat;
+              const totalConsTax = roomConsTax + servicesSummary.consTax;
 
               const grandTotal = calculateTotal();
               const amountPaid = paymentMethod === 'pay_online' ? grandTotal : (paymentMethod === 'pay_ar_deposit' ? (((grandTotal - bookingRules.caution_fee) * (bookingRules.deposit_percentage / 100)) + bookingRules.caution_fee) : 0);
@@ -1265,55 +1284,14 @@ const BookingEngine = () => {
                 );
               };
 
-              const allAvailableServices = [...services, ...foodServices];
-              const servicesWithStatus = selectedServices.map(sData => {
-                const service = allAvailableServices.find(s => s.id === sData.service_id);
-                if (!service) return null;
-
-                const isTaxable = service.tax_inclusive !== false;
-                let uPrice = Number(service.base_price_ngn);
-                const isBreakfast = service.name && service.name.toLowerCase().includes('breakfast');
-                if (isBreakfast) {
-                  uPrice = uPrice * totalGuests * totalNights;
-                } else {
-                  if(service.pricing_type === 'per_person') uPrice *= totalGuests;
-                  if(service.pricing_type === 'per_day') uPrice *= totalNights;
-                  if(service.pricing_type === 'per_night') uPrice *= totalNights;
-                }
-
-                const sBasePrice = getServicePrice(service, sData.quantity);
-                const sTax = isTaxable ? sBasePrice * 0.125 : 0;
-                const sTotal = sBasePrice + sTax;
-
-                let servicePaymentStatus = 'unpaid';
-                if (remainingPaid >= sTotal) {
-                  servicePaymentStatus = 'paid';
-                  remainingPaid -= sTotal;
-                } else if (remainingPaid > 0) {
-                  servicePaymentStatus = 'partial';
-                  remainingPaid = 0;
-                }
-
-                return {
-                  service,
-                  sData,
-                  calculatedStatus: servicePaymentStatus,
-                  sBasePrice,
-                  sTax,
-                  sTotal,
-                  uPrice,
-                  isTaxable
-                };
-              }).filter(Boolean);
-
               return (
                 <>
                   <tr>
                     <td className="py-3 px-4">
                       <p className="font-bold text-black">{selectedRoom.name} ({selectedRoom.type})</p>
-                      <p className="text-gray-500 text-[10px] mt-0.5">Accommodation Charges (Rent + Tax)</p>
+                      <p className="text-gray-500 text-[10px] mt-0.5">Accommodation Charges (Rent + Taxes)</p>
                       <p className="text-[9px] text-gray-400">
-                            Rate: ₦{roomPrice.toLocaleString()} {discountVal > 0 && `| Discount: -₦${discountVal.toLocaleString()}`} | Taxable Base: ₦{roomBase.toLocaleString()} | Taxes (12.5%): ₦{roomTax.toLocaleString()}
+                            Rate: ₦{roomPrice.toLocaleString()} {discountVal > 0 && `| Discount: -₦${discountVal.toLocaleString()}`} | Taxable Base: ₦{roomBase.toLocaleString()} | VAT (7.5%): ₦{roomVat.toLocaleString()} | Ent. Tax (5%): ₦{roomConsTax.toLocaleString()}
                           </p>
                     </td>
                     <td className="py-3 px-4 text-center">
@@ -1323,20 +1301,33 @@ const BookingEngine = () => {
                       ₦{roomTotalWithTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   </tr>
-                  {servicesWithStatus.map(({ service, sData, calculatedStatus, sBasePrice, sTax, sTotal, uPrice, isTaxable }) => {
+                  {activeServices.map(({ service, sData }) => {
+                    const isTaxable = typeof service.is_taxable !== 'undefined' ? service.is_taxable : true;
+                    const sBasePrice = getServicePrice(service, sData.quantity);
+                    const sVat = isTaxable ? Math.round(sBasePrice * 0.075) : 0;
+                    const sConsTax = isTaxable ? Math.round(sBasePrice * 0.05) : 0;
+                    const sTotal = sBasePrice + sVat + sConsTax;
+
+                    let servicePaymentStatus = 'unpaid';
+                    if (remainingPaid >= sTotal) {
+                      servicePaymentStatus = 'paid';
+                      remainingPaid -= sTotal;
+                    } else if (remainingPaid > 0) {
+                      servicePaymentStatus = 'partial';
+                      remainingPaid = 0;
+                    }
+
                     return (
                       <tr key={sData.service_id}>
                         <td className="py-3 px-4">
                           <p className="font-bold text-black">{service.name}</p>
-                          <p className="text-gray-500 text-[10px] mt-0.5">
-                            Unit Price: ₦{uPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Quantity: {sData.quantity}
-                          </p>
+                          <p className="text-gray-500 text-[10px] mt-0.5">Quantity: {sData.quantity}</p>
                           <p className="text-[9px] text-gray-400">
-                            Base: ₦{sBasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {isTaxable ? `| Taxes (12.5%): ₦${sTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '(Tax Exempt)'}
+                            Base: ₦{sBasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {isTaxable ? `| VAT (7.5%): ₦${sVat.toLocaleString()} | Ent. Tax (5%): ₦${sConsTax.toLocaleString()}` : '(Tax Exempt)'}
                           </p>
                         </td>
                         <td className="py-3 px-4 text-center">
-                          {renderStatusBadge(calculatedStatus)}
+                          {renderStatusBadge(servicePaymentStatus)}
                         </td>
                         <td className="py-3 px-4 text-right font-medium text-black">
                           ₦{sTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1440,8 +1431,10 @@ const BookingEngine = () => {
     });
 
     const subtotal = hallPrice + mealsPrice;
-    const tax = subtotal * 0.125;
-    const total = subtotal + tax;
+    const vat = Math.round(subtotal * 0.075);
+    const consTax = Math.round(subtotal * 0.05);
+    const tax = vat + consTax;
+    const total = subtotal + tax + Number(hallCautionFee || 0);
 
     return { hallPrice, mealsPrice, subtotal, tax, total, days, hours };
   }, [bookingMode, selectedHall, dateRange, hallBookingType, hallStartTime, hallEndTime, selectedHallMeals, hallMealOptions, hallParticipants]);

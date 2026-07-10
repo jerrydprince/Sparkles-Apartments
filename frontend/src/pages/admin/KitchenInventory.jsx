@@ -153,7 +153,8 @@ const KitchenInventory = () => {
     description: '',
     quantity: 0,
     unit_price_ngn: '',
-    category: 'linen'
+    category: 'linen',
+    syncToPOS: false
   });
 
   // Restock State
@@ -727,13 +728,46 @@ const KitchenInventory = () => {
         }]);
       }
 
-      toast.success(`✓ "${newItem.name}" added to inventory registry!`);
+      // 3. Sync to POS Catalog if toggle is true
+      if (newItem.syncToPOS && inserted && inserted.length > 0) {
+        await supabase.from('services').insert([{
+          name: newItem.name.trim(),
+          description: newItem.description || 'Synced from Kitchen Inventory.',
+          base_price_ngn: Number(newItem.unit_price_ngn),
+          outlet: 'restaurant',
+          linked_store_item_id: inserted[0].id
+        }]);
+      }
+
+      toast.success(`🍽️ "${newItem.name}" added to inventory registry!`);
       setIsAddModalOpen(false);
-      setNewItem({ name: '', description: '', quantity: 0, unit_price_ngn: '', category: 'linen' });
+      setNewItem({ name: '', description: '', quantity: 0, unit_price_ngn: '', category: 'linen', syncToPOS: false });
       fetchStoreData();
     } catch (err) {
       console.error(err);
       toast.error("Failed to register new store item");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDeleteItem = async (item) => {
+    if (!window.confirm(`Are you sure you want to permanently delete "${item.name}" from the inventory and the POS catalog? This action cannot be undone.`)) return;
+    
+    setIsProcessing(true);
+    try {
+      // Delete from POS services (if it exists)
+      await supabase.from('services').delete().eq('linked_store_item_id', item.id);
+      
+      // Delete from store items
+      const { error } = await supabase.from('store_items').delete().eq('id', item.id);
+      if (error) throw error;
+      
+      toast.success(`Deleted "${item.name}" successfully!`);
+      fetchStoreData();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to delete the item.");
     } finally {
       setIsProcessing(false);
     }
@@ -1505,17 +1539,25 @@ const KitchenInventory = () => {
                       </td>
                       <td className="p-4 font-semibold text-gray-300">₦{Number(item.unit_price_ngn).toLocaleString()}</td>
                       <td className="p-4 font-black text-brand-400">₦{(item.quantity * item.unit_price_ngn).toLocaleString()}</td>
-                      {isSuperAdminOrManager && (
-                        <td className="p-4 text-right">
-                          <button 
-                            onClick={() => handleOpenRestockModal(item)}
-                            className="bg-brand-500/10 hover:bg-brand-500 border border-brand-500/20 text-brand-400 hover:text-white px-3 py-1.5 rounded-lg transition-all text-[10px] font-extrabold shadow-sm inline-flex items-center gap-1"
-                          >
-                            <ArrowDownLeft size={10} />
-                            Restock
-                          </button>
-                        </td>
-                      )}
+                        {isSuperAdminOrManager && (
+                          <td className="p-4 text-right flex items-center justify-end gap-2">
+                            <button 
+                              onClick={() => handleOpenRestockModal(item)}
+                              className="bg-brand-500/10 hover:bg-brand-500 border border-brand-500/20 text-brand-400 hover:text-white px-3 py-1.5 rounded-lg transition-all text-[10px] font-extrabold shadow-sm inline-flex items-center gap-1"
+                            >
+                              <ArrowDownLeft size={10} />
+                              Restock
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteItem(item)}
+                              disabled={isProcessing}
+                              className="bg-red-500/10 hover:bg-red-500 border border-red-500/20 text-red-400 hover:text-white px-2 py-1.5 rounded-lg transition-all text-[10px] font-extrabold shadow-sm inline-flex items-center disabled:opacity-50"
+                              title="Delete Item"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </td>
+                        )}
                     </tr>
                   ))}
                 </tbody>
@@ -1972,7 +2014,6 @@ const KitchenInventory = () => {
                   className="w-full bg-dark-800 border border-dark-700 rounded-xl p-3 text-white focus:border-brand-500 outline-none font-semibold"
                 />
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-gray-400 font-bold mb-1.5 uppercase">Price / Unit (NGN)</label>
@@ -2028,6 +2069,24 @@ const KitchenInventory = () => {
                   onChange={e => setNewItem({ ...newItem, description: e.target.value })}
                   className="w-full bg-dark-800 border border-dark-700 rounded-xl p-3 text-white focus:border-brand-500 outline-none"
                 />
+              </div>
+
+              <div className="pt-2">
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${newItem.syncToPOS ? 'bg-brand-500 border-brand-500' : 'bg-dark-900 border-dark-600 group-hover:border-brand-500'}`}>
+                    {newItem.syncToPOS && <Check size={14} className="text-white" />}
+                  </div>
+                  <div>
+                    <span className="text-white font-bold text-sm block">Sync to Restaurant POS Catalog</span>
+                    <span className="text-gray-500 text-[10px]">Automatically make this item available for sale in the Restaurant POS. Sales will automatically deduct stock.</span>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    className="hidden"
+                    checked={newItem.syncToPOS}
+                    onChange={(e) => setNewItem({...newItem, syncToPOS: e.target.checked})}
+                  />
+                </label>
               </div>
 
               <button
