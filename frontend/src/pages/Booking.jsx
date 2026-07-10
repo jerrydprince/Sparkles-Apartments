@@ -504,6 +504,7 @@ const BookingEngine = () => {
     const allAvailableServices = [...services, ...foodServices];
     selectedServices.forEach(sData => {
       const service = allAvailableServices.find(s => s.id === sData.service_id);
+      if (service) {
         servicesPrice += getServicePrice(service, sData.quantity);
       }
     });
