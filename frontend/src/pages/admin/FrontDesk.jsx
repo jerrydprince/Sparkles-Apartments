@@ -2247,7 +2247,7 @@ const AdminFrontDesk = () => {
     const unpaidServicesTotal = (unpaidServices || []).reduce((sum, s) => {
       const isTaxable = s.services?.tax_inclusive !== false;
       const basePrice = Number(s.total_price_ngn || 0);
-      const tax = isTaxable ? basePrice * 0.075 : 0;
+      const tax = isTaxable ? basePrice * 0.125 : 0;
       return sum + basePrice + tax;
     }, 0);
     if (unpaidServicesTotal <= 0) return;
@@ -4648,7 +4648,7 @@ const AdminFrontDesk = () => {
                 const unpaidServicesTotal = (unpaidServices || []).reduce((sum, s) => {
                   const isTaxable = s.services?.tax_inclusive !== false;
                   const basePrice = Number(s.total_price_ngn || 0);
-                  const tax = isTaxable ? basePrice * 0.075 : 0;
+                  const tax = isTaxable ? basePrice * 0.125 : 0;
                   return sum + basePrice + tax;
                 }, 0);
                 
@@ -4689,7 +4689,7 @@ const AdminFrontDesk = () => {
                           {unpaidServices.map(srv => {
                             const isTaxable = srv.services?.tax_inclusive !== false;
                             const basePrice = Number(srv.total_price_ngn || 0);
-                            const tax = isTaxable ? basePrice * 0.075 : 0;
+                            const tax = isTaxable ? basePrice * 0.125 : 0;
                             const total = basePrice + tax;
                             const qty = srv.quantity || 1;
                             const unitPrice = srv.unit_price_ngn || (qty > 0 ? basePrice / qty : basePrice);
@@ -4701,7 +4701,7 @@ const AdminFrontDesk = () => {
                                 </div>
                                 <div className="flex justify-between items-center text-[9px] text-gray-500 mt-0.5">
                                   <span>Qty: {qty} | Unit: ₦{unitPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                                  <span>Base: ₦{basePrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {isTaxable ? `| VAT (7.5%): ₦${tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '(VAT Exempt)'}</span>
+                                  <span>Base: ₦{basePrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {isTaxable ? `| Taxes (12.5%): ₦${tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '(VAT Exempt)'}</span>
                                 </div>
                               </div>
                             );

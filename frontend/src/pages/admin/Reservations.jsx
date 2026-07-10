@@ -500,7 +500,7 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
               const roomPrice = Number(booking.total_room_price_ngn || 0);
               const discount = Number(booking.discount_amount_ngn || 0);
               const roomBase = Math.max(0, roomPrice - discount);
-              const roomVat = roomBase * 0.075;
+              const roomVat = roomBase * 0.125;
               const roomConsumptionTax = roomBase * 0.05;
               const roomTax = roomVat + roomConsumptionTax;
               const roomTotalWithTax = roomBase + roomTax;
@@ -549,7 +549,7 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
               const servicesWithStatus = activeServices.map(extra => {
                 const isTaxable = extra.services?.tax_inclusive !== false;
                 const sBasePrice = Number(extra.total_price_ngn || 0);
-                const sTax = isTaxable ? sBasePrice * 0.075 : 0;
+                const sTax = isTaxable ? sBasePrice * 0.125 : 0;
                 const sTotal = sBasePrice + sTax;
                 const uPrice = Number(extra.unit_price_ngn || (extra.quantity > 0 ? sBasePrice / extra.quantity : sBasePrice));
 
@@ -580,7 +580,7 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
                       <p className="font-bold text-black">{booking.rooms?.name || 'Luxury Room Stay'} (Room {booking.rooms?.room_number})</p>
                       <p className="text-gray-500 text-[10px] mt-0.5">Accommodation Charges (Rent + Tax)</p>
                           <p className="text-[9px] text-gray-400">
-                            Rate: ₦{roomPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {discount > 0 && `| Discount: -₦${discount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} | Taxable Base: ₦{roomBase.toLocaleString(undefined, { maximumFractionDigits: 0 })} | VAT (7.5%): ₦{roomVat.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Cons. Tax (5%): ₦{roomConsumptionTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            Rate: ₦{roomPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {discount > 0 && `| Discount: -₦${discount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} | Taxable Base: ₦{roomBase.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Taxes (12.5%): ₦{roomVat.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Cons. Tax (5%): ₦{roomConsumptionTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                           </p>
                     </td>
                     <td className="py-3 px-4 text-center">
@@ -599,7 +599,7 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
                             Unit Price: ₦{extra.uPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Quantity: {extra.quantity}
                           </p>
                           <p className="text-[9px] text-gray-400">
-                            Base: ₦{extra.sBasePrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {extra.isTaxable ? `| VAT (7.5%): ₦${extra.sTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '(VAT Exempt)'}
+                            Base: ₦{extra.sBasePrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {extra.isTaxable ? `| Taxes (12.5%): ₦${extra.sTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '(VAT Exempt)'}
                           </p>
                         </td>
                         <td className="py-3 px-4 text-center">

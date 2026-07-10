@@ -479,8 +479,8 @@ const BookingEngine = () => {
       });
 
       const subtotal = hallPrice + mealsPrice;
-      const vat = subtotal * 0.075;
-      return subtotal + vat + bookingRules.caution_fee;
+      const vat = subtotal * 0.125;
+      return Math.round(subtotal + vat + bookingRules.caution_fee);
     }
 
     let roomPrice = 0;
@@ -508,8 +508,8 @@ const BookingEngine = () => {
     });
 
     const subtotal = Math.max(0, (roomPrice - discountAmount) + servicesPrice);
-    const vat = subtotal * 0.075;
-    return subtotal + vat + bookingRules.caution_fee;
+    const vat = subtotal * 0.125;
+    return Math.round(subtotal + vat + bookingRules.caution_fee);
   };
 
   const toggleService = (service) => {
@@ -1227,7 +1227,7 @@ const BookingEngine = () => {
                 discountVal = Math.max(0, Math.min(roomPrice, discountVal));
               }
               const roomBase = Math.max(0, roomPrice - discountVal);
-              const roomTax = roomBase * 0.075;
+              const roomTax = roomBase * 0.125;
               const roomTotalWithTax = roomBase + roomTax;
 
               const grandTotal = calculateTotal();
@@ -1282,7 +1282,7 @@ const BookingEngine = () => {
                 }
 
                 const sBasePrice = getServicePrice(service, sData.quantity);
-                const sTax = isTaxable ? sBasePrice * 0.075 : 0;
+                const sTax = isTaxable ? sBasePrice * 0.125 : 0;
                 const sTotal = sBasePrice + sTax;
 
                 let servicePaymentStatus = 'unpaid';
@@ -1313,7 +1313,7 @@ const BookingEngine = () => {
                       <p className="font-bold text-black">{selectedRoom.name} ({selectedRoom.type})</p>
                       <p className="text-gray-500 text-[10px] mt-0.5">Accommodation Charges (Rent + Tax)</p>
                       <p className="text-[9px] text-gray-400">
-                            Rate: ₦{roomPrice.toLocaleString()} {discountVal > 0 && `| Discount: -₦${discountVal.toLocaleString()}`} | Taxable Base: ₦{roomBase.toLocaleString()} | VAT (7.5%): ₦{roomTax.toLocaleString()}
+                            Rate: ₦{roomPrice.toLocaleString()} {discountVal > 0 && `| Discount: -₦${discountVal.toLocaleString()}`} | Taxable Base: ₦{roomBase.toLocaleString()} | Taxes (12.5%): ₦{roomTax.toLocaleString()}
                           </p>
                     </td>
                     <td className="py-3 px-4 text-center">
@@ -1332,7 +1332,7 @@ const BookingEngine = () => {
                             Unit Price: ₦{uPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Quantity: {sData.quantity}
                           </p>
                           <p className="text-[9px] text-gray-400">
-                            Base: ₦{sBasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {isTaxable ? `| VAT (7.5%): ₦${sTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '(VAT Exempt)'}
+                            Base: ₦{sBasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {isTaxable ? `| Taxes (12.5%): ₦${sTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '(Tax Exempt)'}
                           </p>
                         </td>
                         <td className="py-3 px-4 text-center">
@@ -1440,7 +1440,7 @@ const BookingEngine = () => {
     });
 
     const subtotal = hallPrice + mealsPrice;
-    const tax = subtotal * 0.075;
+    const tax = subtotal * 0.125;
     const total = subtotal + tax;
 
     return { hallPrice, mealsPrice, subtotal, tax, total, days, hours };

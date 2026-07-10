@@ -956,7 +956,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
     try {
       const isTaxable = req.services?.tax_inclusive !== false;
       const baseAmount = Number(req.total_price_ngn || 0);
-      const taxAmount = isTaxable ? baseAmount * 0.075 : 0;
+      const taxAmount = isTaxable ? baseAmount * 0.125 : 0;
       const amount = baseAmount + taxAmount;
 
       let guestProfile = null;
@@ -3081,7 +3081,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                   const roomPrice = Number(booking.total_room_price_ngn || activeInvoiceModal.subtotal || 0);
                   const discount = Number(booking.discount_amount_ngn || 0);
                   const roomBase = Math.max(0, roomPrice - discount);
-                  const roomVat = roomBase * 0.075;
+                  const roomVat = roomBase * 0.125;
                   const roomConsumptionTax = roomBase * 0.05;
                   const roomTax = roomVat + roomConsumptionTax;
                   const roomTotalWithTax = roomBase + roomTax;
@@ -3106,7 +3106,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                   const servicesWithStatus = activeServices.map(extra => {
                     const isTaxable = extra.services?.tax_inclusive !== false;
                     const sBasePrice = Number(extra.total_price_ngn || 0);
-                    const sTax = isTaxable ? sBasePrice * 0.075 : 0;
+                    const sTax = isTaxable ? sBasePrice * 0.125 : 0;
                     const sTotal = sBasePrice + sTax;
                     const uPrice = Number(extra.unit_price_ngn || (extra.quantity > 0 ? sBasePrice / extra.quantity : sBasePrice));
 
@@ -3141,7 +3141,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                             Check-in: {booking.check_in_date || 'N/A'} | Check-out: {booking.check_out_date || 'N/A'} {booking.check_in_date && booking.check_out_date && `| Nights Booked: ${Math.max(1, differenceInDays(new Date(booking.check_out_date), new Date(booking.check_in_date)))}`}
                           </p>
                           <p className="text-[10px] text-gray-500 mt-1">
-                            Rate: ₦{roomPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {discount > 0 && `| Discount: -₦${discount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} | Taxable Base: ₦{roomBase.toLocaleString(undefined, { maximumFractionDigits: 0 })} | VAT (7.5%): ₦{roomVat.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Cons. Tax (5%): ₦{roomConsumptionTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            Rate: ₦{roomPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {discount > 0 && `| Discount: -₦${discount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} | Taxable Base: ₦{roomBase.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Taxes (12.5%): ₦{roomVat.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Cons. Tax (5%): ₦{roomConsumptionTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                           </p>
                         </td>
                         <td className="py-4 px-4 text-center">
@@ -3162,7 +3162,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                                 Unit Price: ₦{extra.uPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Quantity: {extra.quantity}
                               </p>
                               <p className="text-[10px] text-gray-500 mt-1">
-                                Base: ₦{extra.sBasePrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {extra.isTaxable ? `| VAT (7.5%): ₦${extra.sTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '(VAT Exempt)'}
+                                Base: ₦{extra.sBasePrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {extra.isTaxable ? `| Taxes (12.5%): ₦${extra.sTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '(VAT Exempt)'}
                               </p>
                             </td>
                             <td className="py-4 px-4 text-center">

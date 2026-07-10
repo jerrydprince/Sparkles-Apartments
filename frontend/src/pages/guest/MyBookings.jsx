@@ -274,7 +274,7 @@ const MyBookings = () => {
                 const booking = activeReceiptBooking;
                 const roomPrice = Number(booking.total_room_price_ngn || booking.total_amount_ngn || 0);
                 const roomBase = Math.max(0, roomPrice - discount);
-                const roomTax = roomBase * 0.075;
+                const roomTax = roomBase * 0.125;
                 const roomTotalWithTax = roomBase + roomTax;
 
                 const amountPaidTotal = Number(booking.amount_paid_ngn || 0);
@@ -321,7 +321,7 @@ const MyBookings = () => {
                 const servicesWithStatus = activeServices.map(extra => {
                   const isTaxable = extra.services?.tax_inclusive !== false;
                   const sBasePrice = Number(extra.total_price_ngn || 0);
-                  const sTax = isTaxable ? sBasePrice * 0.075 : 0;
+                  const sTax = isTaxable ? sBasePrice * 0.125 : 0;
                   const sTotal = sBasePrice + sTax;
                   const uPrice = Number(extra.unit_price_ngn || (extra.quantity > 0 ? sBasePrice / extra.quantity : sBasePrice));
 
@@ -352,7 +352,7 @@ const MyBookings = () => {
                         <p className="font-bold text-black">{booking.rooms?.name || 'Luxury Room Stay'} (Room {booking.rooms?.room_number})</p>
                         <p className="text-gray-500 text-[10px] mt-0.5">Accommodation Charges (Rent + Tax)</p>
                           <p className="text-[9px] text-gray-400">
-                            Rate: ₦{roomPrice.toLocaleString()} {discount > 0 && `| Discount: -₦${discount.toLocaleString()}`} | Taxable Base: ₦{roomBase.toLocaleString()} | VAT (7.5%): ₦{roomTax.toLocaleString()}
+                            Rate: ₦{roomPrice.toLocaleString()} {discount > 0 && `| Discount: -₦${discount.toLocaleString()}`} | Taxable Base: ₦{roomBase.toLocaleString()} | Taxes (12.5%): ₦{roomTax.toLocaleString()}
                           </p>
                       </td>
                       <td className="py-3 px-4 text-center">
@@ -371,7 +371,7 @@ const MyBookings = () => {
                               Unit Price: ₦{extra.uPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Quantity: {extra.quantity}
                             </p>
                             <p className="text-[9px] text-gray-400">
-                              Base: ₦{extra.sBasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {extra.isTaxable ? `| VAT (7.5%): ₦${extra.sTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '(VAT Exempt)'}
+                              Base: ₦{extra.sBasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {extra.isTaxable ? `| Taxes (12.5%): ₦${extra.sTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '(VAT Exempt)'}
                             </p>
                           </td>
                           <td className="py-3 px-4 text-center">

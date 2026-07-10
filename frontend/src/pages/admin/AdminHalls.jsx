@@ -149,7 +149,7 @@ const AdminHalls = ({ isFrontOfficeClosed }) => {
     });
 
     const subtotal = hallPrice + mealsPrice;
-    const tax = subtotal * 0.075;
+    const tax = subtotal * 0.125;
     const total = subtotal + tax;
 
     return { hallPrice, mealsPrice, subtotal, tax, total, days, hours };

@@ -615,7 +615,7 @@ const POS = () => {
     return cart.reduce((sum, item) => sum + (item.base_price_ngn * item.quantity), 0);
   }, [cart]);
 
-  const taxRate = 0.075; // 7.5% VAT
+  const taxRate = 0.125; // 12.5% Taxes
   const taxAmount = subtotal * taxRate;
   const grandTotal = subtotal + taxAmount;
 
