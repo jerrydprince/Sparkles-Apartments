@@ -1358,7 +1358,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
     }
 
     if (paymentMethod === 'paystack') {
-      const pubKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || paystackPublicKey || '';
+      const pubKey = paystackPublicKey || import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || '';
       if (!pubKey) {
         toast.error("Paystack public key is not configured.");
         return;

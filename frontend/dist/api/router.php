@@ -280,7 +280,6 @@ if (preg_match('/^payments\/verify\/(.+)$/', $route, $matches)) {
     $paystackSecret = isset($settings['paystack_secret']) ? $settings['paystack_secret'] : '';
     
     if (!$paystackSecret) {
-        // Fallback to local dev key if not configured
         $paystackSecret = 'sk_test_f0d450c6d9adea0270a749762a87b876e5646eae';
     }
     

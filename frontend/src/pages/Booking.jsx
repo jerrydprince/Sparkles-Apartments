@@ -674,7 +674,7 @@ const BookingEngine = () => {
           reference: bookingRef,
           email: guestForm.email || 'guest@example.com',
           amount: Math.round(payOnlineAmount * 100), // Amount is in kobo
-          publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || paystackPublicKey || '',
+          publicKey: paystackPublicKey || import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || '',
           currency: 'NGN',
           callback_url: window.location.origin + '/booking'
         },
