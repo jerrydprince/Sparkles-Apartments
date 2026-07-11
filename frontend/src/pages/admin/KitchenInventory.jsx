@@ -734,7 +734,9 @@ const KitchenInventory = () => {
           name: newItem.name.trim(),
           description: newItem.description || 'Synced from Kitchen Inventory.',
           base_price_ngn: Number(newItem.unit_price_ngn),
-          outlet: 'restaurant',
+          category: 'Food & Beverage',
+          is_active: true,
+          internal_notes: 'restaurant',
           linked_store_item_id: inserted[0].id
         }]);
       }
