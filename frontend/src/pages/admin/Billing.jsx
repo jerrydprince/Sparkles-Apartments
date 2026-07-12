@@ -1154,7 +1154,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
     try {
       const { error: payErr } = await supabase
         .from('payments')
-        .update({ status: 'cancelled' })
+        .update({ status: 'failed' })
         .eq('id', payment.id);
 
       if (payErr) throw payErr;
