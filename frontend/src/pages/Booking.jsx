@@ -1963,7 +1963,14 @@ const BookingEngine = () => {
                             <div className="p-6 flex-1 flex flex-col justify-between">
                               <div>
                                 <div className="flex justify-between items-start mb-2">
-                                  <h4 className="text-xl font-medium text-white">{room.name}</h4>
+                                  <h4 className="text-xl font-medium text-white flex items-center flex-wrap gap-2">
+                                    {room.name}
+                                    {room.name === 'Entire Apartment' && (
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-gold-500/20 text-gold-400 border border-gold-500/30">
+                                        🌟 Full Property
+                                      </span>
+                                    )}
+                                  </h4>
                                   <span className="text-brand-500 font-bold text-lg">₦{(calculateRoomPriceDetails(room).totalRoomPrice / totalNights).toLocaleString()}<span className="text-sm font-normal text-gray-400">/avg night</span></span>
                                 </div>
                                 <div className="flex space-x-4 text-sm text-gray-400 mb-4">

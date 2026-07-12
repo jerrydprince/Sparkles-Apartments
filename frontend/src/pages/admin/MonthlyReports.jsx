@@ -80,6 +80,7 @@ const MonthlyReports = () => {
       const { data: payments } = await supabase
         .from('payments')
         .select('amount, transaction_ref, notes, status')
+        .neq('method', 'waiver')
         .eq('status', 'completed');
       
       let roomsRentTotal = 0;

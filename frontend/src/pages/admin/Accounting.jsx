@@ -258,6 +258,7 @@ const AdminAccounting = () => {
       const { data: paymentData, error: payErr } = await fetchAllPaginated(() => supabase
         .from('payments')
         .select('*, bookings(guest_name, total_amount_ngn)')
+        .neq('method', 'waiver')
         .order('processed_at', { ascending: false }));
 
       // Fetch in-house room folio POS and Laundry charges from booking_services

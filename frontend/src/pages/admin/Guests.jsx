@@ -832,7 +832,8 @@ const AdminGuests = () => {
         try {
           let paymentsQuery = supabase
             .from('payments')
-            .select('*, bookings(guest_name, total_amount_ngn)');
+            .select('*, bookings(guest_name, total_amount_ngn)')
+            .neq('method', 'waiver');
 
           const guestFullName = `${selectedGuest.first_name || ''} ${selectedGuest.last_name || ''}`.replace(/\s+/g, ' ').trim();
           const orFilters = [`notes.ilike.%${email}%`];

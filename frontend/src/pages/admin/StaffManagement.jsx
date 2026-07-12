@@ -1064,6 +1064,7 @@ const AdminStaffManagement = () => {
       const { data: paymentsData } = await supabase
         .from('payments')
         .select('*, bookings(booking_reference, guest_name)')
+        .neq('method', 'waiver')
         .gte('created_at', clockInTime)
         .lte('created_at', clockOutTime)
         .order('created_at', { ascending: true });
