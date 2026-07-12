@@ -1143,6 +1143,31 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
     }
   };
 
+  const handleCancelPendingPayment = async (payment) => {
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
+    if (!window.confirm("Are you sure you want to cancel / decline this checkout payment?")) return;
+    
+    const toastId = toast.loading('Cancelling checkout payment...');
+    try {
+      const { error: payErr } = await supabase
+        .from('payments')
+        .update({ status: 'cancelled' })
+        .eq('id', payment.id);
+
+      if (payErr) throw payErr;
+
+      toast.success(`✓ Checkout payment of ₦${Number(payment.amount || 0).toLocaleString()} cancelled successfully!`, { id: toastId });
+      fetchInvoices();
+    } catch (err) {
+      toast.error(`Failed to cancel checkout payment: ${err.message || 'Error occurred'}`, { id: toastId });
+      console.error(err);
+    }
+  };
+
+
   const handleConfirmBookingPayment = async (bookingId) => {
     if (isFrontOfficeClosed) {
       toast.error("Front Office operations are locked due to daily ledger closure.");
@@ -2122,6 +2147,13 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                         <span className="text-[10px] text-gray-500 font-mono">Ref: {p.transaction_ref}</span>
                       </td>
                       <td className="py-3.5 px-4 text-right flex justify-end gap-2 items-center">
+                        <button 
+                          disabled={isFrontOfficeClosed}
+                          onClick={() => handleCancelPendingPayment(p)}
+                          className="bg-red-600 hover:bg-red-500 text-white font-bold text-xs py-1.5 px-3 rounded shadow transition-all active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          Cancel Payment
+                        </button>
                         <button 
                           disabled={isFrontOfficeClosed}
                           onClick={() => handleConfirmPendingPayment(p)}
