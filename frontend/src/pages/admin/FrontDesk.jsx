@@ -2537,7 +2537,6 @@ const AdminFrontDesk = () => {
       toast.success('Balance waived and Checkout complete!', { id: toastId });
       setActiveCheckOut(null);
       fetchCalendarData();
-      fetchPendingCheckoutPayments();
     } catch (err) {
       toast.error(`Checkout waiver failed: ${err.message}`, { id: toastId });
       console.error(err);
