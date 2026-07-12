@@ -1167,6 +1167,30 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
     }
   };
 
+  const handleCancelPendingPayment = async (payment) => {
+    if (isFrontOfficeClosed) {
+      toast.error("Front Office operations are locked due to daily ledger closure.");
+      return;
+    }
+    if (!window.confirm("Are you sure you want to cancel / decline this checkout payment?")) return;
+    
+    const toastId = toast.loading('Cancelling checkout payment...');
+    try {
+      const { error: payErr } = await supabase
+        .from('payments')
+        .update({ status: 'cancelled' })
+        .eq('id', payment.id);
+
+      if (payErr) throw payErr;
+
+      toast.success(`✓ Checkout payment of ₦${Number(payment.amount || 0).toLocaleString()} cancelled successfully!`, { id: toastId });
+      fetchInvoices();
+    } catch (err) {
+      toast.error(`Failed to cancel checkout payment: ${err.message || 'Error occurred'}`, { id: toastId });
+      console.error(err);
+    }
+  };
+
 
   const handleConfirmBookingPayment = async (bookingId) => {
     if (isFrontOfficeClosed) {
