@@ -7,7 +7,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, Calendar, FileText, 
   Plus, Search, Filter, Download, ArrowUpRight, ArrowDownRight, 
   Wallet, User, PlusCircle, Check, Printer, Clock, Building, 
-  ChevronRight, Sparkles, X, ChevronLeft, Archive, Bell, Mail
+  ChevronRight, Sparkles, X, ChevronLeft, Archive, Bell, Mail, XCircle
 } from 'lucide-react';
 import StoreRequisitionModal from '../../components/admin/StoreRequisitionModal';
 import Pagination from '../../components/Pagination';
@@ -51,6 +51,7 @@ const AdminAccounting = () => {
   const [allBookings, setAllBookings] = useState([]);
   const [allHallBookings, setAllHallBookings] = useState([]);
   const [inflows, setInflows] = useState([]);
+  const [waivers, setWaivers] = useState([]);
   const [refundRequests, setRefundRequests] = useState([]);
   const [loadingRefunds, setLoadingRefunds] = useState(false);
   const [invoices, setInvoices] = useState([]);
@@ -258,7 +259,6 @@ const AdminAccounting = () => {
       const { data: paymentData, error: payErr } = await fetchAllPaginated(() => supabase
         .from('payments')
         .select('*, bookings(guest_name, total_amount_ngn)')
-        .neq('method', 'waiver')
         .order('processed_at', { ascending: false }));
 
       // Fetch in-house room folio POS and Laundry charges from booking_services
@@ -291,8 +291,20 @@ const AdminAccounting = () => {
       }
       
       let resolvedInflows = [];
+      let resolvedWaivers = [];
       if (!payErr && paymentData && paymentData.length > 0) {
-        resolvedInflows = paymentData.map(p => {
+        resolvedWaivers = paymentData.filter(p => p.method === 'waiver').map(p => ({
+          id: p.id,
+          date: p.payment_date || p.processed_at || p.created_at,
+          amount: Number(p.amount),
+          description: p.notes || `Waived Amount for Booking ${p.bookings?.guest_name || ''}`,
+          method: 'waiver',
+          status: p.status,
+          booking_id: p.booking_id,
+          ref: p.transaction_ref
+        }));
+
+        resolvedInflows = paymentData.filter(p => p.method !== 'waiver').map(p => {
           const isPOS = p.transaction_ref?.startsWith('POS-') || 
                         p.transaction_ref?.startsWith('CORP-CHG-') || 
                         p.transaction_ref?.startsWith('REST-') ||
@@ -386,8 +398,10 @@ const AdminAccounting = () => {
 
       // Sort inflows chronologically
       resolvedInflows = resolvedInflows.sort((a, b) => new Date(b.date) - new Date(a.date));
+      resolvedWaivers = resolvedWaivers.sort((a, b) => new Date(b.date) - new Date(a.date));
 
       setInflows(resolvedInflows);
+      setWaivers(resolvedWaivers);
 
       // 3c. Fetch corporate bookings billed to groups
       try {
@@ -2710,7 +2724,12 @@ const AdminAccounting = () => {
       return matchesDate;
     });
 
-    return { filteredInflows, filteredExpenses, filteredSalaries };
+    const filteredWaivers = waivers.filter(w => {
+      const d = new Date(w.date);
+      return d >= start && d <= end;
+    });
+
+    return { filteredInflows, filteredExpenses, filteredSalaries, filteredWaivers };
   };
 
   const handleSendReminder = async (e) => {
@@ -2877,7 +2896,43 @@ const AdminAccounting = () => {
     const totalCashOutflows = Object.values(outflowsByMethod).reduce((sum, val) => sum + val, 0);
     const netCashFlow = totalCashInflows - totalCashOutflows;
 
-    return { inflowsByMethod, outflowsByMethod, totalCashInflows, totalCashOutflows, netCashFlow };
+    const detailedInflows = standardInflows.map(i => ({
+      date: i.date || i.created_at,
+      amount: i.amount,
+      method: i.method || 'bank_transfer',
+      description: i.description || i.notes || `Transaction ${i.transaction_ref}`,
+      ref: i.transaction_ref
+    }));
+
+    const detailedOutflows = [
+      ...nonDuplicateExpenses.filter(e => e.status === 'paid').map(e => ({
+        date: e.expense_date || e.created_at,
+        amount: e.amount,
+        method: e.payment_method || 'bank_transfer',
+        description: e.description || e.category,
+        ref: e.reference_number || e.id?.substring(0,8)
+      })),
+      ...filteredSalaries.filter(s => s.status === 'paid').map(s => ({
+        date: s.payment_date || s.created_at,
+        amount: s.net_salary || (Number(s.base_salary) + Number(s.bonuses) - Number(s.deductions)),
+        method: s.payment_method || 'bank_transfer',
+        description: `Salary Payout - ${s.profiles?.first_name || 'Staff'}`,
+        ref: `SAL-${s.id?.substring(0,6)}`
+      })),
+      ...completedRefunds.map(r => ({
+        date: r.created_at,
+        amount: r.refund_amount,
+        method: 'customer_refund',
+        description: `Refund: ${r.reason}`,
+        ref: r.id?.substring(0,8)
+      }))
+    ];
+
+    // Sort details by date descending
+    detailedInflows.sort((a, b) => new Date(b.date) - new Date(a.date));
+    detailedOutflows.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    return { inflowsByMethod, outflowsByMethod, totalCashInflows, totalCashOutflows, netCashFlow, detailedInflows, detailedOutflows };
   };
 
   const calculateTaxReport = () => {
@@ -3020,6 +3075,12 @@ const AdminAccounting = () => {
     return { cash, receivables, totalAssets, payableExpenses, payableSalaries, payableRefunds, totalLiabilities, equity };
   };
 
+  const calculateWaiversReport = () => {
+    const { filteredWaivers } = getFilteredReportData();
+    const totalWaiversAmount = filteredWaivers.reduce((sum, w) => sum + Number(w.amount), 0);
+    return { detailedWaivers: filteredWaivers, totalWaiversAmount };
+  };
+
   const downloadCSV = (content, filename) => {
     const encodedUri = encodeURI(content);
     const link = document.createElement("a");
@@ -3029,6 +3090,17 @@ const AdminAccounting = () => {
     link.click();
     document.body.removeChild(link);
     toast.success("CSV report downloaded successfully!");
+  };
+
+  const handleExportWaiversCSV = (data) => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += `WAIVERS REPORT (${reportStartDate} to ${reportEndDate})\r\n\r\n`;
+    csvContent += "Date,Reference,Description,Amount (NGN)\r\n";
+    data.detailedWaivers.forEach(w => {
+      csvContent += `${new Date(w.date).toLocaleDateString()},${w.ref || 'N/A'},"${(w.description || '').replace(/"/g, '""')}",${w.amount.toFixed(2)}\r\n`;
+    });
+    csvContent += `\r\nTOTAL WAIVED AMOUNT,,,${data.totalWaiversAmount.toFixed(2)}\r\n`;
+    downloadCSV(csvContent, `Waivers_Report_${reportStartDate}_to_${reportEndDate}.csv`);
   };
 
   const handleExportPnLCSV = (data) => {
@@ -3805,10 +3877,11 @@ const AdminAccounting = () => {
             <div className="flex gap-3 justify-end items-end pt-5 lg:pt-0">
               <button 
                 onClick={() => {
-                  const data = reportSubTab === 'pnl' ? calculatePnLReport() : reportSubTab === 'cashflow' ? calculateCashFlowReport() : reportSubTab === 'tax' ? calculateTaxReport() : calculateBalanceSheetReport();
+                  const data = reportSubTab === 'pnl' ? calculatePnLReport() : reportSubTab === 'cashflow' ? calculateCashFlowReport() : reportSubTab === 'tax' ? calculateTaxReport() : reportSubTab === 'waivers' ? calculateWaiversReport() : calculateBalanceSheetReport();
                   if (reportSubTab === 'pnl') handleExportPnLCSV(data);
                   else if (reportSubTab === 'cashflow') handleExportCashFlowCSV(data);
                   else if (reportSubTab === 'tax') handleExportTaxCSV(data);
+                  else if (reportSubTab === 'waivers') handleExportWaiversCSV(data);
                   else handleExportBalanceSheetCSV(data);
                 }}
                 className="bg-dark-900 border border-dark-700/60 hover:bg-dark-800 text-gray-300 font-bold py-2.5 px-5 text-sm flex items-center justify-center gap-2 rounded-xl transition-all"
@@ -3817,7 +3890,7 @@ const AdminAccounting = () => {
               </button>
               <button 
                 onClick={() => {
-                  const data = reportSubTab === 'pnl' ? calculatePnLReport() : reportSubTab === 'cashflow' ? calculateCashFlowReport() : reportSubTab === 'tax' ? calculateTaxReport() : calculateBalanceSheetReport();
+                  const data = reportSubTab === 'pnl' ? calculatePnLReport() : reportSubTab === 'cashflow' ? calculateCashFlowReport() : reportSubTab === 'tax' ? calculateTaxReport() : reportSubTab === 'waivers' ? calculateWaiversReport() : calculateBalanceSheetReport();
                   setActiveReportModal({ type: reportSubTab, data });
                 }}
                 className="btn-primary py-2.5 px-5 text-sm font-bold flex items-center justify-center gap-2 rounded-xl"
@@ -3852,6 +3925,12 @@ const AdminAccounting = () => {
               className={`pb-2.5 px-4 font-bold text-sm flex items-center gap-2 border-b-2 transition-all duration-300 ${reportSubTab === 'tax' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
             >
               <FileText size={16} /> Tax Reports
+            </button>
+            <button 
+              onClick={() => setReportSubTab('waivers')} 
+              className={`pb-2.5 px-4 font-bold text-sm flex items-center gap-2 border-b-2 transition-all duration-300 ${reportSubTab === 'waivers' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
+            >
+              <XCircle size={16} /> Waivers
             </button>
           </div>
 
@@ -4155,6 +4234,56 @@ const AdminAccounting = () => {
                   <div>
                     <span className="text-sm font-bold text-gray-300">Click "Print Report" to view itemized breakdown.</span>
                     <span className="text-xs text-gray-500 block mt-0.5">The printable view displays the full ledger of all taxable invoices.</span>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+            {reportSubTab === 'waivers' && (
+              <motion.div 
+                key="waivers"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                className="glass-panel p-6 rounded-2xl border border-dark-700/50 space-y-6"
+              >
+                <div className="flex justify-between items-start border-b border-dark-700/40 pb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-white">Waivers Report</h3>
+                    <p className="text-gray-400 text-xs mt-1">Summary of all waived transactions from {reportStartDate} to {reportEndDate}</p>
+                  </div>
+                  <span className="bg-brand-500/10 text-brand-400 border border-brand-500/20 px-3 py-1 rounded-full text-xs font-bold font-mono">
+                    ₦{calculateWaiversReport().totalWaiversAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} Total Waived
+                  </span>
+                </div>
+
+                <div className="mt-6 border border-dark-700/50 rounded-xl overflow-hidden bg-dark-900/20">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm whitespace-nowrap">
+                      <thead className="bg-dark-900/80 text-gray-400 border-b border-dark-700/50">
+                        <tr>
+                          <th className="p-4 font-semibold">Date</th>
+                          <th className="p-4 font-semibold">Ref</th>
+                          <th className="p-4 font-semibold">Description</th>
+                          <th className="p-4 font-semibold text-right">Amount (NGN)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-dark-700/50">
+                        {calculateWaiversReport().detailedWaivers.length === 0 ? (
+                          <tr>
+                            <td colSpan="4" className="p-8 text-center text-gray-500">No waivers found for this period.</td>
+                          </tr>
+                        ) : (
+                          calculateWaiversReport().detailedWaivers.map((w, idx) => (
+                            <tr key={`tab-wv-${idx}`} className="hover:bg-dark-900/30 transition-colors">
+                              <td className="p-4 text-gray-300">{new Date(w.date).toLocaleDateString()}</td>
+                              <td className="p-4 text-gray-400 font-mono text-xs">{w.ref || 'N/A'}</td>
+                              <td className="p-4 text-gray-300 truncate max-w-sm" title={w.description}>{w.description}</td>
+                              <td className="p-4 text-right font-mono font-bold text-rose-400">₦{Number(w.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </motion.div>
@@ -5481,6 +5610,8 @@ const AdminAccounting = () => {
                   <h3 className="text-lg font-black text-pure-black tracking-tight uppercase">
                     {activeReportModal.type === 'pnl' ? 'Profit & Loss Statement' : 
                      activeReportModal.type === 'cashflow' ? 'Statement of Cash Flows' : 
+                     activeReportModal.type === 'tax' ? 'Tax Remittance Report' :
+                     activeReportModal.type === 'waivers' ? 'Waivers Report' :
                      'Balance Sheet Statement'}
                   </h3>
                   <div className="text-xs text-pure-gray-500 font-mono mt-1 font-semibold">
@@ -5545,6 +5676,45 @@ const AdminAccounting = () => {
                             <td className="p-2 text-right font-mono text-blue-600">₦{item.vat.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                             <td className="p-2 text-right font-mono text-blue-600">₦{item.consumption.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                             <td className="p-2 text-right font-mono font-bold">₦{item.gross.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {activeReportModal.type === 'waivers' && (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100 text-xs">
+                    <div>
+                      <p className="text-gray-500 uppercase tracking-wider font-bold mb-1">Total Waived Amount</p>
+                      <span className="font-bold text-rose-600 text-sm font-mono block">₦{activeReportModal.data.totalWaiversAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+
+                  <div className="text-xs">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-gray-100 text-pure-black uppercase text-[10px] tracking-wider border-b border-gray-200">
+                          <th className="p-2 font-bold">Date</th>
+                          <th className="p-2 font-bold">Ref</th>
+                          <th className="p-2 font-bold">Description</th>
+                          <th className="p-2 font-bold text-right">Amount (NGN)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 text-pure-black">
+                        {activeReportModal.data.detailedWaivers.length === 0 && (
+                          <tr>
+                            <td colSpan="4" className="p-4 text-center text-gray-500 italic">No waivers found for this period.</td>
+                          </tr>
+                        )}
+                        {activeReportModal.data.detailedWaivers.map((w, idx) => (
+                          <tr key={`wv-${idx}`}>
+                            <td className="p-2">{new Date(w.date).toLocaleDateString()}</td>
+                            <td className="p-2 font-mono">{w.ref || 'N/A'}</td>
+                            <td className="p-2 truncate max-w-xs">{w.description}</td>
+                            <td className="p-2 text-right font-mono text-rose-600">₦{Number(w.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -5738,6 +5908,69 @@ const AdminAccounting = () => {
                         ₦{activeReportModal.data.netCashFlow.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </span>
                     </div>
+                  </div>
+
+                  {/* Detailed Breakdown */}
+                  <div className="pt-6 border-t border-gray-200 mt-6 space-y-4">
+                    <h4 className="text-sm font-black uppercase tracking-wider text-pure-black mb-4 border-b border-gray-300 pb-2">Detailed Transaction Ledger</h4>
+                    
+                    {/* Inflow Details */}
+                    {activeReportModal.data.detailedInflows && activeReportModal.data.detailedInflows.length > 0 && (
+                      <div className="mb-6">
+                        <h5 className="text-[11px] font-bold text-green-700 uppercase tracking-wider mb-2">Inflows (Revenues)</h5>
+                        <table className="w-full text-left text-[10px]">
+                          <thead>
+                            <tr className="bg-gray-100 text-pure-gray-500 uppercase">
+                              <th className="p-2">Date</th>
+                              <th className="p-2">Ref</th>
+                              <th className="p-2">Description</th>
+                              <th className="p-2">Method</th>
+                              <th className="p-2 text-right">Amount (NGN)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 text-pure-black">
+                            {activeReportModal.data.detailedInflows.map((i, idx) => (
+                              <tr key={`in-${idx}`}>
+                                <td className="p-2">{new Date(i.date).toLocaleDateString()}</td>
+                                <td className="p-2 font-mono">{i.ref || 'N/A'}</td>
+                                <td className="p-2 truncate max-w-[200px]" title={i.description}>{i.description}</td>
+                                <td className="p-2 capitalize">{i.method?.replace('_', ' ')}</td>
+                                <td className="p-2 text-right font-mono text-green-600">₦{Number(i.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Outflow Details */}
+                    {activeReportModal.data.detailedOutflows && activeReportModal.data.detailedOutflows.length > 0 && (
+                      <div>
+                        <h5 className="text-[11px] font-bold text-rose-700 uppercase tracking-wider mb-2">Outflows (Expenses/Disbursements)</h5>
+                        <table className="w-full text-left text-[10px]">
+                          <thead>
+                            <tr className="bg-gray-100 text-pure-gray-500 uppercase">
+                              <th className="p-2">Date</th>
+                              <th className="p-2">Ref</th>
+                              <th className="p-2">Description</th>
+                              <th className="p-2">Method</th>
+                              <th className="p-2 text-right">Amount (NGN)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 text-pure-black">
+                            {activeReportModal.data.detailedOutflows.map((o, idx) => (
+                              <tr key={`out-${idx}`}>
+                                <td className="p-2">{new Date(o.date).toLocaleDateString()}</td>
+                                <td className="p-2 font-mono">{o.ref || 'N/A'}</td>
+                                <td className="p-2 truncate max-w-[200px]" title={o.description}>{o.description}</td>
+                                <td className="p-2 capitalize">{o.method?.replace('_', ' ')}</td>
+                                <td className="p-2 text-right font-mono text-rose-600">₦{Number(o.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
