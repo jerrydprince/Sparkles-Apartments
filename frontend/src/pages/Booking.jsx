@@ -1875,13 +1875,13 @@ const BookingEngine = () => {
                       <div>
                         <label className="block text-sm text-gray-400 mb-2">Adults</label>
                         <select value={guests.adults} onChange={(e) => setGuests({...guests, adults: parseInt(e.target.value)})} className="w-full bg-dark-900 border border-dark-700 text-white p-3">
-                          {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
+                          {[...Array(40).keys()].map(i => i + 1).map(n => <option key={n} value={n}>{n}</option>)}
                         </select>
                       </div>
                       <div>
                         <label className="block text-sm text-gray-400 mb-2">Children</label>
                         <select value={guests.children} onChange={(e) => setGuests({...guests, children: parseInt(e.target.value)})} className="w-full bg-dark-900 border border-dark-700 text-white p-3">
-                          {[0,1,2,3,4].map(n => <option key={n} value={n}>{n}</option>)}
+                          {[...Array(41).keys()].map(n => <option key={n} value={n}>{n}</option>)}
                         </select>
                       </div>
                     </div>
