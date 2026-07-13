@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, Navigate } from 'react-router-dom';
-import { LayoutDashboard, CalendarDays, Users, Settings, LogOut, BedDouble, FileText, Globe, Bell, TrendingUp, Sparkles, Network, MessageSquare, ShieldCheck, Zap, ShieldAlert, Menu, X, Sun, Moon, Package, Wallet, ShoppingCart, Archive, Shirt, ClipboardList, SearchCheck, CalendarClock, MailOpen, Award, Wrench, ChefHat, Compass , ChevronDown, ChevronRight , Activity, ConciergeBell, Building2, Store, Landmark, Shield } from 'lucide-react';
+import { LayoutDashboard, CalendarDays, Users, Settings, LogOut, BedDouble, FileText, Globe, Bell, TrendingUp, Sparkles, Network, MessageSquare, ShieldCheck, Zap, ShieldAlert, Menu, X, Sun, Moon, Package, Wallet, ShoppingCart, Archive, Shirt, ClipboardList, SearchCheck, CalendarClock, MailOpen, Award, Wrench, ChefHat, Compass , ChevronDown, ChevronRight , Activity, ConciergeBell, Building2, Store, Landmark, Shield, DoorOpen, Tag } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import TopbarAttendanceClock from '../components/TopbarAttendanceClock';
@@ -10,6 +10,7 @@ import { getDefaultAdminRoute } from '../utils/routes';
 
 const ROUTE_PERMISSIONS = {
   '/admin/frontdesk': 'Front Desk',
+  '/admin/ad-hoc-invoices': 'Ad-Hoc Invoices',
   '/admin/reservations': 'Reservations',
   '/admin/crm': 'CRM & Guests',
   '/admin/lost-found': 'Lost & Found',
@@ -17,6 +18,8 @@ const ROUTE_PERMISSIONS = {
   '/admin/laundry': 'Laundry',
   '/admin/maintenance': 'Maintenance',
   '/admin/store': 'Store Keeping',
+  '/admin/kitchen-inventory': 'Kitchen Inventory',
+  '/admin/bar-inventory': 'Bar Inventory',
   '/admin/restaurant': ['Restaurant Desk', 'Kitchen Desk', 'Order History'],
   '/admin/pos': 'POS',
   '/admin/billing': 'Finance & Billing',
@@ -30,6 +33,8 @@ const ROUTE_PERMISSIONS = {
   '/admin/reminders': 'Reminders',
   '/admin/messages': 'Internal Messaging',
   '/admin/monthly-reports': 'Monthly Reports',
+  '/admin/reports': 'Reports & Analytics',
+  '/admin/pricing': 'Dynamic Pricing & Rates',
   '/admin/services': 'Guest Services',
   '/admin/services-portal': 'Service Portals',
   '/admin/automations': 'Automations & Alerts',
@@ -60,6 +65,11 @@ const MODULE_SUBPERMISSIONS = {
     'Front Desk - Transfer Rooms',
     'Front Desk - Assign/Manage Room Mates',
     'Front Desk - Settle AR & Prepayment Wallet'
+  ],
+  'Ad-Hoc Invoices': [
+    'Ad-Hoc Invoices - View Invoices',
+    'Ad-Hoc Invoices - Create Invoices',
+    'Ad-Hoc Invoices - Void Invoices'
   ],
   'Housekeeping': [
     'Housekeeping - View Tasks',
@@ -131,6 +141,16 @@ const MODULE_SUBPERMISSIONS = {
     'Store Keeping - Approve Outgoing Material Releases',
     'Store Keeping - Reject Requisitions'
   ],
+  'Kitchen Inventory': [
+    'Kitchen Inventory - View Inventory',
+    'Kitchen Inventory - Manage Items',
+    'Kitchen Inventory - Log Requisitions'
+  ],
+  'Bar Inventory': [
+    'Bar Inventory - View Inventory',
+    'Bar Inventory - Manage Items',
+    'Bar Inventory - Log Requisitions'
+  ],
   'POS': [
     'POS - Access Point of Sale',
     'POS - Process Sales & Suite Charging',
@@ -177,6 +197,11 @@ const MODULE_SUBPERMISSIONS = {
     'Monthly Reports - View Departmental Reports',
     'Monthly Reports - Submit Departmental Report',
     'Monthly Reports - View Performance Analytics'
+  ],
+  'Dynamic Pricing & Rates': [
+    'Dynamic Pricing & Rates - View Rate Plans',
+    'Dynamic Pricing & Rates - Manage Rate Plans',
+    'Dynamic Pricing & Rates - Manage Coupons'
   ],
   'Leave & Absences': [
     'Leave & Absences - Request Leave of Absence',
@@ -437,7 +462,7 @@ const AdminLayout = () => {
                   </div>
                 </Link>
               )}
-              {hasAnyAccess('Front Desk') && (
+              {hasAnyAccess('Ad-Hoc Invoices') && (
                 <Link onClick={closeMobileMenu} to="/admin/ad-hoc-invoices" className={linkClass('/admin/ad-hoc-invoices')}>
                   <div className="flex items-center gap-2.5 relative z-10">
                     <FileText size={16} />
@@ -514,26 +539,32 @@ const AdminLayout = () => {
                   <Badge count={counters.maintenance} />
                 </Link>
               )}
-              {(hasAnyAccess('Store Keeping') || user?.role === 'super_admin') && (
+              {(hasAnyAccess('Store Keeping') || hasAnyAccess('Kitchen Inventory') || hasAnyAccess('Bar Inventory') || user?.role === 'super_admin') && (
                 <>
-                  <Link onClick={closeMobileMenu} to="/admin/store" className={linkClass('/admin/store')}>
-                    <div className="flex items-center gap-2.5 relative z-10">
-                      <Archive size={16} />
-                      <span className="text-xs font-semibold">General Store</span>
-                    </div>
-                  </Link>
-                  <Link onClick={closeMobileMenu} to="/admin/kitchen-inventory" className={linkClass('/admin/kitchen-inventory')}>
-                    <div className="flex items-center gap-2.5 relative z-10">
-                      <ChefHat size={16} />
-                      <span className="text-xs font-semibold">Kitchen Inventory</span>
-                    </div>
-                  </Link>
-                  <Link onClick={closeMobileMenu} to="/admin/bar-inventory" className={linkClass('/admin/bar-inventory')}>
-                    <div className="flex items-center gap-2.5 relative z-10">
-                      <Store size={16} />
-                      <span className="text-xs font-semibold">Bar Inventory</span>
-                    </div>
-                  </Link>
+                  {hasAnyAccess('Store Keeping') && (
+                    <Link onClick={closeMobileMenu} to="/admin/store" className={linkClass('/admin/store')}>
+                      <div className="flex items-center gap-2.5 relative z-10">
+                        <Archive size={16} />
+                        <span className="text-xs font-semibold">General Store</span>
+                      </div>
+                    </Link>
+                  )}
+                  {hasAnyAccess('Kitchen Inventory') && (
+                    <Link onClick={closeMobileMenu} to="/admin/kitchen-inventory" className={linkClass('/admin/kitchen-inventory')}>
+                      <div className="flex items-center gap-2.5 relative z-10">
+                        <ChefHat size={16} />
+                        <span className="text-xs font-semibold">Kitchen Inventory</span>
+                      </div>
+                    </Link>
+                  )}
+                  {hasAnyAccess('Bar Inventory') && (
+                    <Link onClick={closeMobileMenu} to="/admin/bar-inventory" className={linkClass('/admin/bar-inventory')}>
+                      <div className="flex items-center gap-2.5 relative z-10">
+                        <Store size={16} />
+                        <span className="text-xs font-semibold">Bar Inventory</span>
+                      </div>
+                    </Link>
+                  )}
                 </>
               )}
               {(hasAnyAccess('Restaurant Desk') || hasAnyAccess('Kitchen Desk') || hasAnyAccess('Order History') || user?.role === 'super_admin') && (
@@ -617,7 +648,7 @@ const AdminLayout = () => {
           </div>
           )}
 
-          {(hasAnyAccess('Rooms') || hasAnyAccess('Channel Manager') || hasAnyAccess('Staff & Roles') || hasAccess('Leave & Absences - Request Leave of Absence') || hasAccess('Leave & Absences - Review Leave Applications') || hasAnyAccess('Website CMS') || hasAnyAccess('Settings') || user?.role === 'super_admin') && (
+          {(hasAnyAccess('Rooms') || hasAnyAccess('Dynamic Pricing & Rates') || hasAnyAccess('Channel Manager') || hasAnyAccess('Staff & Roles') || hasAccess('Leave & Absences - Request Leave of Absence') || hasAccess('Leave & Absences - Review Leave Applications') || hasAnyAccess('Website CMS') || hasAnyAccess('Settings') || user?.role === 'super_admin') && (
           <div className="space-y-1">
             <button onClick={() => toggleMenu('systemControl')} className="w-full flex items-center justify-between text-[11px] font-bold text-white bg-dark-800 hover:bg-brand-500/10 hover:text-brand-400 border border-dark-700/50 hover:border-brand-500/40 px-4 py-3 rounded-2xl transition-all duration-300 cursor-pointer outline-none shadow-md hover:shadow-[0_6px_20px_rgba(223,104,83,0.15)] hover:-translate-y-0.5 uppercase tracking-wider group relative overflow-hidden">
               <div className="flex items-center gap-2.5 relative z-10">
@@ -633,8 +664,16 @@ const AdminLayout = () => {
               {(hasAnyAccess('Rooms') || user?.role === 'super_admin') && (
                 <Link onClick={closeMobileMenu} to="/admin/rooms" className={linkClass('/admin/rooms')}>
                   <div className="flex items-center gap-2.5 relative z-10">
-                    <BedDouble size={16} />
+                    <DoorOpen size={16} />
                     <span className="text-xs font-semibold">Rooms, Halls & Inventory</span>
+                  </div>
+                </Link>
+              )}
+              {hasAnyAccess('Dynamic Pricing & Rates') && (
+                <Link onClick={closeMobileMenu} to="/admin/pricing" className={linkClass('/admin/pricing')}>
+                  <div className="flex items-center gap-2.5 relative z-10">
+                    <Tag size={16} />
+                    <span className="text-xs font-semibold">Pricing & Rates</span>
                   </div>
                 </Link>
               )}

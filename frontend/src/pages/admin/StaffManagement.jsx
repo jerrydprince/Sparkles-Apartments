@@ -142,6 +142,18 @@ const DEFAULT_MODULES = [
   'Front Desk - Assign/Manage Room Mates',
   'Front Desk - Settle AR & Prepayment Wallet',
 
+  // Ad-Hoc Invoices
+  'Ad-Hoc Invoices',
+  'Ad-Hoc Invoices - View Invoices',
+  'Ad-Hoc Invoices - Create Invoices',
+  'Ad-Hoc Invoices - Void Invoices',
+
+  // Dynamic Pricing & Rates
+  'Dynamic Pricing & Rates',
+  'Dynamic Pricing & Rates - View Rate Plans',
+  'Dynamic Pricing & Rates - Manage Rate Plans',
+  'Dynamic Pricing & Rates - Manage Coupons',
+
   // Housekeeping
   'Housekeeping',
   'Housekeeping - View Tasks',
@@ -221,6 +233,18 @@ const DEFAULT_MODULES = [
   'Store Keeping - Register & Restock Items',
   'Store Keeping - Approve Outgoing Material Releases',
   'Store Keeping - Reject Requisitions',
+
+  // Kitchen Inventory
+  'Kitchen Inventory',
+  'Kitchen Inventory - View Inventory',
+  'Kitchen Inventory - Manage Items',
+  'Kitchen Inventory - Log Requisitions',
+
+  // Bar Inventory
+  'Bar Inventory',
+  'Bar Inventory - View Inventory',
+  'Bar Inventory - Manage Items',
+  'Bar Inventory - Log Requisitions',
 
   // POS
   'POS',

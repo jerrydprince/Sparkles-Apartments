@@ -391,6 +391,13 @@ const BookingEngine = () => {
       let dateString = format(currentDate, 'yyyy-MM-dd');
       let nightPrice = Number(room.base_price_ngn);
 
+      // 1. Check for manual bulk override for this specific date
+      const manualOverride = pricingRules.find(r => r.type === 'manual_override' && (!r.room_id || r.room_id === room.id) && dateString >= r.start_date && dateString <= r.end_date);
+      if (manualOverride && manualOverride.fixed_price_ngn !== null) {
+        nightPrice = Number(manualOverride.fixed_price_ngn);
+        if (!appliedRules.find(ar => ar.id === manualOverride.id)) appliedRules.push(manualOverride);
+      }
+
       if (room.pricing_model === 'per_guest') {
         nightPrice = nightPrice * totalGuests;
       } else if (room.pricing_model === 'per_occupancy') {

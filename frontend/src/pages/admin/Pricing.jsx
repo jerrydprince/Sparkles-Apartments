@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import toast from 'react-hot-toast';
-import { Plus, Edit, Trash2, X, TrendingUp, TrendingDown, CalendarDays, DollarSign, Tag, Settings, Calendar as CalendarIcon } from 'lucide-react';
+import { Plus, Edit, Trash2, X, TrendingUp, TrendingDown, CalendarDays, DollarSign, Tag, Settings, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { format, addDays } from 'date-fns';
 
 const AdminPricing = () => {
@@ -23,6 +23,13 @@ const AdminPricing = () => {
   const [newRule, setNewRule] = useState({ name: '', room_id: '', type: 'seasonal', start_date: '', end_date: '', adjustment_percentage: 0, is_active: true });
   const [newPlan, setNewPlan] = useState({ name: '', description: '', type: 'refundable', price_adjustment_percentage: 0, cancellation_policy: '', is_active: true });
   const [newCoupon, setNewCoupon] = useState({ code: '', discount_type: 'percentage', discount_value: 0, valid_from: '', valid_until: '', usage_limit: '', is_active: true });
+  const [bulkOverride, setBulkOverride] = useState({ room_ids: [], start_date: '', end_date: '', fixed_price_ngn: '' });
+
+  // Grid States
+  const [gridStartDate, setGridStartDate] = useState(new Date());
+  const [isGridModalOpen, setIsGridModalOpen] = useState(false);
+  const [gridEditCell, setGridEditCell] = useState(null);
+  const [gridEditPrice, setGridEditPrice] = useState('');
 
   const [hasError, setHasError] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -91,6 +98,102 @@ const AdminPricing = () => {
     if (isEdit) await supabase.from('coupons').update(data).eq('id', currentItem.id);
     else await supabase.from('coupons').insert([data]);
     setIsCouponModalOpen(false); fetchData(); toast.success('Saved!');
+  };
+
+  const handleSaveBulkOverride = async (e) => {
+    e.preventDefault();
+    if (bulkOverride.room_ids.length === 0) return toast.error("Select at least one room");
+    
+    // Create an array of rules to insert
+    const rows = bulkOverride.room_ids.map(roomId => ({
+      name: `Bulk Override ${bulkOverride.start_date} / ${bulkOverride.end_date}`,
+      room_id: roomId,
+      type: 'manual_override',
+      start_date: bulkOverride.start_date,
+      end_date: bulkOverride.end_date,
+      fixed_price_ngn: parseFloat(bulkOverride.fixed_price_ngn),
+      adjustment_percentage: 0, // required by schema but ignored for manual override
+      is_active: true
+    }));
+
+    const { error } = await supabase.from('pricing_rules').insert(rows);
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Bulk update applied successfully!");
+      setBulkOverride({ room_ids: [], start_date: '', end_date: '', fixed_price_ngn: '' });
+      fetchData();
+    }
+  };
+
+  const handleSelectBulkRoom = (roomId) => {
+    const ids = [...bulkOverride.room_ids];
+    if (ids.includes(roomId)) ids.splice(ids.indexOf(roomId), 1);
+    else ids.push(roomId);
+    setBulkOverride({ ...bulkOverride, room_ids: ids });
+  };
+  
+  const handleSelectAllBulkRooms = () => {
+    if (bulkOverride.room_ids.length === rooms.length) {
+      setBulkOverride({ ...bulkOverride, room_ids: [] });
+    } else {
+      setBulkOverride({ ...bulkOverride, room_ids: rooms.map(r => r.id) });
+    }
+  };
+
+  // --- GRID HANDLERS ---
+  const handleNextWeek = () => setGridStartDate(addDays(gridStartDate, 7));
+  const handlePrevWeek = () => setGridStartDate(addDays(gridStartDate, -7));
+
+  const getCellPrice = (room, dateString) => {
+    const override = rules.find(r => r.type === 'manual_override' && (!r.room_id || r.room_id === room.id) && dateString >= r.start_date && dateString <= r.end_date);
+    if (override && override.fixed_price_ngn !== null) {
+      return { price: Number(override.fixed_price_ngn), isOverride: true, ruleId: override.id };
+    }
+    return { price: Number(room.base_price_ngn), isOverride: false, ruleId: null };
+  };
+
+  const openGridEdit = (room, dateString, currentPrice, currentRuleId) => {
+    setGridEditCell({ room, dateString, currentPrice, currentRuleId });
+    setGridEditPrice(currentPrice.toString());
+    setIsGridModalOpen(true);
+  };
+
+  const handleSaveGridCell = async (e) => {
+    e.preventDefault();
+    if (!gridEditCell) return;
+    
+    const { room, dateString, currentRuleId } = gridEditCell;
+    const price = parseFloat(gridEditPrice);
+    
+    if (isNaN(price) || price <= 0) {
+      if (currentRuleId) {
+        const { error } = await supabase.from('pricing_rules').delete().eq('id', currentRuleId);
+        if (error) return toast.error(error.message);
+      }
+    } else {
+      if (currentRuleId) {
+        const { error } = await supabase.from('pricing_rules').update({ fixed_price_ngn: price }).eq('id', currentRuleId);
+        if (error) return toast.error(error.message);
+      } else {
+        const row = {
+          name: `Quick Edit ${dateString}`,
+          room_id: room.id,
+          type: 'manual_override',
+          start_date: dateString,
+          end_date: dateString,
+          fixed_price_ngn: price,
+          adjustment_percentage: 0,
+          is_active: true
+        };
+        const { error } = await supabase.from('pricing_rules').insert([row]);
+        if (error) return toast.error(error.message);
+      }
+    }
+    
+    toast.success("Date price updated!");
+    setIsGridModalOpen(false);
+    fetchData();
   };
 
   // --- OPEN MODAL HELPERS ---
@@ -238,10 +341,144 @@ const AdminPricing = () => {
 
       {/* CONTENT: BULK CALENDAR */}
       {activeTab === 'bulk' && (
-        <div className="bg-dark-800 border border-dark-700 rounded-lg p-6 shadow-sm flex flex-col items-center justify-center text-center h-96">
-          <CalendarIcon size={48} className="text-gray-600 mb-4" />
-          <h3 className="text-xl font-bold text-white mb-2">Bulk Pricing Calendar</h3>
-          <p className="text-gray-400 max-w-md">The bulk update calendar allows you to select date ranges and apply overrides or rules across multiple rooms simultaneously. This feature is currently in preview.</p>
+        <div className="space-y-6">
+          
+          {/* VISUAL GRID CALENDAR */}
+          <div className="bg-dark-800 border border-dark-700 rounded-lg shadow-sm overflow-hidden mb-6">
+            <div className="p-4 border-b border-dark-700 bg-dark-800/50 flex flex-col sm:flex-row gap-4 sm:gap-0 justify-between items-center">
+              <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2"><CalendarIcon size={16}/> 7-Day Visual Grid</h4>
+              <div className="flex gap-2">
+                <button onClick={handlePrevWeek} className="p-1.5 bg-dark-700 hover:bg-dark-600 rounded text-gray-400 hover:text-white transition-colors"><ChevronLeft size={16}/></button>
+                <div className="text-sm font-medium text-white px-3 py-1 bg-dark-900 rounded border border-dark-700 whitespace-nowrap">
+                  {format(gridStartDate, 'MMM d')} - {format(addDays(gridStartDate, 6), 'MMM d, yyyy')}
+                </div>
+                <button onClick={handleNextWeek} className="p-1.5 bg-dark-700 hover:bg-dark-600 rounded text-gray-400 hover:text-white transition-colors"><ChevronRight size={16}/></button>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-dark-900 border-b border-dark-700 text-xs text-gray-500">
+                  <tr>
+                    <th className="p-3 border-r border-dark-700 w-48 font-semibold sticky left-0 bg-dark-900 z-10">Room Unit</th>
+                    {[...Array(7)].map((_, i) => {
+                      const d = addDays(gridStartDate, i);
+                      return (
+                        <th key={i} className="p-3 border-r border-dark-700 text-center font-semibold min-w-[100px]">
+                          <div className="text-white">{format(d, 'EEE')}</div>
+                          <div className="text-gray-400">{format(d, 'MMM d')}</div>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-700 text-sm">
+                  {rooms.map(room => (
+                    <tr key={room.id} className="hover:bg-dark-700/50 transition-colors group">
+                      <td className="p-3 border-r border-dark-700 font-medium text-white truncate max-w-[12rem] sticky left-0 bg-dark-800 group-hover:bg-dark-700/50 z-10 transition-colors">
+                        {room.room_number} - {room.name}
+                      </td>
+                      {[...Array(7)].map((_, i) => {
+                        const d = addDays(gridStartDate, i);
+                        const dateString = format(d, 'yyyy-MM-dd');
+                        const { price, isOverride, ruleId } = getCellPrice(room, dateString);
+                        return (
+                          <td 
+                            key={i} 
+                            onClick={() => openGridEdit(room, dateString, price, ruleId)}
+                            className={`p-3 border-r border-dark-700 text-center cursor-pointer transition-colors hover:bg-brand-500/20 ${isOverride ? 'bg-gold-500/10 text-gold-500 font-bold' : 'text-gray-400'}`}
+                          >
+                            ₦{(price / 1000).toFixed(1)}k
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="bg-dark-800 border border-dark-700 rounded-lg p-6 shadow-sm">
+            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><CalendarIcon size={20}/> Bulk Pricing Update Form</h3>
+            <form onSubmit={handleSaveBulkOverride} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <label className="block text-sm font-medium text-gray-400">Select Rooms ({bulkOverride.room_ids.length} selected)</label>
+                  <button type="button" onClick={handleSelectAllBulkRooms} className="text-xs text-brand-500 hover:text-brand-400 font-medium">Select All</button>
+                </div>
+                <div className="bg-dark-900 border border-dark-700 rounded-md p-2 h-48 overflow-y-auto space-y-1">
+                  {rooms.map(room => (
+                    <label key={room.id} className="flex items-center gap-3 p-2 hover:bg-dark-800 rounded cursor-pointer transition-colors">
+                      <input 
+                        type="checkbox" 
+                        className="accent-brand-500 w-4 h-4 rounded border-dark-600 bg-dark-800"
+                        checked={bulkOverride.room_ids.includes(room.id)}
+                        onChange={() => handleSelectBulkRoom(room.id)}
+                      />
+                      <div>
+                        <p className="text-sm text-white font-medium">{room.room_number} - {room.name}</p>
+                        <p className="text-xs text-gray-500">Base: ₦{Number(room.base_price_ngn).toLocaleString()}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-1">Start Date</label>
+                    <input required type="date" value={bulkOverride.start_date} onChange={e => setBulkOverride({...bulkOverride, start_date: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-1">End Date</label>
+                    <input required type="date" value={bulkOverride.end_date} onChange={e => setBulkOverride({...bulkOverride, end_date: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-400 mb-1">Fixed Override Price (₦/night)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-3 text-gray-500">₦</span>
+                    <input required type="number" min="0" step="1000" value={bulkOverride.fixed_price_ngn} onChange={e => setBulkOverride({...bulkOverride, fixed_price_ngn: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 pl-8 text-white outline-none focus:border-brand-500" placeholder="e.g. 150000" />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">This price will completely replace the base price for the selected dates.</p>
+                </div>
+
+                <div className="pt-2">
+                  <button type="submit" className="w-full btn-primary py-3">Apply Bulk Update</button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          <div className="bg-dark-800 border border-dark-700 shadow-sm overflow-hidden rounded-lg">
+            <div className="p-4 border-b border-dark-700 bg-dark-800/50 flex justify-between items-center">
+              <h4 className="text-sm font-bold text-white uppercase tracking-wider">Active Bulk Overrides</h4>
+            </div>
+            <table className="w-full text-left">
+              <thead className="bg-dark-900 border-b border-dark-700 text-xs uppercase text-gray-500">
+                <tr><th className="p-4">Rule Name</th><th className="p-4">Room</th><th className="p-4">Date Range</th><th className="p-4">Fixed Rate</th><th className="p-4 text-right">Actions</th></tr>
+              </thead>
+              <tbody className="divide-y divide-dark-700 text-sm">
+                {rules.filter(r => r.type === 'manual_override').length === 0 && (
+                  <tr><td colSpan="5" className="p-8 text-center text-gray-500">No active bulk overrides.</td></tr>
+                )}
+                {rules.filter(r => r.type === 'manual_override').map(rule => (
+                  <tr key={rule.id} className="hover:bg-dark-700 transition-colors">
+                    <td className="p-4 font-medium text-white">{rule.name}</td>
+                    <td className="p-4 text-gray-400">{rooms.find(r => r.id === rule.room_id)?.name || 'All Rooms'}</td>
+                    <td className="p-4 text-brand-400 font-medium">{new Date(rule.start_date).toLocaleDateString()} - {new Date(rule.end_date).toLocaleDateString()}</td>
+                    <td className="p-4 text-gold-500 font-bold">₦{Number(rule.fixed_price_ngn || 0).toLocaleString()}</td>
+                    <td className="p-4 text-right">
+                      <button onClick={() => handleDelete('pricing_rules', rule.id)} className="text-gray-500 hover:text-red-500"><Trash2 size={16}/></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -351,7 +588,7 @@ const AdminPricing = () => {
         </div>
       )}
 
-      {/* MODAL: COUPON */}
+      {/* MODAL: COUPONS */}
       {isCouponModalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-dark-800 border border-dark-700 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95">
@@ -360,41 +597,71 @@ const AdminPricing = () => {
               <button onClick={() => setIsCouponModalOpen(false)} className="text-gray-500 hover:text-white transition-colors"><X size={20}/></button>
             </div>
             <form onSubmit={handleSaveCoupon} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Coupon Code</label>
+                <input required type="text" value={newCoupon.code} onChange={e => setNewCoupon({...newCoupon, code: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500 uppercase" placeholder="e.g. SUMMER24" />
+              </div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Coupon Code</label>
-                  <input required type="text" value={newCoupon.code} onChange={e => setNewCoupon({...newCoupon, code: e.target.value.toUpperCase()})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500 font-mono transition-colors" placeholder="SUMMER2026" />
-                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-400 mb-1">Discount Type</label>
-                  <select value={newCoupon.discount_type} onChange={e => setNewCoupon({...newCoupon, discount_type: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500 transition-colors">
+                  <select value={newCoupon.discount_type} onChange={e => setNewCoupon({...newCoupon, discount_type: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500">
                     <option value="percentage">Percentage (%)</option>
                     <option value="flat">Flat Amount (₦)</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Discount Value</label>
-                  <input required type="number" step="0.01" value={newCoupon.discount_value} onChange={e => setNewCoupon({...newCoupon, discount_value: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500 transition-colors" />
+                  <label className="block text-sm font-medium text-gray-400 mb-1">Value</label>
+                  <input required type="number" min="1" step="0.01" value={newCoupon.discount_value} onChange={e => setNewCoupon({...newCoupon, discount_value: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500" placeholder="e.g. 15" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-400 mb-1">Valid From</label>
-                  <input required type="date" value={newCoupon.valid_from} onChange={e => setNewCoupon({...newCoupon, valid_from: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500 transition-colors" />
+                  <input required type="date" value={newCoupon.valid_from} onChange={e => setNewCoupon({...newCoupon, valid_from: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-400 mb-1">Valid Until</label>
-                  <input required type="date" value={newCoupon.valid_until} onChange={e => setNewCoupon({...newCoupon, valid_until: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500 transition-colors" />
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Usage Limit (Optional)</label>
-                  <input type="number" value={newCoupon.usage_limit || ''} onChange={e => setNewCoupon({...newCoupon, usage_limit: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500 transition-colors" placeholder="e.g. 50 (Leave blank for unlimited)" />
-                </div>
-                <div className="col-span-2 flex items-center gap-2 mt-2">
-                  <input type="checkbox" id="couponActive" checked={newCoupon.is_active} onChange={e => setNewCoupon({...newCoupon, is_active: e.target.checked})} className="w-4 h-4 text-brand-500 bg-dark-900 border-dark-700 rounded focus:ring-brand-500" />
-                  <label htmlFor="couponActive" className="text-sm text-gray-300">Coupon is Active</label>
+                  <input required type="date" value={newCoupon.valid_until} onChange={e => setNewCoupon({...newCoupon, valid_until: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500" />
                 </div>
               </div>
-              <div className="pt-4 flex justify-end">
-                <button type="submit" className="btn-primary py-2 px-6">Save Coupon</button>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-400 mb-1">Usage Limit (Total)</label>
+                  <input type="number" min="1" value={newCoupon.usage_limit} onChange={e => setNewCoupon({...newCoupon, usage_limit: e.target.value})} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500" placeholder="Optional" />
+                </div>
+                <div className="flex items-center gap-3 pt-6">
+                  <input type="checkbox" id="coupon_active" checked={newCoupon.is_active} onChange={e => setNewCoupon({...newCoupon, is_active: e.target.checked})} className="w-4 h-4 accent-brand-500" />
+                  <label htmlFor="coupon_active" className="text-sm text-gray-300">Active</label>
+                </div>
+              </div>
+              <div className="pt-4 flex gap-4">
+                <button type="button" onClick={() => setIsCouponModalOpen(false)} className="flex-1 py-3 rounded-lg font-bold bg-dark-700 text-white hover:bg-dark-600 transition-colors">Cancel</button>
+                <button type="submit" className="flex-1 btn-primary py-3">Save Coupon</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: GRID QUICK EDIT */}
+      {isGridModalOpen && gridEditCell && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-800 border border-dark-700 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95">
+            <div className="flex justify-between items-center p-4 border-b border-dark-700">
+              <h2 className="text-lg font-bold text-white">Quick Rate Edit</h2>
+              <button onClick={() => setIsGridModalOpen(false)} className="text-gray-500 hover:text-white transition-colors"><X size={20}/></button>
+            </div>
+            <form onSubmit={handleSaveGridCell} className="p-4 space-y-4">
+              <div className="bg-dark-900 p-3 rounded-lg border border-dark-700 text-sm">
+                <p className="text-gray-400">Room: <span className="text-white font-medium">{gridEditCell.room.room_number} - {gridEditCell.room.name}</span></p>
+                <p className="text-gray-400">Date: <span className="text-brand-400 font-medium">{format(new Date(gridEditCell.dateString), 'MMMM d, yyyy')}</span></p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-1">Nightly Rate (₦)</label>
+                <input autoFocus required type="number" min="0" step="500" value={gridEditPrice} onChange={e => setGridEditPrice(e.target.value)} className="w-full bg-dark-900 border border-dark-700 rounded-md p-2.5 text-white outline-none focus:border-brand-500" />
+                <p className="text-xs text-gray-500 mt-2">To remove an override and revert to base price, enter 0.</p>
+              </div>
+              <div className="pt-2 flex gap-3">
+                <button type="button" onClick={() => setIsGridModalOpen(false)} className="flex-1 py-2 rounded-lg font-bold bg-dark-700 text-white hover:bg-dark-600 transition-colors">Cancel</button>
+                <button type="submit" className="flex-1 btn-primary py-2">Save Rate</button>
               </div>
             </form>
           </div>
