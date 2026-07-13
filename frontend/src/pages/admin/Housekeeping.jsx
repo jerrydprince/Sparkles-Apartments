@@ -8,7 +8,15 @@ import { useAuth } from '../../context/AuthContext';
 import StoreRequisitionModal from '../../components/admin/StoreRequisitionModal';
 
 const AdminHousekeeping = () => {
-  const [activeTab, setActiveTab] = useState('housekeeping'); // 'housekeeping' or 'maintenance'
+  const { user, profile, hasAccess } = useAuth();
+  const canViewHousekeeping = hasAccess('Housekeeping') || hasAccess('Housekeeping - Perform Room Cleaning') || hasAccess('Housekeeping - Inspect & Approve Clean Rooms') || hasAccess('Housekeeping - Mark Rooms Out of Order');
+  const canViewMaintenance = hasAccess('Maintenance') || hasAccess('Maintenance - View Tickets') || hasAccess('Maintenance - Manage Tickets & Fixes');
+
+  const [activeTab, setActiveTab] = useState(() => {
+    if (canViewHousekeeping) return 'housekeeping';
+    if (canViewMaintenance) return 'maintenance';
+    return 'housekeeping';
+  }); // 'housekeeping' or 'maintenance'
   const [viewMode, setViewMode] = useState('list'); // 'card' or 'list'
   const [tasks, setTasks] = useState([]);
   const [tickets, setTickets] = useState([]);
@@ -16,7 +24,7 @@ const AdminHousekeeping = () => {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  const { profile, hasAccess } = useAuth();
+  
   const isManager = hasAccess('Housekeeping - Inspect & Approve Clean Rooms') || hasAccess('Housekeeping - Assign Tasks to Staff');
   const canManageMaintenance = hasAccess('Maintenance - Manage Tickets & Fixes');
 
@@ -304,18 +312,22 @@ const AdminHousekeeping = () => {
       </div>
 
       <div className="flex gap-4 border-b border-dark-700">
-        <button 
-          onClick={() => setActiveTab('housekeeping')} 
-          className={`pb-3 px-4 font-medium flex items-center gap-2 border-b-2 transition-colors ${activeTab === 'housekeeping' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <Sparkles size={18} /> Cleaning Schedules
-        </button>
-        <button 
-          onClick={() => setActiveTab('maintenance')} 
-          className={`pb-3 px-4 font-medium flex items-center gap-2 border-b-2 transition-colors ${activeTab === 'maintenance' ? 'border-red-500 text-red-500' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <Wrench size={18} /> Maintenance Board
-        </button>
+        {canViewHousekeeping && (
+          <button 
+            onClick={() => setActiveTab('housekeeping')} 
+            className={`pb-3 px-4 font-medium flex items-center gap-2 border-b-2 transition-colors ${activeTab === 'housekeeping' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <Sparkles size={18} /> Cleaning Schedules
+          </button>
+        )}
+        {canViewMaintenance && (
+          <button 
+            onClick={() => setActiveTab('maintenance')} 
+            className={`pb-3 px-4 font-medium flex items-center gap-2 border-b-2 transition-colors ${activeTab === 'maintenance' ? 'border-red-500 text-red-500' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <Wrench size={18} /> Maintenance Board
+          </button>
+        )}
       </div>
 
       <div className="bg-dark-900 border border-dark-700 shadow-sm rounded-lg min-h-[500px]">

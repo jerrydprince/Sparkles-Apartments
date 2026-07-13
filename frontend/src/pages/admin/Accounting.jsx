@@ -29,7 +29,29 @@ const CHART_COLORS = [
 
 const AdminAccounting = () => {
   const { user, profile, hasAccess } = useAuth();
-  const [activeTab, setActiveTab] = useState('overview');
+
+  const canViewOverview = hasAccess('Accounting') || hasAccess('Finance & Billing');
+  const canViewExpenses = hasAccess('Finance - Manage General Ledgers & Payroll') || hasAccess('Accounting');
+  const canViewPayroll = hasAccess('Finance - Manage General Ledgers & Payroll') || hasAccess('Accounting');
+  const canViewLedger = hasAccess('Finance - View Ledgers') || hasAccess('Accounting') || hasAccess('Finance & Billing');
+  const canViewDebtors = hasAccess('Accounting - View Debtors Ledger') || hasAccess('Accounting');
+  const canViewAR = hasAccess('Front Desk - Settle AR & Prepayment Wallet') || hasAccess('Finance - View Ledgers') || hasAccess('Accounting');
+  const canViewCloseOfDay = hasAccess('Service Portals - Close of Day Compiler') || hasAccess('Finance - Manage General Ledgers & Payroll') || hasAccess('Accounting');
+  const canViewRefunds = hasAccess('Finance - Process Refunds & Adjustments') || hasAccess('Accounting') || hasAccess('Finance & Billing');
+  const canViewReports = hasAccess('Accounting - View P&L Statement') || hasAccess('Accounting - View Balance Sheet') || hasAccess('Accounting - View Tax Reports') || hasAccess('Accounting');
+
+  const [activeTab, setActiveTab] = useState(() => {
+    if (canViewOverview) return 'overview';
+    if (canViewDebtors) return 'debtors';
+    if (canViewAR) return 'ar';
+    if (canViewCloseOfDay) return 'close_of_day';
+    if (canViewExpenses) return 'expenses';
+    if (canViewPayroll) return 'payroll';
+    if (canViewLedger) return 'ledger';
+    if (canViewRefunds) return 'refunds';
+    if (canViewReports) return 'reports';
+    return 'overview'; // Fallback
+  });
   const [isRequisitionOpen, setIsRequisitionOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isUsingFallback, setIsUsingFallback] = useState(false);
@@ -3315,60 +3337,78 @@ const AdminAccounting = () => {
 
       {/* Navigation Sub-Tabs */}
       <div className="flex gap-2 border-b border-dark-700 mb-6 overflow-x-auto select-none no-scrollbar">
-        <button 
-          onClick={() => setActiveTab('overview')} 
-          className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'overview' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <TrendingUp size={18} /> Financial Dashboard
-        </button>
-        <button 
-          onClick={() => setActiveTab('expenses')} 
-          className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'expenses' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <ArrowDownRight size={18} /> Expense Tracker
-        </button>
-        <button 
-          onClick={() => setActiveTab('payroll')} 
-          className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'payroll' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <User size={18} /> Staff Payroll & Salaries
-        </button>
-        <button 
-          onClick={() => setActiveTab('ledger')} 
-          className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'ledger' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <FileText size={18} /> General Ledger
-        </button>
-        <button 
-          onClick={() => setActiveTab('debtors')} 
-          className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'debtors' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <Building size={18} className="text-brand-400" /> Debtors Ledger
-        </button>
-        <button 
-          onClick={() => setActiveTab('ar')} 
-          className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'ar' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <Wallet size={18} className="text-green-400" /> AR Accounts
-        </button>
-        <button 
-          onClick={() => setActiveTab('close_of_day')} 
-          className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'close_of_day' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <Clock size={18} className="text-amber-400" /> Close of Day & Audit
-        </button>
-        <button 
-          onClick={() => setActiveTab('refunds')} 
-          className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'refunds' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <Wallet size={18} className="text-amber-400" /> Refund Requests
-        </button>
-        <button 
-          onClick={() => setActiveTab('reports')} 
-          className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'reports' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <FileText size={18} /> Accounting Reports
-        </button>
+        {canViewOverview && (
+          <button 
+            onClick={() => setActiveTab('overview')} 
+            className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'overview' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <TrendingUp size={18} /> Financial Dashboard
+          </button>
+        )}
+        {canViewExpenses && (
+          <button 
+            onClick={() => setActiveTab('expenses')} 
+            className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'expenses' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <ArrowDownRight size={18} /> Expense Tracker
+          </button>
+        )}
+        {canViewPayroll && (
+          <button 
+            onClick={() => setActiveTab('payroll')} 
+            className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'payroll' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <User size={18} /> Staff Payroll & Salaries
+          </button>
+        )}
+        {canViewLedger && (
+          <button 
+            onClick={() => setActiveTab('ledger')} 
+            className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'ledger' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <FileText size={18} /> General Ledger
+          </button>
+        )}
+        {canViewDebtors && (
+          <button 
+            onClick={() => setActiveTab('debtors')} 
+            className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'debtors' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <Building size={18} className="text-brand-400" /> Debtors Ledger
+          </button>
+        )}
+        {canViewAR && (
+          <button 
+            onClick={() => setActiveTab('ar')} 
+            className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'ar' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <Wallet size={18} className="text-green-400" /> AR Accounts
+          </button>
+        )}
+        {canViewCloseOfDay && (
+          <button 
+            onClick={() => setActiveTab('close_of_day')} 
+            className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'close_of_day' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <Clock size={18} className="text-amber-400" /> Close of Day & Audit
+          </button>
+        )}
+        {canViewRefunds && (
+          <button 
+            onClick={() => setActiveTab('refunds')} 
+            className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'refunds' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <Wallet size={18} className="text-amber-400" /> Refund Requests
+          </button>
+        )}
+        {canViewReports && (
+          <button 
+            onClick={() => setActiveTab('reports')} 
+            className={`pb-3 px-5 font-bold flex items-center gap-2 border-b-2 transition-all duration-300 ${activeTab === 'reports' ? 'border-brand-500 text-brand-500' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <FileText size={18} /> Accounting Reports
+          </button>
+        )}
       </div>
 
       {/* Tab 1: Financial Dashboard */}

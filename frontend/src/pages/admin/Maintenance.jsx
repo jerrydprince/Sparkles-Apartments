@@ -117,8 +117,20 @@ const PaginationControl = ({ currentPage, totalItems, pageSize, onPageChange }) 
 const Maintenance = () => {
   const { user, profile, hasAccess } = useAuth();
   
-  // Tab controller: 'overview', 'tickets', 'professionals', 'purchases', 'payments'
-  const [activeTab, setActiveTab] = useState('overview');
+  const canViewOverview = hasAccess('Maintenance - View Tickets') || hasAccess('Maintenance - Manage Tickets & Fixes') || hasAccess('Maintenance');
+  const canViewTickets = hasAccess('Maintenance - View Tickets') || hasAccess('Maintenance - Manage Tickets & Fixes') || hasAccess('Maintenance');
+  const canViewProfessionals = hasAccess('Maintenance - Manage Professionals') || hasAccess('Maintenance');
+  const canViewPurchases = hasAccess('Maintenance - Manage Purchases & Payments') || hasAccess('Maintenance');
+  const canViewPayments = hasAccess('Maintenance - Manage Purchases & Payments') || hasAccess('Maintenance');
+
+  const [activeTab, setActiveTab] = useState(() => {
+    if (canViewOverview) return 'overview';
+    if (canViewTickets) return 'tickets';
+    if (canViewProfessionals) return 'professionals';
+    if (canViewPurchases) return 'purchases';
+    if (canViewPayments) return 'payments';
+    return 'overview';
+  });
   
   // Loading & Processing States
   const [loading, setLoading] = useState(true);
@@ -1136,11 +1148,11 @@ const Maintenance = () => {
       {/* Tabs Menu Navigation */}
       <div className="flex gap-2 border-b border-dark-700 overflow-x-auto scrollbar-none pb-0.5">
         {[
-          { id: 'overview', label: 'Dashboard Overview', icon: Layers },
-          { id: 'tickets', label: 'Repairs & Tickets', icon: AlertTriangle },
-          { id: 'professionals', label: 'Specialists CRM', icon: User },
-          { id: 'purchases', label: 'Procurements', icon: DollarSign },
-          { id: 'payments', label: 'Disbursements', icon: CheckSquare }
+          ...(canViewOverview ? [{ id: 'overview', label: 'Dashboard Overview', icon: Layers }] : []),
+          ...(canViewTickets ? [{ id: 'tickets', label: 'Repairs & Tickets', icon: AlertTriangle }] : []),
+          ...(canViewProfessionals ? [{ id: 'professionals', label: 'Specialists CRM', icon: User }] : []),
+          ...(canViewPurchases ? [{ id: 'purchases', label: 'Procurements', icon: DollarSign }] : []),
+          ...(canViewPayments ? [{ id: 'payments', label: 'Disbursements', icon: CheckSquare }] : [])
         ].map(tab => {
           const Icon = tab.icon;
           return (

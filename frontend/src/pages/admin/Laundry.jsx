@@ -90,7 +90,18 @@ const PRICING_METHODS = ['stripe', 'paystack', 'bank_transfer', 'pos', 'cash'];
 
 const AdminLaundry = () => {
   const { profile, hasAccess } = useAuth();
-  const [activeTab, setActiveTab] = useState('inhouse'); // inhouse, walkin, history
+  const canViewInhouse = hasAccess('Laundry - Process Laundry Orders') || hasAccess('Laundry - View Laundry Orders') || hasAccess('Laundry - Post Folio Charges') || hasAccess('Laundry');
+  const canViewWalkin = hasAccess('Laundry - Register Walk-in Sales') || hasAccess('Laundry');
+  const canViewHistory = hasAccess('Laundry - View Laundry Orders') || hasAccess('Laundry - Post Folio Charges') || hasAccess('Laundry');
+  const canViewPriceList = hasAccess('Laundry - Manage Laundry Inventory') || hasAccess('Laundry');
+
+  const [activeTab, setActiveTab] = useState(() => {
+    if (canViewInhouse) return 'inhouse';
+    if (canViewWalkin) return 'walkin';
+    if (canViewHistory) return 'history';
+    if (canViewPriceList) return 'pricelist';
+    return 'inhouse'; // fallback
+  });
   const [loading, setLoading] = useState(true);
   
   // Data lists
@@ -827,30 +838,38 @@ const AdminLaundry = () => {
 
       {/* Navigation Tabs */}
       <div className="flex gap-4 border-b border-dark-700 overflow-x-auto select-none">
-        <button 
-          onClick={() => setActiveTab('inhouse')} 
-          className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap text-sm ${activeTab === 'inhouse' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <Users size={16} /> Suite Guests Processing ({inhouseRequests.length})
-        </button>
-        <button 
-          onClick={() => setActiveTab('walkin')} 
-          className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap text-sm ${activeTab === 'walkin' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <ClipboardList size={16} /> Walk-In Sales Ledger ({walkinPayments.length})
-        </button>
-        <button 
-          onClick={() => setActiveTab('history')} 
-          className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap text-sm ${activeTab === 'history' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <CheckCircle size={16} /> Folio Charging History
-        </button>
-        <button 
-          onClick={() => setActiveTab('pricelist')} 
-          className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap text-sm ${activeTab === 'pricelist' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-white'}`}
-        >
-          <DollarSign size={16} /> Price List Management
-        </button>
+        {canViewInhouse && (
+          <button 
+            onClick={() => setActiveTab('inhouse')} 
+            className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap text-sm ${activeTab === 'inhouse' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <Users size={16} /> Suite Guests Processing ({inhouseRequests.length})
+          </button>
+        )}
+        {canViewWalkin && (
+          <button 
+            onClick={() => setActiveTab('walkin')} 
+            className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap text-sm ${activeTab === 'walkin' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <ClipboardList size={16} /> Walk-In Sales Ledger ({walkinPayments.length})
+          </button>
+        )}
+        {canViewHistory && (
+          <button 
+            onClick={() => setActiveTab('history')} 
+            className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap text-sm ${activeTab === 'history' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <CheckCircle size={16} /> Folio Charging History
+          </button>
+        )}
+        {canViewPriceList && (
+          <button 
+            onClick={() => setActiveTab('pricelist')} 
+            className={`pb-3 px-4 font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap text-sm ${activeTab === 'pricelist' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-white'}`}
+          >
+            <DollarSign size={16} /> Price List Management
+          </button>
+        )}
       </div>
 
       {/* Tab Panels */}

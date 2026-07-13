@@ -71,6 +71,76 @@ app.get('/api/', (req, res) => {
   res.send('Luxe Apartment Booking API is running (via /api/).');
 });
 
+// --- Webhook Integrations ---
+const checkWebhookKey = (req, res, next) => {
+  const apiKey = req.headers['x-webhook-api-key'];
+  if (!apiKey || apiKey !== process.env.WEBHOOK_API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized webhook access' });
+  }
+  next();
+};
+
+app.post('/api/webhooks/crm-lead', checkWebhookKey, async (req, res) => {
+  try {
+    const { firstName, lastName, email, phone, source } = req.body;
+    
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ error: 'Missing required fields: firstName, lastName, email' });
+    }
+
+    const emailLower = email.toLowerCase().trim();
+
+    const { data: existingGuest, error: checkError } = await supabase
+      .from('crm_guests')
+      .select('*')
+      .eq('email', emailLower)
+      .maybeSingle();
+
+    if (checkError) throw checkError;
+
+    if (existingGuest) {
+      const currentPrefs = existingGuest.preferences || {};
+      const updatedPrefs = {
+        ...currentPrefs,
+        latest_lead_source: source || 'Webhook',
+        latest_lead_date: new Date().toISOString()
+      };
+      
+      const { error: updateError } = await supabase
+        .from('crm_guests')
+        .update({ preferences: updatedPrefs, segment: 'lead' })
+        .eq('id', existingGuest.id);
+
+      if (updateError) throw updateError;
+      return res.status(200).json({ message: 'Lead updated successfully', guest_id: existingGuest.id });
+    } else {
+      const newGuest = {
+        first_name: firstName,
+        last_name: lastName,
+        email: emailLower,
+        phone: phone || null,
+        segment: 'lead',
+        preferences: {
+          original_lead_source: source || 'Webhook',
+          acquisition_date: new Date().toISOString()
+        }
+      };
+
+      const { data: insertedGuest, error: insertError } = await supabase
+        .from('crm_guests')
+        .insert([newGuest])
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+      return res.status(201).json({ message: 'Lead created successfully', guest_id: insertedGuest.id });
+    }
+  } catch (error) {
+    console.error('Webhook CRM Lead Error:', error);
+    res.status(500).json({ error: 'Internal Server Error processing lead webhook' });
+  }
+});
+
 // Paystack Payment Initialization Example
 app.post('/api/payments/initialize', async (req, res) => {
   const { email, amount } = req.body;
