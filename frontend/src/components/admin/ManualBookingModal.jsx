@@ -73,7 +73,7 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
   const [selectedCrmGuest, setSelectedCrmGuest] = useState(null);
   const [crmSearchQuery, setCrmSearchQuery] = useState('');
 
-  const [discountType, setDiscountType] = useState('amount'); // 'amount' or 'percentage'
+  const [discountType, setDiscountType] = useState('one_off'); // 'one_off', 'per_night', or 'percentage'
   const [discountValue, setDiscountValue] = useState(0);
   const [cautionFee, setCautionFee] = useState(0);
   const [purposeAdjustments, setPurposeAdjustments] = useState({
@@ -425,6 +425,8 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
       let calculatedDiscount = 0;
       if (discountType === 'percentage') {
         calculatedDiscount = roomTotal * (Number(discountValue) / 100);
+      } else if (discountType === 'per_night') {
+        calculatedDiscount = Number(discountValue) * nights;
       } else {
         calculatedDiscount = Number(discountValue);
       }
@@ -434,14 +436,14 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
       const servicesTaxRate = 7.5;
       
       const roomTotalNet = Math.max(0, roomTotal - calculatedDiscount);
-      const roomVat = Math.round(roomTotalNet * (roomTaxRate / 100));
+      const roomVat = 0; // Room tax is now inclusive in base price
       const servicesVat = Math.round(servicesTotal * (servicesTaxRate / 100));
       
       const subtotal = roomTotalNet + servicesTotal;
       const vatAmount = roomVat + servicesVat;
-      const finalAmount = subtotal + vatAmount;
+      const finalAmount = subtotal + vatAmount; // roomTotalNet already has room tax
 
-      setRoomCostWithVat(roomTotalNet + roomVat);
+      setRoomCostWithVat(roomTotalNet); // No longer adding roomVat since it's inclusive
       setServicesCostWithVat(servicesTotal + servicesVat);
       
         setNewBooking(prev => ({ 
@@ -551,6 +553,8 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
       let savedDiscountAmount = 0;
       if (discountType === 'percentage') {
         savedDiscountAmount = newBooking.baseRoomPrice * (Number(discountValue) / 100);
+      } else if (discountType === 'per_night') {
+        savedDiscountAmount = Number(discountValue) * nights;
       } else {
         savedDiscountAmount = Number(discountValue);
       }
@@ -672,7 +676,7 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
         purpose: 'Leisure', specialRequests: ''
       });
       setSelectedServices([]);
-      setDiscountType('amount');
+      setDiscountType('one_off');
       setDiscountValue(0);
       setSelectedGroupId('');
       setBillToGroup(false);
@@ -1222,30 +1226,36 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
                 )}
                 <div className="col-span-2 border-t border-dark-700/50 pt-3">
                   <label className="block text-sm font-medium text-gray-400 mb-1.5">Apply Manual Discount</label>
-                  <div className="flex gap-2">
-                    <div className="flex border border-dark-700 rounded overflow-hidden">
-                      <button 
-                        type="button" 
-                        onClick={() => setDiscountType('amount')} 
-                        className={`px-3 py-1.5 text-xs font-bold transition-colors ${discountType === 'amount' ? 'bg-brand-500 text-dark-900' : 'bg-dark-800 text-gray-400 hover:text-white'}`}
-                      >
-                        ₦
-                      </button>
-                      <button 
-                        type="button" 
-                        onClick={() => setDiscountType('percentage')} 
-                        className={`px-3 py-1.5 text-xs font-bold transition-colors ${discountType === 'percentage' ? 'bg-brand-500 text-dark-900' : 'bg-dark-800 text-gray-400 hover:text-white'}`}
-                      >
-                        %
-                      </button>
-                    </div>
+                  <div className="flex gap-0 rounded border border-dark-700 overflow-hidden w-max mb-3">
+                    <button 
+                      type="button" 
+                      onClick={() => setDiscountType('one_off')} 
+                      className={`px-3 py-1.5 text-xs font-bold transition-colors ${discountType === 'one_off' ? 'bg-brand-500 text-dark-900' : 'bg-dark-800 text-gray-400 hover:text-white'}`}
+                    >
+                      One-off ₦
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setDiscountType('per_night')} 
+                      className={`px-3 py-1.5 text-xs font-bold transition-colors border-l border-r border-dark-700 ${discountType === 'per_night' ? 'bg-brand-500 text-dark-900' : 'bg-dark-800 text-gray-400 hover:text-white'}`}
+                    >
+                      Per Night ₦
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setDiscountType('percentage')} 
+                      className={`px-3 py-1.5 text-xs font-bold transition-colors ${discountType === 'percentage' ? 'bg-brand-500 text-dark-900' : 'bg-dark-800 text-gray-400 hover:text-white'}`}
+                    >
+                      Percent %
+                    </button>
+                  </div>
+                  <div className="relative">
                     <input 
                       type="number" 
-                      min="0" 
                       value={discountValue || ''} 
                       onChange={e => setDiscountValue(Math.max(0, parseFloat(e.target.value) || 0))} 
-                      className="flex-1 bg-dark-800 border border-dark-700 rounded px-3 py-1.5 text-white outline-none focus:border-brand-500 transition-colors text-sm" 
-                      placeholder={discountType === 'amount' ? "Discount Amount in ₦" : "Discount Percentage %"}
+                      className="w-full bg-dark-900 border border-dark-700 p-2.5 rounded text-white outline-none focus:border-gold-500"
+                      placeholder={discountType === 'percentage' ? "Discount Percentage %" : "Discount Amount in ₦"}
                     />
                   </div>
                 </div>
@@ -1267,7 +1277,7 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
                     Calculated as Room Cost (₦{roomCostWithVat.toLocaleString(undefined, {maximumFractionDigits:0})} including 12.5% Tax)
                     {selectedServices.length > 0 && ` + Services (₦${servicesCostWithVat.toLocaleString(undefined, {maximumFractionDigits:0})} including 7.5% VAT)`}
                     {cautionFee > 0 && ` + Caution Fee (₦${cautionFee.toLocaleString()})`}
-                    {discountValue > 0 && ` [Discount of ${discountType === 'amount' ? `₦${discountValue.toLocaleString()}` : `${discountValue}%`} applied to room rate]`}
+                    {discountValue > 0 && ` [Discount of ${discountType === 'percentage' ? `${discountValue}%` : (discountType === 'per_night' ? `₦${discountValue.toLocaleString()} per night` : `₦${discountValue.toLocaleString()}`)} applied to room rate]`}
                     {newBooking.purpose !== 'Leisure' && newBooking.purpose !== 'Other' && ` [Purpose of stay (${newBooking.purpose}) adjusts base pricing]`}
                   </p>
                 </div>

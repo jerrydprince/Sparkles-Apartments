@@ -499,10 +499,12 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
               const booking = viewBooking;
               const roomPrice = Number(booking.total_room_price_ngn || 0);
               const discountVal = Math.max(0, Math.min(roomPrice, Number(booking.discount_amount_ngn || 0)));
-              const roomBase = Math.max(0, roomPrice - discountVal);
+              const roomSubtotal = Math.max(0, roomPrice - discountVal);
+              const isInclusive = Number(booking.total_amount_ngn || 0) <= (Number(booking.total_room_price_ngn || 0) + Number(booking.total_extras_price_ngn || 0) + Number(booking.caution_fee_ngn || 0) + 10);
+              const roomBase = isInclusive ? roomSubtotal / 1.125 : roomSubtotal;
               const roomVat = Math.round(roomBase * 0.075);
               const roomConsTax = Math.round(roomBase * 0.05);
-              const roomTotalWithTax = roomBase + roomVat + roomConsTax;
+              const roomTotalWithTax = isInclusive ? roomSubtotal : roomBase + roomVat + roomConsTax;
 
               const amountPaidTotal = Number(booking.amount_paid_ngn || 0);
               let remainingPaid = amountPaidTotal;
@@ -623,7 +625,9 @@ const AdminReservations = ({ onUpdate, isFrontOfficeClosed }) => {
           const booking = viewBooking;
           const roomPrice = Number(booking.total_room_price_ngn || 0);
           const discountVal = Math.max(0, Math.min(roomPrice, Number(booking.discount_amount_ngn || 0)));
-          const roomBase = Math.max(0, roomPrice - discountVal);
+          const roomSubtotal = Math.max(0, roomPrice - discountVal);
+          const isInclusive = Number(booking.total_amount_ngn || 0) <= (Number(booking.total_room_price_ngn || 0) + Number(booking.total_extras_price_ngn || 0) + Number(booking.caution_fee_ngn || 0) + 10);
+          const roomBase = isInclusive ? roomSubtotal / 1.125 : roomSubtotal;
           const roomVat = Math.round(roomBase * 0.075);
           const roomConsTax = Math.round(roomBase * 0.05);
           

@@ -516,10 +516,14 @@ const BookingEngine = () => {
       }
     });
 
-    const subtotal = Math.max(0, (roomPrice - discountAmount) + servicesPrice);
-    const vat = Math.round(subtotal * 0.075);
-    const consTax = Math.round(subtotal * 0.05);
-    return Math.round(subtotal + vat + consTax + bookingRules.caution_fee);
+    const roomSubtotal = Math.max(0, roomPrice - discountAmount);
+    
+    // Services remain exclusive of tax
+    const servicesVat = Math.round(servicesPrice * 0.075);
+    const servicesConsTax = Math.round(servicesPrice * 0.05);
+    
+    // roomSubtotal is already inclusive of tax, so we just add services and their taxes, plus caution fee
+    return Math.round(roomSubtotal + servicesPrice + servicesVat + servicesConsTax + bookingRules.caution_fee);
   };
 
   const toggleService = (service) => {
@@ -1236,7 +1240,8 @@ const BookingEngine = () => {
                 }
                 discountVal = Math.max(0, Math.min(roomPrice, discountVal));
               }
-              const roomBase = Math.max(0, roomPrice - discountVal);
+              const roomSubtotal = Math.max(0, roomPrice - discountVal);
+              const roomBase = roomSubtotal / 1.125;
               const roomVat = Math.round(roomBase * 0.075);
               const roomConsTax = Math.round(roomBase * 0.05);
               
@@ -1253,19 +1258,15 @@ const BookingEngine = () => {
                 return { base: acc.base + sBasePrice, vat: acc.vat + sVat, consTax: acc.consTax + sConsTax };
               }, { base: 0, vat: 0, consTax: 0 });
 
-              const roomTotalWithTax = roomBase + roomVat + roomConsTax;
-              const totalVat = roomVat + servicesSummary.vat;
-              const totalConsTax = roomConsTax + servicesSummary.consTax;
-
               const grandTotal = calculateTotal();
               const amountPaid = paymentMethod === 'pay_online' ? grandTotal : (paymentMethod === 'pay_ar_deposit' ? (((grandTotal - bookingRules.caution_fee) * (bookingRules.deposit_percentage / 100)) + bookingRules.caution_fee) : 0);
               let remainingPaid = amountPaid;
 
               // Pay room first
               let roomPaymentStatus = 'unpaid';
-              if (remainingPaid >= roomTotalWithTax) {
+              if (remainingPaid >= roomSubtotal) {
                 roomPaymentStatus = 'paid';
-                remainingPaid -= roomTotalWithTax;
+                remainingPaid -= roomSubtotal;
               } else if (remainingPaid > 0) {
                 roomPaymentStatus = 'partial';
                 remainingPaid = 0;
@@ -1297,16 +1298,16 @@ const BookingEngine = () => {
                   <tr>
                     <td className="py-3 px-4">
                       <p className="font-bold text-black">{selectedRoom.name} ({selectedRoom.type})</p>
-                      <p className="text-gray-500 text-[10px] mt-0.5">Accommodation Charges (Rent + Taxes)</p>
+                      <p className="text-gray-500 text-[10px] mt-0.5">Accommodation Charges (Inclusive of Taxes)</p>
                       <p className="text-[9px] text-gray-400">
-                            Rate: ₦{roomPrice.toLocaleString()} {discountVal > 0 && `| Discount: -₦${discountVal.toLocaleString()}`} | Taxable Base: ₦{roomBase.toLocaleString()} | VAT (7.5%): ₦{roomVat.toLocaleString()} | Ent. Tax (5%): ₦{roomConsTax.toLocaleString()}
+                            Rate: ₦{roomPrice.toLocaleString()} {discountVal > 0 && `| Discount: -₦${discountVal.toLocaleString()}`}
                           </p>
                     </td>
                     <td className="py-3 px-4 text-center">
                       {renderStatusBadge(roomPaymentStatus)}
                     </td>
                     <td className="py-3 px-4 text-right font-medium text-black">
-                      ₦{roomTotalWithTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₦{roomSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   </tr>
                   {activeServices.map(({ service, sData }) => {
