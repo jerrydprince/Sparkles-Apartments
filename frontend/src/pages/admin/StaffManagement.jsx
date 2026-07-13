@@ -120,87 +120,130 @@ const DEFAULT_MODULES = [
   'Dashboard',
   'Dashboard - View Room Grid Matrix',
   'Dashboard - View Operations Statistics',
-
+  
   // Reservations
   'Reservations',
-  'Reservations - Manage Bookings',
+  'Reservations - View Bookings',
+  'Reservations - Create Manual Bookings',
+  'Reservations - Edit Bookings',
+  'Reservations - Cancel Bookings',
   'Reservations - Handle Room Assignments',
-
+  
   // Front Desk
   'Front Desk',
+  'Front Desk - View Dashboard & Availability',
   'Front Desk - Create Booking & Check-in',
+  'Front Desk - Check-out Guests',
   'Front Desk - Override Room Rates & Invoicing',
   'Front Desk - Extend Stay',
   'Front Desk - Waive Balance',
+  'Front Desk - Post Folio Charges',
+  'Front Desk - Transfer Rooms',
+  'Front Desk - Assign/Manage Room Mates',
+  'Front Desk - Settle AR & Prepayment Wallet',
 
   // Housekeeping
   'Housekeeping',
+  'Housekeeping - View Tasks',
   'Housekeeping - Perform Room Cleaning',
   'Housekeeping - Assign Tasks to Staff',
   'Housekeeping - Inspect & Approve Clean Rooms',
+  'Housekeeping - Mark Rooms Out of Order',
 
   // CRM & Guests
   'CRM & Guests',
+  'CRM & Guests - View Guest List',
   'CRM & Guests - Manage Profiles',
   'CRM & Guests - View Guest History',
+  'CRM & Guests - Manage Group Accounts',
 
   // Finance & Billing
   'Finance & Billing',
+  'Finance - View Ledgers',
   'Finance - Manage General Ledgers & Payroll',
   'Finance - Process Refunds & Adjustments',
+  'Finance - Confirm Pending Payments',
+  'Finance - Void Transactions',
 
   // Accounting
   'Accounting',
+  'Accounting - View Cashflow Statement',
+  'Accounting - View P&L Statement',
+  'Accounting - View Balance Sheet',
+  'Accounting - View Tax Reports',
+  'Accounting - View Waivers',
   'Accounting - Settle Ledger',
-  'Accounting - View General Ledger Logs',
+  'Accounting - Export Financial Sheets',
+  'Accounting - View Debtors Ledger',
 
   // Channel Manager
   'Channel Manager',
+  'Channel Manager - View Connected OTAs',
   'Channel Manager - Sync Channels',
   'Channel Manager - Adjust External Rates',
+  'Channel Manager - Disconnect Channels',
 
   // Reports & Analytics
   'Reports & Analytics',
   'Reports & Analytics - View Revenue Reports',
-  'Reports & Analytics - Export Financial Sheets',
+  'Reports & Analytics - View Occupancy Reports',
+  'Reports & Analytics - View Shift Reports',
 
   // Staff & Roles
   'Staff & Roles',
+  'Staff & Roles - View Staff List',
   'Staff & Roles - Onboard Staff',
+  'Staff & Roles - Edit Staff Profiles',
+  'Staff & Roles - Terminate/Suspend Staff',
   'Staff & Roles - Modify Access Policies',
+  'Staff & Roles - Manage Shifts & Schedules',
 
   // Website CMS
   'Website CMS',
+  'Website CMS - View Site Settings',
   'Website CMS - Edit General Pages',
   'Website CMS - Update Banner Announcements',
+  'Website CMS - Update Gallery Images',
 
   // Settings
   'Settings',
+  'Settings - View System Configuration',
   'Settings - Update System Profile',
+  'Settings - Configure Tax Rates',
   'Automations & Alerts',
   'Security & Privacy',
+  'System - Perform Database Wipe',
 
   // Store Keeping
   'Store Keeping',
+  'Store Keeping - View Inventory',
   'Store Keeping - Log Requisitions',
   'Store Keeping - Register & Restock Items',
   'Store Keeping - Approve Outgoing Material Releases',
+  'Store Keeping - Reject Requisitions',
 
   // POS
   'POS',
+  'POS - Access Point of Sale',
   'POS - Process Sales & Suite Charging',
   'POS - Manage Menu Items & Custom Pricing',
+  'POS - Cancel Orders',
+  'POS - Apply Discounts',
 
   // Guest Services
   'Guest Services',
+  'Guest Services - View Service Requests',
   'Guest Services - Request Amenities',
   'Guest Services - Verify Active Orders',
+  'Guest Services - Mark Requests as Completed',
 
   // Laundry
   'Laundry',
+  'Laundry - View Laundry Orders',
   'Laundry - Process Laundry Orders',
   'Laundry - Post Folio Charges',
   'Laundry - Register Walk-in Sales',
+  'Laundry - Manage Laundry Inventory',
 
   // Duty Logs
   'Duty Logs',
@@ -209,22 +252,28 @@ const DEFAULT_MODULES = [
 
   // Lost & Found
   'Lost & Found',
+  'Lost & Found - View Items',
   'Lost & Found - Register Found Items',
   'Lost & Found - Notify Guest & Settle Claims',
   'Lost & Found - Dispose Items',
 
   // Reminders
   'Reminders',
+  'Reminders - View Schedules',
   'Reminders - Create & Edit Schedules',
   'Reminders - Settle Payments & Sync Ledger',
+  'Reminders - Delete Schedules',
 
   // Internal Messaging
   'Internal Messaging',
+  'Internal Messaging - View Messages',
   'Internal Messaging - Broadcast Announcements',
   'Internal Messaging - Send Direct Messages',
+  'Internal Messaging - Delete Messages',
 
   // Monthly Reports
   'Monthly Reports',
+  'Monthly Reports - View Departmental Reports',
   'Monthly Reports - Submit Departmental Report',
   'Monthly Reports - View Performance Analytics',
 
@@ -235,6 +284,7 @@ const DEFAULT_MODULES = [
 
   // Maintenance
   'Maintenance',
+  'Maintenance - View Tickets',
   'Maintenance - Manage Tickets & Fixes',
   'Maintenance - Manage Professionals',
   'Maintenance - Manage Purchases & Payments',
@@ -244,6 +294,8 @@ const DEFAULT_MODULES = [
   'Restaurant Desk',
   'Kitchen Desk',
   'Order History',
+  'Restaurant - Add/Edit Menu',
+  'Restaurant - Cancel Orders',
 
   // Service Portals
   'Service Portals',
@@ -255,9 +307,18 @@ const DEFAULT_MODULES = [
 
   // Halls & Catering
   'Halls & Catering',
+  'Halls & Catering - View Halls',
   'Halls & Catering - Manage Halls',
   'Halls & Catering - Book Halls',
-  'Halls & Catering - Setup Meals Menu'
+  'Halls & Catering - Setup Meals Menu',
+  'Halls & Catering - Cancel Hall Bookings',
+  
+  // Rooms
+  'Rooms',
+  'Rooms - View Room List',
+  'Rooms - Add New Rooms',
+  'Rooms - Edit Room Configuration',
+  'Rooms - Delete Rooms'
 ];
 
 const getRolePermissionDefault = (roleId, permissionName) => {
@@ -1831,6 +1892,46 @@ const AdminStaffManagement = () => {
 
     } catch (e) {
       toast.error(`Failed to update permission: ${e.message}`);
+    }
+  };
+
+  const handleGrantAll = async (roleId, permsArray) => {
+    if (roleId === 'super_admin') return toast.error("Super Admin permissions cannot be restricted.");
+    const toastId = toast.loading("Granting all module permissions...");
+    try {
+      const payload = permsArray.map(m => ({ role: roleId, module: m, has_access: true }));
+      const { error } = await supabase.from('role_permissions').upsert(payload, { onConflict: 'role,module' });
+      if (error) throw error;
+      
+      const newMap = { ...permissionsMap };
+      permsArray.forEach(m => {
+        if (!newMap[m]) newMap[m] = {};
+        newMap[m][roleId] = true;
+      });
+      setPermissionsMap(newMap);
+      toast.success("All permissions granted successfully.", { id: toastId });
+    } catch (e) {
+      toast.error(`Failed to grant permissions: ${e.message}`, { id: toastId });
+    }
+  };
+
+  const handleRevokeAll = async (roleId, permsArray) => {
+    if (roleId === 'super_admin') return toast.error("Super Admin permissions cannot be restricted.");
+    const toastId = toast.loading("Revoking all module permissions...");
+    try {
+      const payload = permsArray.map(m => ({ role: roleId, module: m, has_access: false }));
+      const { error } = await supabase.from('role_permissions').upsert(payload, { onConflict: 'role,module' });
+      if (error) throw error;
+      
+      const newMap = { ...permissionsMap };
+      permsArray.forEach(m => {
+        if (!newMap[m]) newMap[m] = {};
+        newMap[m][roleId] = false;
+      });
+      setPermissionsMap(newMap);
+      toast.success("All permissions revoked successfully.", { id: toastId });
+    } catch (e) {
+      toast.error(`Failed to revoke permissions: ${e.message}`, { id: toastId });
     }
   };
 
@@ -4079,9 +4180,27 @@ const AdminStaffManagement = () => {
                           
                           return (
                             <div key={groupTitle} className="bg-dark-850/60 border border-dark-700/50 p-5 rounded-2xl shadow-md space-y-3.5 animate-fade-in">
-                              <h4 className="text-sm font-extrabold text-brand-400 uppercase tracking-wider border-b border-dark-700/40 pb-2">
-                                {groupTitle}
-                              </h4>
+                              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-dark-700/40 pb-3">
+                                <h4 className="text-sm font-extrabold text-brand-400 uppercase tracking-wider">
+                                  {groupTitle}
+                                </h4>
+                                {!isSuperAdminOrOwner && (
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => handleGrantAll(selectedRole, perms)}
+                                      className="px-2.5 py-1.5 text-[10px] uppercase tracking-wider font-extrabold bg-green-500/10 text-green-400 border border-green-500/20 rounded hover:bg-green-500 hover:text-white transition-all active:scale-95"
+                                    >
+                                      Grant All
+                                    </button>
+                                    <button
+                                      onClick={() => handleRevokeAll(selectedRole, perms)}
+                                      className="px-2.5 py-1.5 text-[10px] uppercase tracking-wider font-extrabold bg-red-500/10 text-red-400 border border-red-500/20 rounded hover:bg-red-500 hover:text-white transition-all active:scale-95"
+                                    >
+                                      Revoke All
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                               
                               <div className="divide-y divide-dark-700/40">
                                 {perms.map(permissionName => {
