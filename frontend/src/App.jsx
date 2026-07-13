@@ -1,5 +1,6 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { initGoogleAds } from './lib/analytics';
 import PublicLayout from './layouts/PublicLayout';
 import AdminLayout from './layouts/AdminLayout';
 import GuestLayout from './layouts/GuestLayout';
@@ -85,6 +86,11 @@ const PageLoader = () => (
 );
 
 function App() {
+  useEffect(() => {
+    // Initialize Google Ads with the ID from environment variables
+    initGoogleAds(import.meta.env.VITE_GOOGLE_ADS_ID);
+  }, []);
+
   return (
     <ErrorBoundary>
       <AuthProvider>

@@ -8,6 +8,7 @@ import {
   Lock, Mail, Phone, User, Calendar, ShieldCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { trackConversion } from '../lib/analytics';
 
 const safeFormatDate = (dateVal, formatStr = 'MMM dd, yyyy') => {
   if (!dateVal) return 'N/A';
@@ -156,6 +157,16 @@ const PaymentSuccess = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!loading && (payment || amountParam)) {
+      const amountPaid = Number(amountParam || payment?.amount || 0);
+      const txId = payment?.transaction_ref || payment?.id || ref;
+      if (amountPaid > 0 && txId) {
+        trackConversion('purchase', amountPaid, 'NGN', txId);
+      }
+    }
+  }, [loading, payment, amountParam, ref]);
 
   const handlePrint = () => {
     window.print();
