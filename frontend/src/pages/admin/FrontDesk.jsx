@@ -2712,6 +2712,18 @@ const AdminFrontDesk = () => {
     }
   };
 
+  const handleCancelPendingCheckoutPayment = async (paymentId) => {
+    if (!window.confirm("Are you sure you want to cancel this pending payment?")) return;
+    try {
+      const { error } = await supabase.from('payments').delete().eq('id', paymentId);
+      if (error) throw error;
+      toast.success('Pending payment cancelled.');
+      setPendingCheckoutPayments(prev => prev.filter(p => p.id !== paymentId));
+    } catch (err) {
+      toast.error('Failed to cancel payment: ' + err.message);
+    }
+  };
+
   const todayStr = format(currentTime || new Date(), 'yyyy-MM-dd');
   const isFrontOfficeClosed = departmentalClosures.some(c => c.department === 'front_office' && c.business_date === todayStr);
 
@@ -4793,9 +4805,20 @@ const AdminFrontDesk = () => {
                               ⏳ Awaiting Finance Confirmation
                             </p>
                             {pendingCheckoutPayments.map(p => (
-                              <p key={p.id} className="text-gray-300 text-[11px] leading-relaxed">
-                                A pending payment of <strong className="text-white font-mono text-xs">₦{p.amount.toLocaleString()}</strong> via <strong className="text-white capitalize text-xs">{p.method === 'bank_transfer' ? 'Bank Transfer' : p.method}</strong> has been logged. Guest checkout is blocked until Finance verifies this payment.
-                              </p>
+                              <div key={p.id} className="flex flex-col gap-2 bg-dark-900/40 p-2 rounded border border-amber-500/10">
+                                <p className="text-gray-300 text-[11px] leading-relaxed">
+                                  A pending payment of <strong className="text-white font-mono text-xs">₦{p.amount.toLocaleString()}</strong> via <strong className="text-white capitalize text-xs">{p.method === 'bank_transfer' ? 'Bank Transfer' : p.method}</strong> has been logged. Guest checkout is blocked until Finance verifies this payment.
+                                </p>
+                                <div className="flex justify-end">
+                                  <button
+                                    disabled={isFrontOfficeClosed}
+                                    onClick={() => handleCancelPendingCheckoutPayment(p.id)}
+                                    className="bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white px-2 py-1 rounded text-[10px] font-bold transition-colors disabled:opacity-40"
+                                  >
+                                    Cancel Payment
+                                  </button>
+                                </div>
+                              </div>
                             ))}
                           </div>
                         ) : (
