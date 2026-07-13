@@ -5769,16 +5769,16 @@ const AdminAccounting = () => {
                   <div className="grid grid-cols-3 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100 text-xs">
                     <div>
                       <span className="text-pure-gray-400 font-semibold uppercase text-[9px] tracking-wider block">GROSS REVENUE</span>
-                      <span className="font-bold text-green-600 text-sm font-mono block">₦{activeReportModal.data.totalRevenue.toLocaleString()}</span>
+                      <span className="font-bold text-green-600 text-sm font-mono block">₦{activeReportModal.data.totalSystemRevenue?.toLocaleString()}</span>
                     </div>
                     <div>
                       <span className="text-pure-gray-400 font-semibold uppercase text-[9px] tracking-wider block">OPERATING EXPENSES</span>
-                      <span className="font-bold text-rose-600 text-sm font-mono block">₦{activeReportModal.data.totalExpenses.toLocaleString()}</span>
+                      <span className="font-bold text-rose-600 text-sm font-mono block">₦{activeReportModal.data.totalExpenses?.toLocaleString()}</span>
                     </div>
                     <div>
                       <span className="text-pure-gray-400 font-semibold uppercase text-[9px] tracking-wider block">NET INCOME</span>
                       <span className={`font-bold text-sm font-mono block ${activeReportModal.data.netProfit >= 0 ? 'text-green-600' : 'text-rose-600'}`}>
-                        ₦{activeReportModal.data.netProfit.toLocaleString()}
+                        ₦{activeReportModal.data.netProfit?.toLocaleString()}
                       </span>
                     </div>
                   </div>
@@ -5834,8 +5834,8 @@ const AdminAccounting = () => {
                           </tr>
                         ))}
                         <tr className="font-bold bg-gray-50 text-pure-black border-t-2 border-gray-200">
-                          <td className="p-2">Total Operating Expenses (B)</td>
-                          <td className="p-2 text-right font-mono text-rose-600">₦{(activeReportModal.data.totalExpenses - activeReportModal.data.taxesCollected).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td className="p-2 text-rose-600 font-bold uppercase tracking-wider text-[10px]">Total Operating Expenses</td>
+                          <td className="p-2 text-right font-mono text-rose-600">₦{Number((activeReportModal.data.totalExpenses || 0) - (activeReportModal.data.taxesCollected || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                         </tr>
                       </tbody>
                     </table>
