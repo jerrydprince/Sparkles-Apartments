@@ -3267,6 +3267,14 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                         ₦{totalConsTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </span>
                     </div>
+                    {Number(activeInvoiceModal.caution_fee || booking.caution_fee_ngn || 0) > 0 && (
+                      <div className="flex justify-between text-amber-500 print:text-amber-600 font-medium">
+                        <span>Refundable Caution Fee</span>
+                        <span>
+                          ₦{Number(activeInvoiceModal.caution_fee || booking.caution_fee_ngn || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between font-bold text-lg border-t border-dark-700 print:border-gray-200 pt-2 text-white print:text-black">
                       <span>Total Due</span>
                       <span>₦{totalAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
