@@ -194,6 +194,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
             total_room_price_ngn,
             total_extras_price_ngn,
             discount_amount_ngn,
+            unlocked_bedrooms,
             profiles (first_name, last_name, phone),
             rooms (name, room_number),
             booking_services (
@@ -3166,6 +3167,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                         <td className="py-4 px-4">
                           <p className="font-bold text-white print:text-black">
                             Accommodation Charges (Rent + Tax) {booking.rooms ? `(${booking.rooms.name} - Room ${booking.rooms.room_number})` : ''}
+                            {booking.unlocked_bedrooms ? ` | Subset: ${booking.unlocked_bedrooms} Bed(s) Unlocked` : ''}
                           </p>
                           <p className="text-gray-400 print:text-gray-500 text-xs mt-0.5">
                             Check-in: {booking.check_in_date || 'N/A'} | Check-out: {booking.check_out_date || 'N/A'} {booking.check_in_date && booking.check_out_date && `| Nights Booked: ${Math.max(1, differenceInDays(new Date(booking.check_out_date), new Date(booking.check_in_date)))}`}

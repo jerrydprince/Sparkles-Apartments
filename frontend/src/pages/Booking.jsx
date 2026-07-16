@@ -122,7 +122,7 @@ const BookingEngine = () => {
   const [hallParticipants, setHallParticipants] = useState(10);
 
   const [guestForm, setGuestForm] = useState({
-    firstName: '', lastName: '', email: '', phone: '', specialRequests: '', purpose: 'Leisure', organizationName: ''
+    firstName: '', lastName: '', email: '', phone: '', specialRequests: '', purpose: 'Leisure', organizationName: '', unlockedBedrooms: 'full'
   });
 
   useEffect(() => {
@@ -312,7 +312,7 @@ const BookingEngine = () => {
 
       // Execute all queries in parallel to drastically improve loading speed
       const [roomsRes, rulesRes, overlappingRes, housekeepingRes] = await Promise.all([
-        supabase.from('rooms').select('id, room_number, name, type, capacity, size_sqm, base_price_ngn, image_url, status, amenities, min_stay_days, max_stay_days, allowed_check_in_days, allowed_check_out_days'),
+        supabase.from('rooms').select('id, room_number, name, type, capacity, size_sqm, base_price_ngn, image_url, status, amenities, min_stay_days, max_stay_days, allowed_check_in_days, allowed_check_out_days, description'),
         supabase.from('pricing_rules').select('*').eq('is_active', true),
         supabase.rpc('get_booked_room_ids', {
           req_start_date: checkInDateStr,
@@ -324,7 +324,21 @@ const BookingEngine = () => {
       if (roomsRes.error) throw roomsRes.error;
       if (overlappingRes.error) throw overlappingRes.error;
 
-      const roomsData = roomsRes.data || [];
+      const roomsData = (roomsRes.data || []).map(r => {
+        let tier_pricing = {};
+        try {
+          if (r.description) {
+            const parsed = JSON.parse(r.description);
+            if (parsed && typeof parsed.text === 'string' && parsed.text.trim().startsWith('{')) {
+              const nested = JSON.parse(parsed.text);
+              if (nested && nested.tier_pricing) tier_pricing = nested.tier_pricing;
+            } else if (parsed && parsed.tier_pricing) {
+              tier_pricing = parsed.tier_pricing;
+            }
+          }
+        } catch(e) {}
+        return { ...r, tier_pricing };
+      });
       const rules = rulesRes.data || [];
       const overlappingBookings = overlappingRes.data || [];
       const housekeepingTasks = housekeepingRes.data || [];
@@ -390,6 +404,10 @@ const BookingEngine = () => {
       let currentDate = addDays(dateRange[0].startDate, i);
       let dateString = format(currentDate, 'yyyy-MM-dd');
       let nightPrice = Number(room.base_price_ngn);
+      
+      if (guestForm.unlockedBedrooms && guestForm.unlockedBedrooms !== 'full' && room.tier_pricing && room.tier_pricing[guestForm.unlockedBedrooms]) {
+        nightPrice = Number(room.tier_pricing[guestForm.unlockedBedrooms]);
+      }
 
       // 1. Check for manual bulk override for this specific date
       const manualOverride = pricingRules.find(r => r.type === 'manual_override' && (!r.room_id || r.room_id === room.id) && dateString >= r.start_date && dateString <= r.end_date);
@@ -981,7 +999,8 @@ const BookingEngine = () => {
             total_extras_price_ngn: calculateTotal() - (roomPriceDetails.totalRoomPrice - calculatedDiscount) - bookingRules.caution_fee,
             discount_amount_ngn: calculatedDiscount,
             caution_fee_ngn: bookingRules.caution_fee,
-            special_requests: guestForm.specialRequests || ''
+            special_requests: guestForm.specialRequests || '',
+            unlocked_bedrooms: guestForm.unlockedBedrooms && guestForm.unlockedBedrooms !== 'full' ? parseInt(guestForm.unlockedBedrooms) : null
           })
           .eq('booking_reference', pendingBookingRef.current)
           .select()
@@ -1011,7 +1030,8 @@ const BookingEngine = () => {
           caution_fee_ngn: bookingRules.caution_fee,
           amount_paid_ngn: 0,
           payment_status: 'unpaid',
-          special_requests: guestForm.specialRequests || ''
+          special_requests: guestForm.specialRequests || '',
+          unlocked_bedrooms: guestForm.unlockedBedrooms && guestForm.unlockedBedrooms !== 'full' ? parseInt(guestForm.unlockedBedrooms) : null
         }]).select().single();
 
         if (bookingError) throw bookingError;
@@ -2073,6 +2093,26 @@ const BookingEngine = () => {
                           ))}
                         </div>
                       </div>
+
+                      {/* Subset Bedroom Selection if Tier Pricing is Available */}
+                      {selectedRoom && selectedRoom.tier_pricing && Object.keys(selectedRoom.tier_pricing).length > 0 && (
+                        <div className="mb-10 pb-10 border-b border-dark-700">
+                          <h4 className="text-lg font-medium mb-2 text-gold-400 flex items-center gap-2">
+                            Subset Bedroom Selection
+                          </h4>
+                          <p className="text-sm text-gray-400 mb-4">You can unlock fewer bedrooms for a discounted nightly rate. Unbooked rooms in the apartment will remain locked.</p>
+                          <select 
+                            value={guestForm.unlockedBedrooms} 
+                            onChange={e => setGuestForm({...guestForm, unlockedBedrooms: e.target.value})} 
+                            className="w-full bg-dark-900 border border-gold-500/50 text-white p-4 rounded-lg outline-none focus:border-gold-500"
+                          >
+                            <option value="full">Full Apartment / Base Price (₦{Number(selectedRoom.base_price_ngn).toLocaleString()})</option>
+                            {Object.entries(selectedRoom.tier_pricing).map(([beds, price]) => (
+                              <option key={beds} value={beds}>{beds} Bedroom(s) - ₦{Number(price).toLocaleString()}/night</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
 
                       {user && (
                         <div className="mb-6 p-4 bg-dark-900/60 border border-dark-700 rounded-xl flex items-center gap-3">

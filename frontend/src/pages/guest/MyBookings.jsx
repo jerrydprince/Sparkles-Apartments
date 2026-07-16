@@ -66,7 +66,7 @@ const MyBookings = () => {
     try {
       const { data, error } = await supabase
         .from('bookings')
-        .select('id, booking_reference, check_in_date, check_out_date, created_at, status, payment_status, total_room_price_ngn, total_extras_price_ngn, total_amount_ngn, amount_paid_ngn, discount_amount_ngn, guest_name, guest_email, guest_phone, rooms(name, room_number), booking_services(id, quantity, total_price_ngn, unit_price_ngn, payment_status, status, services(name, tax_inclusive))')
+        .select('id, booking_reference, check_in_date, check_out_date, created_at, status, payment_status, total_room_price_ngn, total_extras_price_ngn, total_amount_ngn, amount_paid_ngn, discount_amount_ngn, guest_name, guest_email, guest_phone, unlocked_bedrooms, rooms(name, room_number), booking_services(id, quantity, total_price_ngn, unit_price_ngn, payment_status, status, services(name, tax_inclusive))')
         .or(`guest_id.eq.${user.id},guest_email.eq.${user.email}`)
         .order('check_in_date', { ascending: false });
 
@@ -360,7 +360,7 @@ const MyBookings = () => {
                     <tr>
                       <td className="py-3 px-4">
                         <p className="font-bold text-black">{booking.rooms?.name || 'Luxury Room Stay'} (Room {booking.rooms?.room_number})</p>
-                        <p className="text-gray-500 text-[10px] mt-0.5">Accommodation Charges (Rent + Tax)</p>
+                        <p className="text-gray-500 text-[10px] mt-0.5">Accommodation Charges (Rent + Tax) {booking.unlocked_bedrooms ? `| Subset: ${booking.unlocked_bedrooms} Bed(s) Unlocked` : ''}</p>
                           <p className="text-[9px] text-gray-400">
                             Rate: ₦{roomPrice.toLocaleString()} {discount > 0 && `| Discount: -₦${discount.toLocaleString()}`} | Taxable Base: ₦{roomBase.toLocaleString()} | VAT (7.5%): ₦{roomVat.toLocaleString()} | Ent. Tax (5%): ₦{roomConsTax.toLocaleString()}
                           </p>

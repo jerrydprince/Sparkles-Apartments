@@ -7099,7 +7099,10 @@ const AdminAccounting = () => {
                           return (
                             <tr key={`g-book-${bIdx}`} className="hover:bg-dark-700/10">
                               <td className="p-3 font-mono font-bold text-white">{b.booking_reference}</td>
-                              <td className="p-3 font-semibold text-gray-300">{b.guest_name}</td>
+                              <td className="p-3 font-semibold text-gray-300">
+                                {b.guest_name}
+                                {b.unlocked_bedrooms && <span className="block text-[10px] text-gray-400">({b.unlocked_bedrooms} Beds Unlocked)</span>}
+                              </td>
                               <td className="p-3 font-mono text-gray-400">{b.check_in_date} to {b.check_out_date}</td>
                               <td className="p-3 font-mono font-bold text-gray-300">₦{total.toLocaleString()}</td>
                               <td className="p-3 font-mono font-bold text-green-400">₦{Number(b.amount_paid_ngn || 0).toLocaleString()}</td>

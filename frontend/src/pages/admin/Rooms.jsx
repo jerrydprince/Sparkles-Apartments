@@ -61,7 +61,8 @@ const AdminRooms = () => {
     min_stay_days: 1, max_stay_days: 30,
     allowed_check_in_days: [0, 1, 2, 3, 4, 5, 6],
     allowed_check_out_days: [0, 1, 2, 3, 4, 5, 6],
-    pricing_model: 'per_night', base_guests: 2
+    pricing_model: 'per_night', base_guests: 2,
+    tier_pricing: {}
   });
 
   const [isBulkAdd, setIsBulkAdd] = useState(false);
@@ -338,7 +339,8 @@ const AdminRooms = () => {
           max_stay_days: fullRoom.max_stay_days || 30,
           allowed_check_in_days: fullRoom.allowed_check_in_days || [0, 1, 2, 3, 4, 5, 6],
           allowed_check_out_days: fullRoom.allowed_check_out_days || [0, 1, 2, 3, 4, 5, 6],
-          sub_category: extended.sub_category || ''
+          sub_category: extended.sub_category || '',
+          tier_pricing: extended.tier_pricing || {}
         });
         toast.dismiss(loadingToastId);
         setIsRoomModalOpen(true);
@@ -387,7 +389,10 @@ const AdminRooms = () => {
         images: newRoom.images,
         video_url: newRoom.video_url,
         bed_configuration: newRoom.bed_configuration,
-        sub_category: newRoom.sub_category || ''
+        sub_category: newRoom.sub_category || '',
+        pricing_model: newRoom.pricing_model || 'per_night',
+        base_guests: newRoom.base_guests || 2,
+        tier_pricing: newRoom.tier_pricing || {}
       })
     });
 
@@ -1212,6 +1217,86 @@ const AdminRooms = () => {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-4">
+                  {newRoom.type && (newRoom.type.toLowerCase().includes('flat') || newRoom.type.toLowerCase().includes('apartment')) && (
+                <div className="col-span-2 bg-dark-900/50 p-4 border border-dark-700 rounded-lg space-y-4">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Sub Category (Optional)</label>
+                    <input type="text" value={newRoom.sub_category || ''} onChange={e => setNewRoom({...newRoom, sub_category: e.target.value})} className="w-full bg-dark-900 border border-dark-700 p-2 text-white outline-none focus:border-gold-500" placeholder="e.g. 2 Bedroom, 3 Bedroom" />
+                  </div>
+                  
+                  <div className="border-t border-dark-700/50 pt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-bold text-white">Subset Bedroom Pricing Tiers (Optional)</label>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          const num = Object.keys(newRoom.tier_pricing || {}).length + 1;
+                          setNewRoom({
+                            ...newRoom, 
+                            tier_pricing: { ...newRoom.tier_pricing, [num]: 0 }
+                          });
+                        }}
+                        className="text-xs bg-dark-700 hover:bg-dark-600 px-2 py-1 rounded text-white flex items-center gap-1"
+                      >
+                        <Plus size={12}/> Add Tier
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-400 mb-3">Define discounted prices when a guest books fewer bedrooms than the total capacity. The remaining rooms will be locked.</p>
+                    
+                    {Object.keys(newRoom.tier_pricing || {}).length > 0 ? (
+                      <div className="space-y-2">
+                        {Object.entries(newRoom.tier_pricing || {}).map(([bedrooms, price]) => (
+                          <div key={bedrooms} className="flex items-center gap-2">
+                            <div className="flex-1 flex items-center bg-dark-900 border border-dark-700 rounded px-2">
+                              <span className="text-xs text-gray-500 mr-2">Bedrooms:</span>
+                              <input 
+                                type="number" 
+                                value={bedrooms} 
+                                onChange={e => {
+                                  const newTiers = { ...newRoom.tier_pricing };
+                                  const val = e.target.value;
+                                  newTiers[val] = newTiers[bedrooms];
+                                  delete newTiers[bedrooms];
+                                  setNewRoom({...newRoom, tier_pricing: newTiers});
+                                }} 
+                                className="bg-transparent w-full p-2 text-white outline-none focus:border-gold-500" 
+                              />
+                            </div>
+                            <div className="flex-1 flex items-center bg-dark-900 border border-dark-700 rounded px-2">
+                              <span className="text-xs text-gray-500 mr-2">₦</span>
+                              <input 
+                                type="number" 
+                                value={price} 
+                                onChange={e => {
+                                  setNewRoom({
+                                    ...newRoom, 
+                                    tier_pricing: { ...newRoom.tier_pricing, [bedrooms]: Number(e.target.value) }
+                                  });
+                                }} 
+                                className="bg-transparent w-full p-2 text-white outline-none focus:border-gold-500" 
+                                placeholder="Price"
+                              />
+                            </div>
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                const newTiers = { ...newRoom.tier_pricing };
+                                delete newTiers[bedrooms];
+                                setNewRoom({...newRoom, tier_pricing: newTiers});
+                              }}
+                              className="bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white p-2 rounded transition-colors"
+                            >
+                              <X size={16}/>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-500 italic p-2 bg-dark-900 rounded border border-dark-800 text-center">No tiers added. Booking will always use the full base price.</div>
+                    )}
+                  </div>
+                </div>
+              )}
                   <div>
                     <label className="block text-sm text-gray-400 mb-1">Room Number / Identifier</label>
                     <input type="text" required value={newRoom.room_number} onChange={e => setNewRoom({...newRoom, room_number: e.target.value})} className="w-full bg-dark-900 border border-dark-700 p-2 text-white outline-none focus:border-gold-500" placeholder="e.g. 101 or Penthouse A" />

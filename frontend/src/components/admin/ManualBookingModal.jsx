@@ -334,8 +334,25 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
   }, [newBooking.checkIn, newBooking.checkOut, isOpen]);
 
   const checkAvailability = async () => {
-    const { data: rooms } = await supabase.from('rooms').select('id, name, room_number, base_price_ngn');
-    if (!rooms) return setAvailableRooms([]);
+    const { data: rawRooms } = await supabase.from('rooms').select('id, name, room_number, base_price_ngn, description');
+    if (!rawRooms) return setAvailableRooms([]);
+    
+    // Parse tier_pricing from description
+    const rooms = rawRooms.map(r => {
+      let tier_pricing = {};
+      try {
+        if (r.description) {
+          const parsed = JSON.parse(r.description);
+          if (parsed && typeof parsed.text === 'string' && parsed.text.trim().startsWith('{')) {
+            const nested = JSON.parse(parsed.text);
+            if (nested && nested.tier_pricing) tier_pricing = nested.tier_pricing;
+          } else if (parsed && parsed.tier_pricing) {
+            tier_pricing = parsed.tier_pricing;
+          }
+        }
+      } catch(e) {}
+      return { ...r, tier_pricing };
+    });
 
     const { data: bookedRooms, error: queryError } = await supabase.rpc('get_booked_room_ids', {
       req_start_date: newBooking.checkIn,
@@ -387,9 +404,16 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
       const end = new Date(newBooking.checkOut);
       const nights = Math.max(1, differenceInDays(end, start));
 
+      // Handle Subset Bedroom Pricing
+      let baseRate = Number(room.base_price_ngn);
+      if (newBooking.unlockedBedrooms && newBooking.unlockedBedrooms !== 'full' && room.tier_pricing && room.tier_pricing[newBooking.unlockedBedrooms]) {
+        baseRate = Number(room.tier_pricing[newBooking.unlockedBedrooms]);
+      }
+      
+      let roomTotal = baseRate * nights;
+
       // Purpose of Stay Pricing Adjustment
       const adjustment = purposeAdjustments[newBooking.purpose];
-      let roomTotal = Number(room.base_price_ngn) * nights;
       if (adjustment) {
         if (typeof adjustment === 'object' && adjustment !== null) {
           if (adjustment.type === 'percentage') {
@@ -452,7 +476,7 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
           totalAmount: finalAmount + cautionFee 
         }));
     }
-  }, [newBooking.roomId, newBooking.checkIn, newBooking.checkOut, newBooking.purpose, selectedServices, availableRooms, services, foodServices, discountType, discountValue, purposeAdjustments, cautionFee]);
+  }, [newBooking.roomId, newBooking.checkIn, newBooking.checkOut, newBooking.purpose, newBooking.unlockedBedrooms, selectedServices, availableRooms, services, foodServices, discountType, discountValue, purposeAdjustments, cautionFee]);
 
   const toggleService = (serviceId) => {
     const exists = selectedServices.find(s => s.service_id === serviceId);
@@ -585,7 +609,8 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
         booking_reference: 'MAN-' + Math.random().toString(36).substring(2, 8).toUpperCase(),
         discount_amount_ngn: savedDiscountAmount,
         group_account_id: selectedGroupId || null,
-        bill_to_group: billToGroup
+        bill_to_group: billToGroup,
+        unlocked_bedrooms: newBooking.unlockedBedrooms && newBooking.unlockedBedrooms !== 'full' ? parseInt(newBooking.unlockedBedrooms) : null
       }]).select().single();
 
       if (bookingError) throw bookingError;
@@ -718,11 +743,36 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm font-medium text-gray-400 mb-1">Select Room</label>
-                  <select required value={newBooking.roomId} onChange={e => setNewBooking({...newBooking, roomId: e.target.value})} className="w-full bg-dark-800 border border-dark-700 rounded p-2.5 text-white outline-none focus:border-brand-500 transition-colors">
+                  <select required value={newBooking.roomId} onChange={e => {
+                    const r = availableRooms.find(rm => rm.id === e.target.value);
+                    setNewBooking({...newBooking, roomId: e.target.value, unlockedBedrooms: r && r.tier_pricing && Object.keys(r.tier_pricing).length > 0 ? '' : 'full'});
+                  }} className="w-full bg-dark-800 border border-dark-700 rounded p-2.5 text-white outline-none focus:border-brand-500 transition-colors">
                     <option value="">-- Choose available room --</option>
                     {availableRooms.map(r => <option key={r.id} value={r.id}>{r.room_number} - {r.name} (₦{Number(r.base_price_ngn).toLocaleString()}/night)</option>)}
                   </select>
                 </div>
+                
+                {newBooking.roomId && (() => {
+                  const selectedRoom = availableRooms.find(r => r.id === newBooking.roomId);
+                  if (selectedRoom && selectedRoom.tier_pricing && Object.keys(selectedRoom.tier_pricing).length > 0) {
+                    return (
+                      <div className="col-span-2 bg-dark-900 border border-brand-500/30 rounded p-3 mt-2">
+                        <label className="block text-sm font-medium text-brand-400 mb-2 flex items-center gap-2">
+                          Bedrooms to Unlock (Subset Booking)
+                        </label>
+                        <select required value={newBooking.unlockedBedrooms} onChange={e => setNewBooking({...newBooking, unlockedBedrooms: e.target.value})} className="w-full bg-dark-800 border border-brand-500/50 rounded p-2 text-white outline-none focus:border-brand-500 transition-colors">
+                          <option value="">-- Select bedrooms needed --</option>
+                          <option value="full">Full Apartment / Base Price (₦{Number(selectedRoom.base_price_ngn).toLocaleString()})</option>
+                          {Object.entries(selectedRoom.tier_pricing).map(([beds, price]) => (
+                            <option key={beds} value={beds}>{beds} Bedroom(s) - ₦{Number(price).toLocaleString()}/night</option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-gray-400 mt-2">Selecting fewer bedrooms unlocks a discounted tier. Unbooked rooms will remain locked.</p>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             </div>
 

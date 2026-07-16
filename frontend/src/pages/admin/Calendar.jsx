@@ -220,7 +220,7 @@ const AdminCalendar = () => {
   const moveEvent = async ({ event, start, end, resourceId }) => {
     // Optimistic UI update
     const updatedEvents = events.map(e => 
-      e.id === event.id ? { ...e, start, end, resourceId } : e
+      e.id === event.id ? { ...e, start, end, resourceId, ...(e.status === 'no_show' ? { status: 'confirmed' } : {}) } : e
     );
     setEvents(updatedEvents);
 
@@ -229,7 +229,8 @@ const AdminCalendar = () => {
       .update({
         check_in_date: moment(start).format('YYYY-MM-DD'),
         check_out_date: moment(end).format('YYYY-MM-DD'),
-        room_id: resourceId
+        room_id: resourceId,
+        ...(event.status === 'no_show' ? { status: 'confirmed' } : {})
       })
       .eq('id', event.id);
 
@@ -243,7 +244,7 @@ const AdminCalendar = () => {
 
   const resizeEvent = async ({ event, start, end }) => {
     const updatedEvents = events.map(e => 
-      e.id === event.id ? { ...e, start, end } : e
+      e.id === event.id ? { ...e, start, end, ...(e.status === 'no_show' ? { status: 'confirmed' } : {}) } : e
     );
     setEvents(updatedEvents);
 
@@ -251,7 +252,8 @@ const AdminCalendar = () => {
       .from('bookings')
       .update({
         check_in_date: moment(start).format('YYYY-MM-DD'),
-        check_out_date: moment(end).format('YYYY-MM-DD')
+        check_out_date: moment(end).format('YYYY-MM-DD'),
+        ...(event.status === 'no_show' ? { status: 'confirmed' } : {})
       })
       .eq('id', event.id);
 
@@ -426,6 +428,14 @@ const AdminCalendar = () => {
                 <span className="text-gray-400">Reference:</span>
                 <span className="font-mono text-gold-500 font-semibold">{selectedEvent.booking.booking_reference}</span>
               </div>
+              {selectedEvent.booking.unlocked_bedrooms && (
+                <div className="flex justify-between py-1 border-b border-dark-700/50">
+                  <span className="text-gray-400">Subset Booking:</span>
+                  <span className="font-semibold text-brand-400">
+                    {selectedEvent.booking.unlocked_bedrooms} Bedroom(s) Unlocked
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between py-1 border-b border-dark-700/50">
                 <span className="text-gray-400">Room:</span>
                 <span className="font-semibold text-white">

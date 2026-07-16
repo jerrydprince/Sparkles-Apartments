@@ -901,7 +901,18 @@ const AdminFrontDesk = () => {
         setHousekeepingTasks(hTasks);
         setMaintenanceTickets(mTickets);
         setServiceRequests(sRequests);
-        setNoShowBookings(noShowsRes.data || []);
+        const rawNoShows = noShowsRes.data || [];
+        const activeGuestIds = currentlyInHouse.map(b => b.guest_id).filter(Boolean);
+        const activeCrmGuestIds = currentlyInHouse.map(b => b.crm_guest_id).filter(Boolean);
+        
+        const filteredNoShows = rawNoShows.filter(ns => {
+          if (ns.guest_id && activeGuestIds.includes(ns.guest_id)) return false;
+          if (ns.crm_guest_id && activeCrmGuestIds.includes(ns.crm_guest_id)) return false;
+          if (ns.guest_name && currentlyInHouse.some(b => b.guest_name?.toLowerCase() === ns.guest_name?.toLowerCase())) return false;
+          return true;
+        });
+
+        setNoShowBookings(filteredNoShows);
         
         const lateCheckouts = (lateCheckoutsRes?.data || []).filter(item => 
           item.services?.name?.toLowerCase()?.includes('late checkout') ||
@@ -2439,7 +2450,7 @@ const AdminFrontDesk = () => {
       toast.success('Stay extended successfully!', { id: toastId });
       setActiveExtendStay(null);
       setNewExtendCheckoutDate('');
-      fetchCalendarData();
+      fetchFrontDeskData();
     } catch (err) {
       toast.error(err.message, { id: toastId });
     } finally {
@@ -2536,7 +2547,7 @@ const AdminFrontDesk = () => {
 
       toast.success('Balance waived and Checkout complete!', { id: toastId });
       setActiveCheckOut(null);
-      fetchCalendarData();
+      fetchFrontDeskData();
     } catch (err) {
       toast.error(`Checkout waiver failed: ${err.message}`, { id: toastId });
       console.error(err);
@@ -3427,7 +3438,7 @@ const AdminFrontDesk = () => {
                           if (badge) return badge;
                           return (
                             <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                              Occupied
+                              Occupied {activeBooking?.unlocked_bedrooms ? `(${activeBooking.unlocked_bedrooms} beds)` : ''}
                             </span>
                           );
                         })()
@@ -5012,17 +5023,35 @@ const AdminFrontDesk = () => {
                 </div>
               </div>
 
-              {/* Action 1: Mark No-Show Only (if not already no-show) */}
-              {activeNoShowModal.status !== 'no_show' && (
-                <div className="bg-dark-900/20 border border-dark-850 p-4 rounded-xl space-y-3">
-                  <p className="text-xs text-gray-400">If the guest will not arrive and you only want to release the room to available inventory without rebooking:</p>
+              {/* No-show & Rebook controls */}
+              {!showRebookForm && (
+                <div className="flex gap-2 pt-2 border-t border-dark-700/60">
+                  {activeNoShowModal.status !== 'no_show' && (
+                    <button 
+                      className="flex-1 bg-dark-600 hover:bg-dark-500 text-white font-medium py-2 px-4 rounded-lg transition-colors border border-dark-500 text-sm"
+                      onClick={() => handleMarkAsNoShowOnly(activeNoShowModal)}
+                      disabled={rebookProcessing}
+                    >
+                      Mark as No-Show & Release Room
+                    </button>
+                  )}
                   <button 
-                    type="button"
+                    className="flex-1 bg-gold-600 hover:bg-gold-500 text-dark-900 font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-gold-500/20 text-sm"
                     disabled={rebookProcessing}
-                    onClick={() => handleMarkAsNoShowOnly(activeNoShowModal)}
-                    className="bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white px-4 py-2 text-xs font-bold rounded border border-red-500/20 transition-all flex items-center gap-1.5 active:scale-[0.98] disabled:opacity-50"
+                    onClick={() => setShowRebookForm(true)}
                   >
-                    <AlertTriangle size={13} /> Mark as No-Show & Release Room
+                    {activeNoShowModal.status === 'no_show' ? 'Rebook Guest' : 'Mark as No-Show & Rebook'}
+                  </button>
+                  <button 
+                    className="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-green-500/20 text-sm"
+                    disabled={rebookProcessing}
+                    onClick={() => {
+                      const guestToCheckIn = { ...activeNoShowModal };
+                      setActiveNoShowModal(null);
+                      setActiveCheckIn(guestToCheckIn);
+                    }}
+                  >
+                    Check-In Late Guest
                   </button>
                 </div>
               )}
