@@ -1264,7 +1264,6 @@ const BookingEngine = () => {
               const roomBase = roomSubtotal / 1.125;
               const roomVat = Math.round(roomBase * 0.075);
               const roomConsTax = Math.round(roomBase * 0.05);
-              
               const activeServices = selectedServices.map(sData => ({
                 service: [...services, ...foodServices].find(s => s.id === sData.service_id),
                 sData
@@ -1394,12 +1393,30 @@ const BookingEngine = () => {
             discountVal = Math.max(0, Math.min(roomPrice, discountVal));
           }
 
+          const roomSubtotal = Math.max(0, roomPrice - discountVal);
+          const roomBase = roomSubtotal / 1.125;
+          const roomVat = Math.round(roomBase * 0.075);
+          const roomConsTax = Math.round(roomBase * 0.05);
+
+          let servicesPrice = 0;
+          const allAvailableServices = [...services, ...foodServices];
+          selectedServices.forEach(sData => {
+            const service = allAvailableServices.find(s => s.id === sData.service_id);
+            if (service) servicesPrice += getServicePrice(service, sData.quantity);
+          });
+          const servicesVat = Math.round(servicesPrice * 0.075);
+          const servicesConsTax = Math.round(servicesPrice * 0.05);
+          
+          const totalVat = roomVat + servicesVat;
+          const totalConsTax = roomConsTax + servicesConsTax;
+          const baseSubtotal = grandTotal - totalVat - totalConsTax;
+
           return (
             <div className="flex justify-end text-xs">
               <div className="w-64 space-y-2 border-t pt-4">
                 <div className="flex justify-between text-gray-600">
-                  <span>Subtotal</span>
-                  <span>₦{(grandTotal + discountVal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span>Subtotal (Base)</span>
+                  <span>₦{(baseSubtotal + discountVal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
                 {discountVal > 0 && (
                   <div className="flex justify-between text-yellow-600 font-bold">
@@ -1407,6 +1424,14 @@ const BookingEngine = () => {
                     <span>-₦{discountVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 )}
+                <div className="flex justify-between text-gray-500">
+                  <span>VAT (7.5%)</span>
+                  <span>₦{totalVat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between text-gray-500">
+                  <span>Ent. Tax (5%)</span>
+                  <span>₦{totalConsTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
                 <div className="flex justify-between font-black text-sm border-t pt-2 text-black">
                   <span>Total Due</span>
                   <span>₦{grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>

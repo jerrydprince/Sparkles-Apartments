@@ -1842,7 +1842,8 @@ const AdminFrontDesk = () => {
         .eq('booking_id', activeCheckOut.id);
 
       // Release Room
-      await supabase.from('rooms').update({ status: 'available' }).eq('id', activeCheckOut.room_id);
+      const { error: roomUpdateError } = await supabase.from('rooms').update({ status: 'available' }).eq('id', activeCheckOut.room_id);
+      if (roomUpdateError) throw roomUpdateError;
       
       // Auto-schedule housekeeping task
       await supabase.from('housekeeping_tasks').insert([{

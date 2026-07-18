@@ -94,10 +94,10 @@ const RoomDetails = () => {
   const images = extended.images && extended.images.length > 0 ? extended.images : [room.image_url];
   const videoUrl = extended.video_url;
   const discount = extended.discount_percent || 0;
-  const tax = extended.tax_percent || 7.5;
+  const tax = extended.tax_percent || 12.5;
   const basePrice = Number(room.base_price_ngn);
   const discountedPrice = basePrice - (basePrice * (discount / 100));
-  const finalPrice = discountedPrice + (discountedPrice * (tax / 100));
+  const finalPrice = discountedPrice;
 
   return (
     <div className="pt-24 min-h-screen bg-dark-900 pb-24">

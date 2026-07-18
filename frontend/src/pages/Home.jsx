@@ -342,7 +342,7 @@ const Home = () => {
                     </div>
 
                     <div className="absolute top-4 right-4 bg-dark-900/90 backdrop-blur-sm px-4 py-2 text-gold-500 font-semibold border border-dark-700 rounded-sm">
-                      ₦{Number(room.base_price_ngn).toLocaleString()} <span className="text-sm text-gray-400 font-normal">/ night</span>
+                      ₦{(Number(room.base_price_ngn)).toLocaleString()} <span className="text-sm text-gray-400 font-normal">/ night</span>
                     </div>
                   </div>
                   <div className="p-6 flex flex-col flex-grow">

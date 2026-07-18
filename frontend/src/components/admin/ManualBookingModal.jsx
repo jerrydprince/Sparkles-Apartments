@@ -460,15 +460,18 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
       const servicesTaxRate = 7.5;
       
       const roomTotalNet = Math.max(0, roomTotal - calculatedDiscount);
-      const roomVat = 0; // Room tax is now inclusive in base price
-      const servicesVat = Math.round(servicesTotal * (servicesTaxRate / 100));
+      const roomBase = roomTotalNet / 1.125;
+      const roomVat = Math.round(roomBase * 0.075);
+      const roomConsTax = Math.round(roomBase * 0.05);
       
-      const subtotal = roomTotalNet + servicesTotal;
-      const vatAmount = roomVat + servicesVat;
-      const finalAmount = subtotal + vatAmount; // roomTotalNet already has room tax
+      const servicesVat = Math.round(servicesTotal * 0.075);
+      const servicesConsTax = Math.round(servicesTotal * 0.05);
+      
+      // roomTotalNet is inclusive, so we just add services and their taxes
+      const finalAmount = roomTotalNet + servicesTotal + servicesVat + servicesConsTax; 
 
-      setRoomCostWithVat(roomTotalNet); // No longer adding roomVat since it's inclusive
-      setServicesCostWithVat(servicesTotal + servicesVat);
+      setRoomCostWithVat(roomTotalNet);
+      setServicesCostWithVat(servicesTotal + servicesVat + servicesConsTax);
       
         setNewBooking(prev => ({ 
           ...prev, 
