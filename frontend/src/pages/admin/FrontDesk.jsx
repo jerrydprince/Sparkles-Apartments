@@ -2725,14 +2725,27 @@ const AdminFrontDesk = () => {
   };
 
   const handleCancelPendingCheckoutPayment = async (paymentId) => {
-    if (!window.confirm("Are you sure you want to cancel this pending payment?")) return;
     try {
       const { error } = await supabase.from('payments').delete().eq('id', paymentId);
       if (error) throw error;
-      toast.success('Pending payment cancelled.');
+      toast.success('Payment unlogged.');
+      // Details refetched by activeCheckOut effect
       setPendingCheckoutPayments(prev => prev.filter(p => p.id !== paymentId));
     } catch (err) {
-      toast.error('Failed to cancel payment: ' + err.message);
+      console.error(err);
+      toast.error('Failed to unlog payment');
+    }
+  };
+
+  const handleForceClearGhostRoom = async (roomId) => {
+    try {
+      const { error } = await supabase.from('rooms').update({ status: 'available' }).eq('id', roomId);
+      if (error) throw error;
+      toast.success('Room cleared successfully.');
+      fetchFrontDeskData();
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed! You MUST run update_rooms_rls.sql in Supabase to fix this permanently.');
     }
   };
 
@@ -3515,7 +3528,15 @@ const AdminFrontDesk = () => {
                             )}
                           </div>
                         ) : (
-                          <p className="text-xs text-gray-400 italic">Occupied (Syncing...)</p>
+                          <div className="flex flex-col items-center mt-1">
+                            <p className="text-xs text-red-400 font-medium">Occupied (Syncing Error)</p>
+                            <button
+                              onClick={() => handleForceClearGhostRoom(room.id)}
+                              className="mt-2 text-[10px] bg-red-600/20 hover:bg-red-600/40 text-red-300 px-3 py-1 rounded transition-colors border border-red-500/30"
+                            >
+                              Force Clear
+                            </button>
+                          </div>
                         )
                       ) : (
                         <div className="space-y-1.5 text-xs">

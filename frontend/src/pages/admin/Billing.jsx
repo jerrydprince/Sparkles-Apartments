@@ -3110,10 +3110,12 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                   const booking = activeInvoiceModal.bookings || {};
                   const roomPrice = Number(booking.total_room_price_ngn || activeInvoiceModal.subtotal || 0);
                   const discountVal = Number(booking.discount_amount_ngn || 0);
-                  const roomBase = Math.max(0, roomPrice - discountVal);
+                  const roomSubtotal = Math.max(0, roomPrice - discountVal);
+                  const roomBase = roomSubtotal / 1.125;
                   const roomVat = Math.round(roomBase * 0.075);
                   const roomConsTax = Math.round(roomBase * 0.05);
-                  const roomTotalWithTax = roomBase + roomVat + roomConsTax;
+                  // The roomTotal is the inclusive amount:
+                  const roomTotalWithTax = roomSubtotal;
 
                   const amountPaidTotal = Number(activeInvoiceModal.amount_paid || 0);
                   let remainingPaid = amountPaidTotal;
@@ -3166,14 +3168,14 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                       <tr>
                         <td className="py-4 px-4">
                           <p className="font-bold text-white print:text-black">
-                            Accommodation Charges (Rent + Tax) {booking.rooms ? `(${booking.rooms.name} - Room ${booking.rooms.room_number})` : ''}
+                            Accommodation Charges (Inclusive of Taxes) {booking.rooms ? `(${booking.rooms.name} - Room ${booking.rooms.room_number})` : ''}
                             {booking.unlocked_bedrooms ? ` | Subset: ${booking.unlocked_bedrooms} Bed(s) Unlocked` : ''}
                           </p>
                           <p className="text-gray-400 print:text-gray-500 text-xs mt-0.5">
                             Check-in: {booking.check_in_date || 'N/A'} | Check-out: {booking.check_out_date || 'N/A'} {booking.check_in_date && booking.check_out_date && `| Nights Booked: ${Math.max(1, differenceInDays(new Date(booking.check_out_date), new Date(booking.check_in_date)))}`}
                           </p>
                           <p className="text-[10px] text-gray-500 mt-1">
-                            Rate: ₦{roomPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {discountVal > 0 && `| Discount: -₦${discountVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} | Taxable Base: ₦{roomBase.toLocaleString(undefined, { maximumFractionDigits: 0 })} | VAT (7.5%): ₦{roomVat.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Ent. Tax (5%): ₦{roomConsTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            Rate: ₦{roomPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })} {discountVal > 0 && `| Discount: -₦${discountVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} | Subtotal: ₦{roomBase.toLocaleString(undefined, { maximumFractionDigits: 0 })} | VAT (7.5%): ₦{roomVat.toLocaleString(undefined, { maximumFractionDigits: 0 })} | Ent. Tax (5%): ₦{roomConsTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                           </p>
                         </td>
                         <td className="py-4 px-4 text-center">
@@ -3223,7 +3225,8 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
               const roomPrice = Number(booking.total_room_price_ngn || activeInvoiceModal.subtotal || 0);
               const discount = Number(booking.discount_amount_ngn || 0);
               const discountVal = Math.max(0, Math.min(roomPrice, discount));
-              const roomBase = Math.max(0, roomPrice - discountVal);
+              const roomSubtotal = Math.max(0, roomPrice - discountVal);
+              const roomBase = roomSubtotal / 1.125;
               const roomVat = Math.round(roomBase * 0.075);
               const roomConsTax = Math.round(roomBase * 0.05);
               
@@ -3236,7 +3239,8 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                 return { base: acc.base + sBasePrice, vat: acc.vat + sVat, consTax: acc.consTax + sConsTax };
               }, { base: 0, vat: 0, consTax: 0 });
 
-              const totalRate = roomPrice + servicesSummary.base;
+              // The total rate should reflect the backwards extracted subtotal
+              const totalBase = roomBase + servicesSummary.base;
               const totalVat = roomVat + servicesSummary.vat;
               const totalConsTax = roomConsTax + servicesSummary.consTax;
 
@@ -3246,7 +3250,7 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
                     <div className="flex justify-between text-gray-400 print:text-gray-600">
                       <span>Subtotal (Base)</span>
                       <span className="text-white print:text-black font-medium">
-                        ₦{totalRate.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        ₦{(totalBase + discountVal).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </span>
                     </div>
                     {discountVal > 0 && (
