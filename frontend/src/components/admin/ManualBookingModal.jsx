@@ -352,7 +352,7 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
     try {
       // Run independent database queries concurrently to dramatically improve performance
       const [roomsRes, bookedRoomsRes, tasksRes] = await Promise.all([
-        supabase.from('rooms').select('id, name, room_number, base_price_ngn, description'),
+        supabase.from('rooms').select('id, name, room_number, base_price_ngn, description').order('room_number', { ascending: true }),
         supabase.rpc('get_booked_room_ids', {
           req_start_date: newBooking.checkIn,
           req_end_date: newBooking.checkOut
