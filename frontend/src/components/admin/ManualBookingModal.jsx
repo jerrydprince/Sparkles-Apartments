@@ -378,14 +378,14 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
 
     const bookedRoomIds = new Set((bookedRooms || []).map(b => typeof b === 'string' ? b : (b.booked_room_id || b.room_id || b.id || Object.values(b)[0])));
     
-    // A room is only available if it is clean (latest status is 'inspected' or no tasks logged yet, or booking is in the future)
-    const actuallyAvailable = rooms.filter(r => {
+    // A room is available if it is not booked. Admins can book un-inspected rooms manually.
+    const actuallyAvailable = rooms.map(r => {
       const isBooked = bookedRoomIds.has(r.id);
       const taskStatus = latestTaskByRoom[r.id];
       const todayStr = format(new Date(), 'yyyy-MM-dd');
       const isClean = !taskStatus || taskStatus === 'inspected' || newBooking.checkIn > todayStr;
-      return !isBooked && isClean;
-    });
+      return { ...r, isBooked, isClean };
+    }).filter(r => !r.isBooked);
 
     setAvailableRooms(actuallyAvailable);
 
@@ -751,7 +751,7 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
                     setNewBooking({...newBooking, roomId: e.target.value, unlockedBedrooms: r && r.tier_pricing && Object.keys(r.tier_pricing).length > 0 ? '' : 'full'});
                   }} className="w-full bg-dark-800 border border-dark-700 rounded p-2.5 text-white outline-none focus:border-brand-500 transition-colors">
                     <option value="">-- Choose available room --</option>
-                    {availableRooms.map(r => <option key={r.id} value={r.id}>{r.room_number} - {r.name} (₦{Number(r.base_price_ngn).toLocaleString()}/night)</option>)}
+                    {availableRooms.map(r => <option key={r.id} value={r.id}>{r.room_number} - {r.name} (₦{Number(r.base_price_ngn).toLocaleString()}/night){!r.isClean ? ' (Needs Cleaning)' : ''}</option>)}
                   </select>
                 </div>
                 
