@@ -129,49 +129,98 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
 
   useEffect(() => {
     if (isOpen) {
-      fetchServices();
-      fetchPurposeAdjustments();
-      // Fetch caution fee
-      supabase.from('system_settings').select('setting_value').eq('setting_key', 'caution_fee').single()
-        .then(({data}) => {
-          if(data && data.setting_value) setCautionFee(Number(data.setting_value));
-        }).catch(e => console.error(e));
-      fetchGroupAccounts();
-      fetchCrmGuests();
-      fetchARAccounts();
+      initializeModal();
       if (preselectedRoomId) {
         setNewBooking(prev => ({ ...prev, roomId: preselectedRoomId }));
       }
     }
   }, [isOpen, preselectedRoomId]);
 
-  const fetchARAccounts = async () => {
+  const initializeModal = async () => {
     try {
-      const { data, error } = await supabase.from('ar_accounts').select('*');
-      if (error) throw error;
-      setArAccounts(data || []);
-    } catch (e) {
-      try {
-        const { data: sysData } = await supabase.from('system_settings').select('setting_value').eq('setting_key', 'ar_accounts').maybeSingle();
-        if (sysData && sysData.setting_value) {
-          const parsed = typeof sysData.setting_value === 'string' ? JSON.parse(sysData.setting_value) : sysData.setting_value;
-          setArAccounts(parsed || []);
-        } else {
-          const local = localStorage.getItem('luxe_ar_accounts');
-          setArAccounts(local ? JSON.parse(local) : []);
-        }
-      } catch (err) {
-        setArAccounts([]);
-      }
-    }
-  };
+      // Run all independent table fetches concurrently to avoid browser connection limits
+      const [
+        servicesRes,
+        cmsRes,
+        settingsRes,
+        groupsRes,
+        crmRes,
+        arRes
+      ] = await Promise.all([
+        supabase.from('services').select('*').eq('is_active', true),
+        supabase.from('cms_pages').select('content').eq('slug', 'system_categories').maybeSingle(),
+        supabase.from('system_settings').select('setting_key, setting_value').in('setting_key', ['caution_fee', 'closed_group_accounts', 'deactivated_group_accounts', 'ar_accounts']),
+        supabase.from('group_accounts').select('*').order('name'),
+        supabase.from('crm_guests').select('id, profile_id, first_name, last_name, email, phone, wallet_balance').order('first_name').limit(1000),
+        supabase.from('ar_accounts').select('*')
+      ]);
 
-  const fetchCrmGuests = async () => {
-    try {
-      const { data } = await supabase.from('crm_guests').select('*').order('first_name');
-      if (data) setCrmGuests(data);
+      // Process Settings
+      let closedGroupIds = [];
+      let deactivatedGroupIds = [];
+      let settingsArAccounts = [];
+      
+      if (settingsRes.data) {
+        settingsRes.data.forEach(s => {
+          if (s.setting_key === 'caution_fee' && s.setting_value) setCautionFee(Number(s.setting_value));
+          if (s.setting_key === 'closed_group_accounts' && s.setting_value) closedGroupIds = s.setting_value;
+          if (s.setting_key === 'deactivated_group_accounts' && s.setting_value) deactivatedGroupIds = s.setting_value;
+          if (s.setting_key === 'ar_accounts' && s.setting_value) {
+             const parsed = typeof s.setting_value === 'string' ? JSON.parse(s.setting_value) : s.setting_value;
+             settingsArAccounts = parsed || [];
+          }
+        });
+      }
+
+      // Process AR Accounts
+      if (arRes.data && arRes.data.length > 0) {
+        setArAccounts(arRes.data);
+      } else if (settingsArAccounts.length > 0) {
+        setArAccounts(settingsArAccounts);
+      } else {
+        const local = localStorage.getItem('luxe_ar_accounts');
+        setArAccounts(local ? JSON.parse(local) : []);
+      }
+
+      // Process CRM Guests
+      if (crmRes.data) setCrmGuests(crmRes.data);
+
+      // Process Groups
+      if (groupsRes.data) {
+        // fallback to localstorage if settings missing
+        if (closedGroupIds.length === 0) {
+           const localC = localStorage.getItem('closed_group_accounts');
+           if (localC) closedGroupIds = JSON.parse(localC);
+        }
+        if (deactivatedGroupIds.length === 0) {
+           const localD = localStorage.getItem('deactivated_group_accounts');
+           if (localD) deactivatedGroupIds = JSON.parse(localD);
+        }
+        const filteredGroups = groupsRes.data.filter(g => !closedGroupIds.includes(g.id) && !deactivatedGroupIds.includes(g.id));
+        setGroupAccounts(filteredGroups);
+      }
+
+      // Process Services
+      if (servicesRes.data) {
+        const standard = servicesRes.data.filter(s => 
+          s.category !== 'Food & Beverage' && s.name?.toLowerCase() !== 'breakfast' &&
+          !['bar', 'restaurant', 'kitchen'].includes(s.internal_notes?.toLowerCase().trim() || '')
+        );
+        setServices(standard);
+
+        const food = servicesRes.data.filter(s => 
+          s.category === 'Food & Beverage' && s.internal_notes?.toLowerCase().trim() === 'restaurant'
+        );
+        setFoodServices(food);
+      }
+
+      // Process Purpose Adjustments
+      if (cmsRes.data?.content?.purpose_adjustments) {
+        setPurposeAdjustments(cmsRes.data.content.purpose_adjustments);
+      }
+
     } catch (err) {
-      console.warn("Failed to fetch CRM guests:", err);
+      console.warn("Error initializing modal data:", err);
     }
   };
 
@@ -221,44 +270,10 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
       if (data) {
         let closedIds = [];
         let deactivatedIds = [];
-        
-        // Fetch closed group accounts
-        try {
-          const { data: settingsData } = await supabase
-            .from('system_settings')
-            .select('setting_value')
-            .eq('setting_key', 'closed_group_accounts')
-            .maybeSingle();
-          if (settingsData && settingsData.setting_value) {
-            closedIds = settingsData.setting_value;
-          } else {
-            const local = localStorage.getItem('closed_group_accounts');
-            if (local) closedIds = JSON.parse(local);
-          }
-        } catch (err) {
-          console.warn("Failed to fetch closed groups for billing block:", err);
-          const local = localStorage.getItem('closed_group_accounts');
-          if (local) closedIds = JSON.parse(local);
-        }
-
-        // Fetch deactivated group accounts
-        try {
-          const { data: settingsData } = await supabase
-            .from('system_settings')
-            .select('setting_value')
-            .eq('setting_key', 'deactivated_group_accounts')
-            .maybeSingle();
-          if (settingsData && settingsData.setting_value) {
-            deactivatedIds = settingsData.setting_value;
-          } else {
-            const local = localStorage.getItem('deactivated_group_accounts');
-            if (local) deactivatedIds = JSON.parse(local);
-          }
-        } catch (err) {
-          console.warn("Failed to fetch deactivated groups for billing block:", err);
-          const local = localStorage.getItem('deactivated_group_accounts');
-          if (local) deactivatedIds = JSON.parse(local);
-        }
+        const localC = localStorage.getItem('closed_group_accounts');
+        if (localC) closedIds = JSON.parse(localC);
+        const localD = localStorage.getItem('deactivated_group_accounts');
+        if (localD) deactivatedIds = JSON.parse(localD);
         
         const filteredGroups = data.filter(g => !closedIds.includes(g.id) && !deactivatedIds.includes(g.id));
         setGroupAccounts(filteredGroups);
@@ -334,63 +349,79 @@ const ManualBookingModal = ({ isOpen, onClose, onSuccess, preselectedRoomId }) =
   }, [newBooking.checkIn, newBooking.checkOut, isOpen]);
 
   const checkAvailability = async () => {
-    const { data: rawRooms } = await supabase.from('rooms').select('id, name, room_number, base_price_ngn, description');
-    if (!rawRooms) return setAvailableRooms([]);
-    
-    // Parse tier_pricing from description
-    const rooms = rawRooms.map(r => {
-      let tier_pricing = {};
-      try {
-        if (r.description) {
-          const parsed = JSON.parse(r.description);
-          if (parsed && typeof parsed.text === 'string' && parsed.text.trim().startsWith('{')) {
-            const nested = JSON.parse(parsed.text);
-            if (nested && nested.tier_pricing) tier_pricing = nested.tier_pricing;
-          } else if (parsed && parsed.tier_pricing) {
-            tier_pricing = parsed.tier_pricing;
-          }
-        }
-      } catch(e) {}
-      return { ...r, tier_pricing };
-    });
+    try {
+      // Run independent database queries concurrently to dramatically improve performance
+      const [roomsRes, bookedRoomsRes, tasksRes] = await Promise.all([
+        supabase.from('rooms').select('id, name, room_number, base_price_ngn, description'),
+        supabase.rpc('get_booked_room_ids', {
+          req_start_date: newBooking.checkIn,
+          req_end_date: newBooking.checkOut
+        }),
+        supabase.from('housekeeping_tasks').select('room_id, status, assigned_date').order('assigned_date', { ascending: false })
+      ]);
 
-    const { data: bookedRooms, error: queryError } = await supabase.rpc('get_booked_room_ids', {
-      req_start_date: newBooking.checkIn,
-      req_end_date: newBooking.checkOut
-    });
+      if (roomsRes.error) {
+        console.error("Rooms fetch error:", roomsRes.error);
+        toast.error("Error fetching rooms: " + roomsRes.error.message);
+      }
+
+      const rawRooms = roomsRes.data;
+      if (!rawRooms) {
+        console.warn("No rooms data returned from Supabase!");
+        return setAvailableRooms([]);
+      }
       
-    if (queryError) console.error('Availability check error:', queryError);
-
-    // Fetch housekeeping tasks to verify cleanliness status
-    const { data: tasks } = await supabase
-      .from('housekeeping_tasks')
-      .select('room_id, status, assigned_date')
-      .order('assigned_date', { ascending: false });
-
-    const latestTaskByRoom = {};
-    if (tasks) {
-      tasks.forEach(task => {
-        if (!latestTaskByRoom[task.room_id]) {
-          latestTaskByRoom[task.room_id] = task.status;
-        }
+      // Parse tier_pricing from description
+      const rooms = rawRooms.map(r => {
+        let tier_pricing = {};
+        try {
+          if (r.description) {
+            const parsed = JSON.parse(r.description);
+            if (parsed && typeof parsed.text === 'string' && parsed.text.trim().startsWith('{')) {
+              const nested = JSON.parse(parsed.text);
+              if (nested && nested.tier_pricing) tier_pricing = nested.tier_pricing;
+            } else if (parsed && parsed.tier_pricing) {
+              tier_pricing = parsed.tier_pricing;
+            }
+          }
+        } catch(e) {}
+        return { ...r, tier_pricing };
       });
-    }
 
-    const bookedRoomIds = new Set((bookedRooms || []).map(b => typeof b === 'string' ? b : (b.booked_room_id || b.room_id || b.id || Object.values(b)[0])));
-    
-    // A room is available if it is not booked. Admins can book un-inspected rooms manually.
-    const actuallyAvailable = rooms.map(r => {
-      const isBooked = bookedRoomIds.has(r.id);
-      const taskStatus = latestTaskByRoom[r.id];
-      const todayStr = format(new Date(), 'yyyy-MM-dd');
-      const isClean = !taskStatus || taskStatus === 'inspected' || newBooking.checkIn > todayStr;
-      return { ...r, isBooked, isClean };
-    }).filter(r => !r.isBooked);
+      const bookedRooms = bookedRoomsRes.data;
+      if (bookedRoomsRes.error) {
+        console.error('Availability check error:', bookedRoomsRes.error);
+      }
 
-    setAvailableRooms(actuallyAvailable);
+      const tasks = tasksRes.data;
+      const latestTaskByRoom = {};
+      if (tasks) {
+        tasks.forEach(task => {
+          if (!latestTaskByRoom[task.room_id]) {
+            latestTaskByRoom[task.room_id] = task.status;
+          }
+        });
+      }
 
-    if (newBooking.roomId && !actuallyAvailable.some(r => r.id === newBooking.roomId)) {
-      setNewBooking(prev => ({ ...prev, roomId: '', baseRoomPrice: 0 }));
+      const bookedRoomIds = new Set((bookedRooms || []).map(b => typeof b === 'string' ? b : (b.booked_room_id || b.room_id || b.id || Object.values(b)[0])));
+      
+      // A room is available if it is not booked. Admins can book un-inspected rooms manually.
+      const actuallyAvailable = rooms.map(r => {
+        const isBooked = bookedRoomIds.has(r.id);
+        const taskStatus = latestTaskByRoom[r.id];
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
+        const isClean = !taskStatus || taskStatus === 'inspected' || newBooking.checkIn > todayStr;
+        return { ...r, isBooked, isClean };
+      }).filter(r => !r.isBooked);
+
+      setAvailableRooms(actuallyAvailable);
+
+      if (newBooking.roomId && !actuallyAvailable.some(r => r.id === newBooking.roomId)) {
+        setNewBooking(prev => ({ ...prev, roomId: '', baseRoomPrice: 0 }));
+      }
+    } catch (err) {
+      console.error("Critical error in checkAvailability:", err);
+      toast.error("Failed to check room availability.");
     }
   };
 
