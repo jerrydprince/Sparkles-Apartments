@@ -274,9 +274,9 @@ const AdminBilling = ({ isFrontOfficeClosed }) => {
       // Calculate Total Revenue using bookings (to match Dashboard exactly)
       if (bookingsData) {
         revenue = bookingsData.reduce((sum, b) => {
-          const paid = Number(b.amount_paid_ngn || 0);
-          const total = Number(b.total_amount_ngn || 1);
-          const roomAndExtras = Number(b.total_room_price_ngn || 0) + Number(b.total_extras_price_ngn || 0);
+          const paid = Number(b.amount_paid_ngn ?? 0);
+          const total = Number(b.total_amount_ngn ?? 1);
+          const roomAndExtras = Number(b.total_room_price_ngn ?? 0) + Number(b.total_extras_price_ngn ?? 0);
           if (paid === 0) return sum;
           const baseFraction = total > 0 ? (roomAndExtras / total) : 1;
           return sum + (paid * baseFraction);

@@ -2576,9 +2576,9 @@ const AdminAccounting = () => {
     });
 
     const bookingRevenue = filteredBookings.reduce((sum, b) => {
-        const paid = Number(b.amount_paid_ngn || 0);
-        const total = Number(b.total_amount_ngn || 1);
-        const subtotal = Number(b.total_room_price_ngn || 0) + Number(b.total_extras_price_ngn || 0);
+        const paid = Number(b.amount_paid_ngn ?? 0);
+        const total = Number(b.total_amount_ngn ?? 1);
+        const subtotal = Number(b.total_room_price_ngn ?? 0) + Number(b.total_extras_price_ngn ?? 0);
         if (paid === 0) return sum;
         const baseFraction = total > 0 ? (subtotal / total) : 1;
         return sum + (paid * baseFraction);
@@ -2814,9 +2814,9 @@ const AdminAccounting = () => {
     
     let taxesCollected = 0;
     filteredBookings.forEach(b => {
-        const paid = Number(b.amount_paid_ngn || 0);
-        const total = Number(b.total_amount_ngn || 1);
-        const subtotal = Number(b.total_room_price_ngn || 0) + Number(b.total_extras_price_ngn || 0);
+        const paid = Number(b.amount_paid_ngn ?? 0);
+        const total = Number(b.total_amount_ngn ?? 1);
+        const subtotal = Number(b.total_room_price_ngn ?? 0) + Number(b.total_extras_price_ngn ?? 0);
         if (paid > 0 && total > subtotal) {
             const taxFraction = (total - subtotal) / total;
             taxesCollected += (paid * taxFraction);

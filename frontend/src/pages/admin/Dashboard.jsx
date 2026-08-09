@@ -201,9 +201,9 @@ const AdminDashboard = () => {
         activeGuestsCount = checkedInCountRes.count || 0;
         totalRevenue = (revenueDataRes.data || []).reduce((sum, b) => {
           if (b.status === 'cancelled') return sum;
-          const paid = Number(b.amount_paid_ngn || 0);
-          const total = Number(b.total_amount_ngn || 1);
-          const roomAndExtras = Number(b.total_room_price_ngn || 0) + Number(b.total_extras_price_ngn || 0);
+          const paid = Number(b.amount_paid_ngn ?? 0);
+          const total = Number(b.total_amount_ngn ?? 1);
+          const roomAndExtras = Number(b.total_room_price_ngn ?? 0) + Number(b.total_extras_price_ngn ?? 0);
           if (paid === 0) return sum;
           const baseFraction = total > 0 ? (roomAndExtras / total) : 1;
           return sum + (paid * baseFraction);
