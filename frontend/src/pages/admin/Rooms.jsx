@@ -442,15 +442,15 @@ const AdminRooms = () => {
     } else {
       const payload = buildRoomPayload(newRoom.room_number);
       if (isEdit) {
-        const { data, error } = await supabase.from('rooms').update(payload).eq('id', currentRoom.id).select('id, room_number, name, type, property_id, capacity, size_sqm, base_price_ngn, status, properties(name)').single();
+        const { data, error } = await supabase.from('rooms').update(payload).eq('id', currentRoom.id).select('id, room_number, name, type, property_id, capacity, size_sqm, base_price_ngn, status, properties(name)');
         if (error) toast.error(error.message);
         else {
           toast.success('Room updated!');
           clearCache('rooms');
           clearCache('roomDetails');
           setIsRoomModalOpen(false);
-          if (data) {
-            setRooms(prev => prev.map(r => r.id === currentRoom.id ? data : r));
+          if (data && data.length > 0) {
+            setRooms(prev => prev.map(r => r.id === currentRoom.id ? data[0] : r));
           } else {
             fetchData(true);
           }
